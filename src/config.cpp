@@ -39,16 +39,62 @@ namespace vkBasalt
                 continue;
 
             Logger::info("config file: " + cFile);
+            configFilePath = cFile;
             readConfigFile(configFile);
+            updateLastModifiedTime();
             return;
         }
 
         Logger::err("no good config file");
     }
 
+    void Config::updateLastModifiedTime()
+    {
+        if (configFilePath.empty())
+            return;
+
+        struct stat fileStat;
+        if (stat(configFilePath.c_str(), &fileStat) == 0)
+        {
+            lastModifiedTime = fileStat.st_mtime;
+        }
+    }
+
+    bool Config::hasConfigChanged()
+    {
+        if (configFilePath.empty())
+            return false;
+
+        struct stat fileStat;
+        if (stat(configFilePath.c_str(), &fileStat) != 0)
+            return false;
+
+        return fileStat.st_mtime != lastModifiedTime;
+    }
+
+    void Config::reload()
+    {
+        if (configFilePath.empty())
+            return;
+
+        std::ifstream configFile(configFilePath);
+        if (!configFile.good())
+        {
+            Logger::err("failed to reload config file: " + configFilePath);
+            return;
+        }
+
+        Logger::info("reloading config file: " + configFilePath);
+        options.clear();
+        readConfigFile(configFile);
+        updateLastModifiedTime();
+    }
+
     Config::Config(const Config& other)
     {
-        this->options = other.options;
+        this->options          = other.options;
+        this->configFilePath   = other.configFilePath;
+        this->lastModifiedTime = other.lastModifiedTime;
     }
 
     void Config::readConfigFile(std::ifstream& stream)

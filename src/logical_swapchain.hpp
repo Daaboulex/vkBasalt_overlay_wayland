@@ -15,6 +15,8 @@
 
 namespace vkBasalt
 {
+    class Config;
+
     // for each swapchain, we have the Images and the other stuff we need to execute the compute shader
     struct LogicalSwapchain
     {
@@ -33,6 +35,7 @@ namespace vkBasalt
         VkDeviceMemory                       fakeImageMemory;
 
         void destroy();
+        void reloadEffects(Config* pConfig);
     };
 } // namespace vkBasalt
 

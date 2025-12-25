@@ -7,6 +7,7 @@
 #include <vector>
 #include <unordered_map>
 #include <cstdlib>
+#include <sys/stat.h>
 
 #include "vulkan_include.hpp"
 
@@ -26,11 +27,19 @@ namespace vkBasalt
             return result;
         }
 
+        // Hot-reload support
+        bool        hasConfigChanged();
+        void        reload();
+        std::string getConfigFilePath() const { return configFilePath; }
+
     private:
         std::unordered_map<std::string, std::string> options;
+        std::string                                  configFilePath;
+        time_t                                       lastModifiedTime = 0;
 
         void readConfigLine(std::string line);
         void readConfigFile(std::ifstream& stream);
+        void updateLastModifiedTime();
 
         void parseOption(const std::string& option, int32_t& result);
         void parseOption(const std::string& option, float& result);
