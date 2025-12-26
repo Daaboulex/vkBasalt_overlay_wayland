@@ -325,6 +325,7 @@ namespace vkBasalt
         int effectIndex = 0;
         bool treeOpen = false;
         int paramIndex = 0;
+        bool changedThisFrame = false;
         for (auto& param : editableParams)
         {
             if (param.effectName != currentEffect)
@@ -393,6 +394,7 @@ namespace vkBasalt
                 if (changed)
                 {
                     paramsDirty = true;
+                    changedThisFrame = true;
                     lastChangeTime = std::chrono::steady_clock::now();
                 }
                 ImGui::PopID();
@@ -412,7 +414,8 @@ namespace vkBasalt
             ImGui::EndDisabled();
 
             // Auto-apply with debounce (200ms after last change)
-            if (paramsDirty)
+            // Only apply if no changes happened this frame to ensure latest value
+            if (paramsDirty && !changedThisFrame)
             {
                 auto now = std::chrono::steady_clock::now();
                 auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastChangeTime).count();
