@@ -346,6 +346,7 @@ namespace vkBasalt
             if (treeOpen)
             {
                 ImGui::PushID(paramIndex);
+                bool changed = false;
                 switch (param.type)
                 {
                 case ParamType::Float:
@@ -354,6 +355,7 @@ namespace vkBasalt
                         // Snap to step if specified
                         if (param.step > 0.0f)
                             param.valueFloat = std::round(param.valueFloat / param.step) * param.step;
+                        changed = true;
                     }
                     break;
                 case ParamType::Int:
@@ -365,7 +367,8 @@ namespace vkBasalt
                         for (const auto& item : param.items)
                             itemsStr += item + '\0';
                         itemsStr += '\0';
-                        ImGui::Combo(param.label.c_str(), &param.valueInt, itemsStr.c_str());
+                        if (ImGui::Combo(param.label.c_str(), &param.valueInt, itemsStr.c_str()))
+                            changed = true;
                     }
                     else
                     {
@@ -378,12 +381,19 @@ namespace vkBasalt
                                 if (step > 0)
                                     param.valueInt = (param.valueInt / step) * step;
                             }
+                            changed = true;
                         }
                     }
                     break;
                 case ParamType::Bool:
-                    ImGui::Checkbox(param.label.c_str(), &param.valueBool);
+                    if (ImGui::Checkbox(param.label.c_str(), &param.valueBool))
+                        changed = true;
                     break;
+                }
+                if (changed)
+                {
+                    paramsDirty = true;
+                    lastChangeTime = std::chrono::steady_clock::now();
                 }
                 ImGui::PopID();
             }
@@ -393,9 +403,30 @@ namespace vkBasalt
             ImGui::TreePop();
 
         ImGui::Separator();
-        if (ImGui::Button("Apply"))
+        ImGui::Checkbox("Apply automatically", &autoApply);
+        ImGui::SameLine(ImGui::GetWindowWidth() - 60);
+        if (autoApply)
         {
-            applyRequested = true;
+            ImGui::BeginDisabled();
+            ImGui::Button("Apply");
+            ImGui::EndDisabled();
+
+            // Auto-apply with debounce (200ms after last change)
+            if (paramsDirty)
+            {
+                auto now = std::chrono::steady_clock::now();
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastChangeTime).count();
+                if (elapsed >= 200)
+                {
+                    applyRequested = true;
+                    paramsDirty = false;
+                }
+            }
+        }
+        else
+        {
+            if (ImGui::Button("Apply"))
+                applyRequested = true;
         }
 
         ImGui::End();

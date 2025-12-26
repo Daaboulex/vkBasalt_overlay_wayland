@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include <string>
+#include <chrono>
 
 #include "vulkan_include.hpp"
 #include "logical_device.hpp"
@@ -76,6 +77,9 @@ namespace vkBasalt
         OverlayState state;
         std::vector<EffectParameter> editableParams;  // Persistent editable values
         bool applyRequested = false;
+        bool autoApply = false;
+        bool paramsDirty = false;  // True when params changed, waiting for debounce
+        std::chrono::steady_clock::time_point lastChangeTime;
         bool visible = false;
         bool initialized = false;
         bool backendInitialized = false;
