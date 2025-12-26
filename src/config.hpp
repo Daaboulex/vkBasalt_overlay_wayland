@@ -22,10 +22,24 @@ namespace vkBasalt
         template<typename T>
         T getOption(const std::string& option, const T& defaultValue = {})
         {
+            // Check overrides first (in-memory values take precedence)
+            auto it = overrides.find(option);
+            if (it != overrides.end())
+            {
+                T result = defaultValue;
+                parseOverride(it->second, result);
+                return result;
+            }
+
             T result = defaultValue;
             parseOption(option, result);
             return result;
         }
+
+        // In-memory override support (does not modify config file)
+        void setOverride(const std::string& option, const std::string& value);
+        void clearOverrides();
+        bool hasOverrides() const { return !overrides.empty(); }
 
         // Hot-reload support
         bool        hasConfigChanged();
@@ -34,6 +48,7 @@ namespace vkBasalt
 
     private:
         std::unordered_map<std::string, std::string> options;
+        std::unordered_map<std::string, std::string> overrides;  // In-memory overrides
         std::string                                  configFilePath;
         time_t                                       lastModifiedTime = 0;
 
@@ -46,6 +61,13 @@ namespace vkBasalt
         void parseOption(const std::string& option, bool& result);
         void parseOption(const std::string& option, std::string& result);
         void parseOption(const std::string& option, std::vector<std::string>& result);
+
+        // Parse override value directly from string
+        void parseOverride(const std::string& value, int32_t& result);
+        void parseOverride(const std::string& value, float& result);
+        void parseOverride(const std::string& value, bool& result);
+        void parseOverride(const std::string& value, std::string& result);
+        void parseOverride(const std::string& value, std::vector<std::string>& result);
     };
 } // namespace vkBasalt
 

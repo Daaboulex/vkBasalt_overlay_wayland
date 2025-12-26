@@ -93,6 +93,7 @@ namespace vkBasalt
     Config::Config(const Config& other)
     {
         this->options          = other.options;
+        this->overrides        = other.overrides;
         this->configFilePath   = other.configFilePath;
         this->lastModifiedTime = other.lastModifiedTime;
     }
@@ -235,6 +236,68 @@ namespace vkBasalt
             {
                 result.push_back(newString);
             }
+        }
+    }
+
+    // Override methods for in-memory value changes
+    void Config::setOverride(const std::string& option, const std::string& value)
+    {
+        overrides[option] = value;
+    }
+
+    void Config::clearOverrides()
+    {
+        overrides.clear();
+    }
+
+    void Config::parseOverride(const std::string& value, int32_t& result)
+    {
+        try
+        {
+            result = std::stoi(value);
+        }
+        catch (...)
+        {
+            Logger::warn("invalid int32_t override value");
+        }
+    }
+
+    void Config::parseOverride(const std::string& value, float& result)
+    {
+        std::stringstream ss(value);
+        ss.imbue(std::locale("C"));
+        float parsed;
+        ss >> parsed;
+
+        if (!ss.fail())
+            result = parsed;
+        else
+            Logger::warn("invalid float override value");
+    }
+
+    void Config::parseOverride(const std::string& value, bool& result)
+    {
+        if (value == "True" || value == "true" || value == "1")
+            result = true;
+        else if (value == "False" || value == "false" || value == "0")
+            result = false;
+        else
+            Logger::warn("invalid bool override value");
+    }
+
+    void Config::parseOverride(const std::string& value, std::string& result)
+    {
+        result = value;
+    }
+
+    void Config::parseOverride(const std::string& value, std::vector<std::string>& result)
+    {
+        result = {};
+        std::stringstream stringStream(value);
+        std::string       newString;
+        while (getline(stringStream, newString, ':'))
+        {
+            result.push_back(newString);
         }
     }
 } // namespace vkBasalt

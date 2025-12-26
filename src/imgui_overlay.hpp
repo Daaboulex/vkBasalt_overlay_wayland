@@ -51,7 +51,12 @@ namespace vkBasalt
         void toggle() { visible = !visible; }
         bool isVisible() const { return visible; }
 
-        void updateState(const OverlayState& state) { this->state = state; }
+        void updateState(const OverlayState& state);
+
+        // Returns modified parameters when Apply is clicked, empty otherwise
+        std::vector<EffectParameter> getModifiedParams();
+        bool hasModifiedParams() const { return applyRequested; }
+        void clearApplyRequest() { applyRequested = false; }
 
         VkCommandBuffer recordFrame(uint32_t imageIndex, VkImageView imageView, uint32_t width, uint32_t height);
 
@@ -66,6 +71,8 @@ namespace vkBasalt
         VkFormat swapchainFormat = VK_FORMAT_UNDEFINED;
         uint32_t imageCount = 0;
         OverlayState state;
+        std::vector<EffectParameter> editableParams;  // Persistent editable values
+        bool applyRequested = false;
         bool visible = false;
         bool initialized = false;
         bool backendInitialized = false;

@@ -764,6 +764,36 @@ namespace vkBasalt
             overlayPressed = false;
         }
 
+        // Check for Apply button press in overlay
+        for (auto& swapchainPair : swapchainMap)
+        {
+            if (swapchainPair.second->imguiOverlay && swapchainPair.second->imguiOverlay->hasModifiedParams())
+            {
+                Logger::info("Applying modified parameters from overlay");
+                auto params = swapchainPair.second->imguiOverlay->getModifiedParams();
+                for (const auto& param : params)
+                {
+                    std::string valueStr;
+                    switch (param.type)
+                    {
+                    case ParamType::Float:
+                        valueStr = std::to_string(param.valueFloat);
+                        break;
+                    case ParamType::Int:
+                        valueStr = std::to_string(param.valueInt);
+                        break;
+                    case ParamType::Bool:
+                        valueStr = param.valueBool ? "true" : "false";
+                        break;
+                    }
+                    pConfig->setOverride(param.name, valueStr);
+                }
+                swapchainPair.second->imguiOverlay->clearApplyRequest();
+                shouldReload = true;
+                break;  // Only process once
+            }
+        }
+
         if (shouldReload)
         {
             Logger::info("hot-reloading config and effects...");

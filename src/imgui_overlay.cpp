@@ -134,6 +134,41 @@ namespace vkBasalt
         Logger::info("ImGui overlay destroyed");
     }
 
+    void ImGuiOverlay::updateState(const OverlayState& newState)
+    {
+        state = newState;
+
+        // Sync editable params with new state
+        // If params changed (different effect list), reset editableParams
+        if (editableParams.size() != state.parameters.size())
+        {
+            editableParams = state.parameters;
+            return;
+        }
+
+        // Check if params match, update values from state if not modified by user
+        for (size_t i = 0; i < state.parameters.size(); i++)
+        {
+            if (editableParams[i].name != state.parameters[i].name ||
+                editableParams[i].effectName != state.parameters[i].effectName)
+            {
+                // Params don't match, reset
+                editableParams = state.parameters;
+                return;
+            }
+            // Keep editable values, but update min/max from state
+            editableParams[i].minFloat = state.parameters[i].minFloat;
+            editableParams[i].maxFloat = state.parameters[i].maxFloat;
+            editableParams[i].minInt = state.parameters[i].minInt;
+            editableParams[i].maxInt = state.parameters[i].maxInt;
+        }
+    }
+
+    std::vector<EffectParameter> ImGuiOverlay::getModifiedParams()
+    {
+        return editableParams;
+    }
+
     void ImGuiOverlay::initVulkanBackend(VkFormat swapchainFormat, uint32_t imageCount)
     {
         // Load Vulkan functions for ImGui using vkBasalt's dispatch tables
@@ -287,7 +322,8 @@ namespace vkBasalt
         std::string currentEffect;
         int effectIndex = 0;
         bool treeOpen = false;
-        for (const auto& param : state.parameters)
+        int paramIndex = 0;
+        for (auto& param : editableParams)
         {
             if (param.effectName != currentEffect)
             {
@@ -299,27 +335,39 @@ namespace vkBasalt
                 treeOpen = ImGui::TreeNode("effect", "%s", currentEffect.c_str());
                 ImGui::PopID();
                 if (!treeOpen)
+                {
+                    paramIndex++;
                     continue;
+                }
             }
 
             if (treeOpen)
             {
+                ImGui::PushID(paramIndex);
                 switch (param.type)
                 {
                 case ParamType::Float:
-                    ImGui::Text("%s: %.3f", param.label.c_str(), param.valueFloat);
+                    ImGui::SliderFloat(param.label.c_str(), &param.valueFloat, param.minFloat, param.maxFloat);
                     break;
                 case ParamType::Int:
-                    ImGui::Text("%s: %d", param.label.c_str(), param.valueInt);
+                    ImGui::SliderInt(param.label.c_str(), &param.valueInt, param.minInt, param.maxInt);
                     break;
                 case ParamType::Bool:
-                    ImGui::Text("%s: %s", param.label.c_str(), param.valueBool ? "true" : "false");
+                    ImGui::Checkbox(param.label.c_str(), &param.valueBool);
                     break;
                 }
+                ImGui::PopID();
             }
+            paramIndex++;
         }
         if (treeOpen)
             ImGui::TreePop();
+
+        ImGui::Separator();
+        if (ImGui::Button("Apply"))
+        {
+            applyRequested = true;
+        }
 
         ImGui::End();
 
