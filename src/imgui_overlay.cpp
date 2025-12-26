@@ -6,23 +6,93 @@
 
 namespace vkBasalt
 {
-    // Function loader for ImGui - uses vkBasalt's dispatch tables with fallback to proc addr
-    static PFN_vkVoidFunction imguiVulkanLoader(const char* function_name, void* user_data)
+    // Dummy function for Vulkan functions not in vkBasalt's dispatch
+    static void dummyVulkanFunc() {}
+
+    // Function loader using vkBasalt's dispatch tables
+    static PFN_vkVoidFunction imguiVulkanLoaderDummy(const char* function_name, void* user_data)
     {
         LogicalDevice* device = static_cast<LogicalDevice*>(user_data);
 
-        // Try device functions first via GetDeviceProcAddr
-        PFN_vkVoidFunction func = device->vkd.GetDeviceProcAddr(device->device, function_name);
-        if (func != nullptr)
-            return func;
+        // Device functions from vkBasalt's dispatch table
+        #define CHECK_FUNC(name) if (strcmp(function_name, "vk" #name) == 0) return (PFN_vkVoidFunction)device->vkd.name
 
-        // Fall back to instance functions via GetInstanceProcAddr
-        func = device->vki.GetInstanceProcAddr(device->instance, function_name);
-        if (func != nullptr)
-            return func;
+        CHECK_FUNC(AllocateCommandBuffers);
+        CHECK_FUNC(AllocateDescriptorSets);
+        CHECK_FUNC(AllocateMemory);
+        CHECK_FUNC(BeginCommandBuffer);
+        CHECK_FUNC(BindBufferMemory);
+        CHECK_FUNC(BindImageMemory);
+        CHECK_FUNC(CmdBeginRenderPass);
+        CHECK_FUNC(CmdBindDescriptorSets);
+        CHECK_FUNC(CmdBindIndexBuffer);
+        CHECK_FUNC(CmdBindPipeline);
+        CHECK_FUNC(CmdBindVertexBuffers);
+        CHECK_FUNC(CmdCopyBufferToImage);
+        CHECK_FUNC(CmdDrawIndexed);
+        CHECK_FUNC(CmdEndRenderPass);
+        CHECK_FUNC(CmdPipelineBarrier);
+        CHECK_FUNC(CmdPushConstants);
+        CHECK_FUNC(CmdSetScissor);
+        CHECK_FUNC(CmdSetViewport);
+        CHECK_FUNC(CreateBuffer);
+        CHECK_FUNC(CreateCommandPool);
+        CHECK_FUNC(CreateDescriptorPool);
+        CHECK_FUNC(CreateDescriptorSetLayout);
+        CHECK_FUNC(CreateFence);
+        CHECK_FUNC(CreateFramebuffer);
+        CHECK_FUNC(CreateGraphicsPipelines);
+        CHECK_FUNC(CreateImage);
+        CHECK_FUNC(CreateImageView);
+        CHECK_FUNC(CreatePipelineLayout);
+        CHECK_FUNC(CreateRenderPass);
+        CHECK_FUNC(CreateSampler);
+        CHECK_FUNC(CreateSemaphore);
+        CHECK_FUNC(CreateShaderModule);
+        CHECK_FUNC(CreateSwapchainKHR);
+        CHECK_FUNC(DestroyBuffer);
+        CHECK_FUNC(DestroyCommandPool);
+        CHECK_FUNC(DestroyDescriptorPool);
+        CHECK_FUNC(DestroyDescriptorSetLayout);
+        CHECK_FUNC(DestroyFence);
+        CHECK_FUNC(DestroyFramebuffer);
+        CHECK_FUNC(DestroyImage);
+        CHECK_FUNC(DestroyImageView);
+        CHECK_FUNC(DestroyPipeline);
+        CHECK_FUNC(DestroyPipelineLayout);
+        CHECK_FUNC(DestroyRenderPass);
+        CHECK_FUNC(DestroySampler);
+        CHECK_FUNC(DestroySemaphore);
+        CHECK_FUNC(DestroyShaderModule);
+        CHECK_FUNC(DestroySwapchainKHR);
+        CHECK_FUNC(EndCommandBuffer);
+        CHECK_FUNC(FlushMappedMemoryRanges);
+        CHECK_FUNC(FreeCommandBuffers);
+        CHECK_FUNC(FreeDescriptorSets);
+        CHECK_FUNC(FreeMemory);
+        CHECK_FUNC(GetBufferMemoryRequirements);
+        CHECK_FUNC(GetDeviceQueue);
+        CHECK_FUNC(GetImageMemoryRequirements);
+        CHECK_FUNC(GetSwapchainImagesKHR);
+        CHECK_FUNC(MapMemory);
+        CHECK_FUNC(QueueSubmit);
+        CHECK_FUNC(QueueWaitIdle);
+        CHECK_FUNC(ResetCommandPool);
+        CHECK_FUNC(UnmapMemory);
+        CHECK_FUNC(UpdateDescriptorSets);
 
-        Logger::warn("ImGui requested unavailable Vulkan function: " + std::string(function_name));
-        return nullptr;
+        #undef CHECK_FUNC
+
+        // Instance functions from vkBasalt's dispatch
+        #define CHECK_IFUNC(name) if (strcmp(function_name, "vk" #name) == 0) return (PFN_vkVoidFunction)device->vki.name
+        CHECK_IFUNC(GetPhysicalDeviceMemoryProperties);
+        CHECK_IFUNC(GetPhysicalDeviceProperties);
+        CHECK_IFUNC(GetPhysicalDeviceQueueFamilyProperties);
+        #undef CHECK_IFUNC
+
+        // Return dummy for all remaining functions - don't use GetInstanceProcAddr
+        // (GetInstanceProcAddr causes rendering issues)
+        return (PFN_vkVoidFunction)dummyVulkanFunc;
     }
 
     ImGuiOverlay::ImGuiOverlay(LogicalDevice* device, VkFormat swapchainFormat, uint32_t imageCount)
@@ -49,9 +119,12 @@ namespace vkBasalt
 
         pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
 
-        ImGui_ImplVulkan_Shutdown();
+        if (backendInitialized)
+            ImGui_ImplVulkan_Shutdown();
         ImGui::DestroyContext();
 
+        if (commandPool != VK_NULL_HANDLE)
+            pLogicalDevice->vkd.DestroyCommandPool(pLogicalDevice->device, commandPool, nullptr);
         if (renderPass != VK_NULL_HANDLE)
             pLogicalDevice->vkd.DestroyRenderPass(pLogicalDevice->device, renderPass, nullptr);
         if (descriptorPool != VK_NULL_HANDLE)
@@ -62,13 +135,14 @@ namespace vkBasalt
 
     void ImGuiOverlay::initVulkanBackend(VkFormat swapchainFormat, uint32_t imageCount)
     {
-        // Load Vulkan functions for ImGui using our dispatch tables
-        bool loaded = ImGui_ImplVulkan_LoadFunctions(VK_API_VERSION_1_3, imguiVulkanLoader, pLogicalDevice);
+        // Load Vulkan functions for ImGui using vkBasalt's dispatch tables
+        bool loaded = ImGui_ImplVulkan_LoadFunctions(VK_API_VERSION_1_3, imguiVulkanLoaderDummy, pLogicalDevice);
         if (!loaded)
         {
             Logger::err("Failed to load Vulkan functions for ImGui");
             return;
         }
+        Logger::debug("ImGui Vulkan functions loaded");
 
         // Create descriptor pool for ImGui
         VkDescriptorPoolSize poolSizes[] = {
@@ -137,8 +211,89 @@ namespace vkBasalt
         initInfo.PipelineInfoMain.RenderPass = renderPass;
 
         ImGui_ImplVulkan_Init(&initInfo);
+        backendInitialized = true;
+
+        this->swapchainFormat = swapchainFormat;
+        this->imageCount = imageCount;
+
+        // Create command pool
+        VkCommandPoolCreateInfo poolCreateInfo = {};
+        poolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        poolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        poolCreateInfo.queueFamilyIndex = pLogicalDevice->queueFamilyIndex;
+        pLogicalDevice->vkd.CreateCommandPool(pLogicalDevice->device, &poolCreateInfo, nullptr, &commandPool);
+
+        // Allocate command buffers
+        commandBuffers.resize(imageCount);
+        VkCommandBufferAllocateInfo allocInfo = {};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.commandPool = commandPool;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandBufferCount = imageCount;
+        pLogicalDevice->vkd.AllocateCommandBuffers(pLogicalDevice->device, &allocInfo, commandBuffers.data());
 
         Logger::debug("ImGui Vulkan backend initialized");
+    }
+
+    VkCommandBuffer ImGuiOverlay::recordFrame(uint32_t imageIndex, VkImageView imageView, uint32_t width, uint32_t height)
+    {
+        if (!backendInitialized || !visible)
+            return VK_NULL_HANDLE;
+
+        VkCommandBuffer cmd = commandBuffers[imageIndex];
+
+        // Begin command buffer
+        VkCommandBufferBeginInfo beginInfo = {};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        pLogicalDevice->vkd.BeginCommandBuffer(cmd, &beginInfo);
+
+        // Create framebuffer for this image view
+        VkFramebuffer framebuffer;
+        VkFramebufferCreateInfo fbInfo = {};
+        fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        fbInfo.renderPass = renderPass;
+        fbInfo.attachmentCount = 1;
+        fbInfo.pAttachments = &imageView;
+        fbInfo.width = width;
+        fbInfo.height = height;
+        fbInfo.layers = 1;
+        pLogicalDevice->vkd.CreateFramebuffer(pLogicalDevice->device, &fbInfo, nullptr, &framebuffer);
+
+        // Set display size BEFORE NewFrame
+        ImGuiIO& io = ImGui::GetIO();
+        io.DisplaySize = ImVec2((float)width, (float)height);
+
+        // ImGui frame
+        ImGui_ImplVulkan_NewFrame();
+        ImGui::NewFrame();
+
+        // Demo window
+        ImGui::Begin("vkBasalt Controls");
+        ImGui::Text("Effects active");
+        ImGui::Text("Press overlay key to hide");
+        ImGui::End();
+
+        ImGui::Render();
+
+        // Begin render pass
+        VkRenderPassBeginInfo rpBegin = {};
+        rpBegin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        rpBegin.renderPass = renderPass;
+        rpBegin.framebuffer = framebuffer;
+        rpBegin.renderArea.extent.width = width;
+        rpBegin.renderArea.extent.height = height;
+
+        pLogicalDevice->vkd.CmdBeginRenderPass(cmd, &rpBegin, VK_SUBPASS_CONTENTS_INLINE);
+        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+        pLogicalDevice->vkd.CmdEndRenderPass(cmd);
+
+        pLogicalDevice->vkd.EndCommandBuffer(cmd);
+
+        // Destroy framebuffer (created per-frame)
+        pLogicalDevice->vkd.DestroyFramebuffer(pLogicalDevice->device, framebuffer, nullptr);
+
+        return cmd;
     }
 
 } // namespace vkBasalt

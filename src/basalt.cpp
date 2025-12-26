@@ -521,6 +521,23 @@ namespace vkBasalt
         pLogicalSwapchain->images.resize(pLogicalSwapchain->imageCount);
         pLogicalDevice->vkd.GetSwapchainImagesKHR(device, swapchain, &pLogicalSwapchain->imageCount, pLogicalSwapchain->images.data());
 
+        // Create image views for overlay rendering
+        pLogicalSwapchain->imageViews.resize(pLogicalSwapchain->imageCount);
+        for (uint32_t i = 0; i < pLogicalSwapchain->imageCount; i++)
+        {
+            VkImageViewCreateInfo viewInfo = {};
+            viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            viewInfo.image = pLogicalSwapchain->images[i];
+            viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            viewInfo.format = pLogicalSwapchain->format;
+            viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            viewInfo.subresourceRange.baseMipLevel = 0;
+            viewInfo.subresourceRange.levelCount = 1;
+            viewInfo.subresourceRange.baseArrayLayer = 0;
+            viewInfo.subresourceRange.layerCount = 1;
+            pLogicalDevice->vkd.CreateImageView(pLogicalDevice->device, &viewInfo, nullptr, &pLogicalSwapchain->imageViews[i]);
+        }
+
         std::vector<std::string> effectStrings = pConfig->getOption<std::vector<std::string>>("effects", {"cas"});
 
         // create 1 more set of images when we can't use the swapchain it self
@@ -631,6 +648,7 @@ namespace vkBasalt
         Logger::debug("wrote CommandBuffers");
 
         pLogicalSwapchain->semaphores = createSemaphores(pLogicalDevice, pLogicalSwapchain->imageCount);
+        pLogicalSwapchain->overlaySemaphores = createSemaphores(pLogicalDevice, pLogicalSwapchain->imageCount);
         Logger::debug("created semaphores");
         for (unsigned int i = 0; i < pLogicalSwapchain->imageCount; i++)
         {
@@ -660,9 +678,9 @@ namespace vkBasalt
             Logger::debug(std::to_string(i) + " written commandbuffer " + convertToString(pLogicalSwapchain->commandBuffersNoEffect[i]));
         }
 
-        // Create ImGui overlay (disabled for testing)
-        // pLogicalSwapchain->imguiOverlay = std::make_unique<ImGuiOverlay>(
-        //     pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageCount);
+        // Create ImGui overlay
+        pLogicalSwapchain->imguiOverlay = std::make_unique<ImGuiOverlay>(
+            pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageCount);
 
         *pCount = std::min<uint32_t>(*pCount, pLogicalSwapchain->imageCount);
         std::memcpy(pSwapchainImages, pLogicalSwapchain->fakeImages.data(), sizeof(VkImage) * (*pCount));
@@ -675,11 +693,13 @@ namespace vkBasalt
 
         static uint32_t keySymbol = convertToKeySym(pConfig->getOption<std::string>("toggleKey", "Home"));
         static uint32_t reloadKeySymbol = convertToKeySym(pConfig->getOption<std::string>("reloadKey", "F10"));
+        static uint32_t overlayKeySymbol = convertToKeySym(pConfig->getOption<std::string>("overlayKey", "F11"));
         static bool initLogged = false;
 
         static bool pressed       = false;
         static bool presentEffect = pConfig->getOption<bool>("enableOnLaunch", true);
         static bool reloadPressed = false;
+        static bool overlayPressed = false;
 
         if (!initLogged)
         {
@@ -724,6 +744,25 @@ namespace vkBasalt
         {
             Logger::debug("config file changed detected");
             shouldReload = true;
+        }
+
+        // Toggle overlay on/off
+        if (isKeyPressed(overlayKeySymbol))
+        {
+            if (!overlayPressed)
+            {
+                // Toggle all swapchain overlays
+                for (auto& swapchainPair : swapchainMap)
+                {
+                    if (swapchainPair.second->imguiOverlay)
+                        swapchainPair.second->imguiOverlay->toggle();
+                }
+                overlayPressed = true;
+            }
+        }
+        else
+        {
+            overlayPressed = false;
         }
 
         if (shouldReload)
@@ -772,14 +811,40 @@ namespace vkBasalt
             submitInfo.signalSemaphoreCount = 1;
             submitInfo.pSignalSemaphores    = &(pLogicalSwapchain->semaphores[index]);
 
-            presentSemaphores.push_back(pLogicalSwapchain->semaphores[index]);
-
             VkResult vr = pLogicalDevice->vkd.QueueSubmit(pLogicalDevice->queue, 1, &submitInfo, VK_NULL_HANDLE);
-
             if (vr != VK_SUCCESS)
-            {
                 return vr;
+
+            // Default: wait on effects semaphore for present
+            VkSemaphore finalSemaphore = pLogicalSwapchain->semaphores[index];
+
+            // Render overlay if visible, updating the semaphore to wait on
+            VkCommandBuffer overlayCmd = pLogicalSwapchain->imguiOverlay
+                ? pLogicalSwapchain->imguiOverlay->recordFrame(index, pLogicalSwapchain->imageViews[index],
+                      pLogicalSwapchain->imageExtent.width, pLogicalSwapchain->imageExtent.height)
+                : VK_NULL_HANDLE;
+
+            if (overlayCmd != VK_NULL_HANDLE)
+            {
+                VkPipelineStageFlags overlayWaitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+                VkSubmitInfo overlaySubmit = {};
+                overlaySubmit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+                overlaySubmit.waitSemaphoreCount = 1;
+                overlaySubmit.pWaitSemaphores = &(pLogicalSwapchain->semaphores[index]);
+                overlaySubmit.pWaitDstStageMask = &overlayWaitStage;
+                overlaySubmit.commandBufferCount = 1;
+                overlaySubmit.pCommandBuffers = &overlayCmd;
+                overlaySubmit.signalSemaphoreCount = 1;
+                overlaySubmit.pSignalSemaphores = &(pLogicalSwapchain->overlaySemaphores[index]);
+
+                vr = pLogicalDevice->vkd.QueueSubmit(pLogicalDevice->queue, 1, &overlaySubmit, VK_NULL_HANDLE);
+                if (vr != VK_SUCCESS)
+                    return vr;
+
+                finalSemaphore = pLogicalSwapchain->overlaySemaphores[index];
             }
+
+            presentSemaphores.push_back(finalSemaphore);
         }
 
         VkPresentInfoKHR presentInfo   = *pPresentInfo;

@@ -20,14 +20,21 @@ namespace vkBasalt
         void toggle() { visible = !visible; }
         bool isVisible() const { return visible; }
 
+        VkCommandBuffer recordFrame(uint32_t imageIndex, VkImageView imageView, uint32_t width, uint32_t height);
+
     private:
         void initVulkanBackend(VkFormat swapchainFormat, uint32_t imageCount);
 
         LogicalDevice* pLogicalDevice;
         VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
         VkRenderPass renderPass = VK_NULL_HANDLE;
+        VkCommandPool commandPool = VK_NULL_HANDLE;
+        std::vector<VkCommandBuffer> commandBuffers;
+        VkFormat swapchainFormat = VK_FORMAT_UNDEFINED;
+        uint32_t imageCount = 0;
         bool visible = false;
         bool initialized = false;
+        bool backendInitialized = false;
     };
 
 } // namespace vkBasalt

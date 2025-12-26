@@ -1,4 +1,5 @@
 #include "logical_swapchain.hpp"
+#include "imgui_overlay.hpp"
 
 namespace vkBasalt
 {
@@ -25,8 +26,19 @@ namespace vkBasalt
             for (unsigned int i = 0; i < imageCount; i++)
             {
                 pLogicalDevice->vkd.DestroySemaphore(pLogicalDevice->device, semaphores[i], nullptr);
+                pLogicalDevice->vkd.DestroySemaphore(pLogicalDevice->device, overlaySemaphores[i], nullptr);
             }
             Logger::debug("after DestroySemaphore");
+
+            // Destroy image views for overlay
+            for (auto& view : imageViews)
+            {
+                pLogicalDevice->vkd.DestroyImageView(pLogicalDevice->device, view, nullptr);
+            }
+            imageViews.clear();
+
+            // Destroy ImGui overlay
+            imguiOverlay.reset();
         }
     }
 } // namespace vkBasalt
