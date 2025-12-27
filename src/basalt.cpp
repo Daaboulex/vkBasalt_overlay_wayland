@@ -8,6 +8,7 @@
 #include <string>
 #include <memory>
 #include <cstring>
+#include <filesystem>
 
 #include "util.hpp"
 #include "keyboard_input.hpp"
@@ -75,9 +76,46 @@ namespace vkBasalt
         return *(void**) inst;
     }
 
+    // Helper function to get all available effects (built-in + reshade shaders)
+    std::vector<std::string> getAvailableEffects(Config* pConfig)
+    {
+        std::vector<std::string> effects;
+
+        // Built-in effects
+        effects.push_back("cas");
+        effects.push_back("dls");
+        effects.push_back("fxaa");
+        effects.push_back("smaa");
+        effects.push_back("deband");
+        effects.push_back("lut");
+
+        // Scan reshade include path for .fx files
+        std::string includePath = pConfig->getOption<std::string>("reshadeIncludePath", "");
+        if (!includePath.empty() && std::filesystem::exists(includePath))
+        {
+            try
+            {
+                for (const auto& entry : std::filesystem::directory_iterator(includePath))
+                {
+                    if (entry.is_regular_file() && entry.path().extension() == ".fx")
+                    {
+                        effects.push_back(entry.path().filename().string());
+                    }
+                }
+            }
+            catch (const std::exception& e)
+            {
+                Logger::warn("Failed to scan reshade include path: " + std::string(e.what()));
+            }
+        }
+
+        return effects;
+    }
+
     // Helper function to reload effects for a swapchain (for hot-reload)
     void reloadEffectsForSwapchain(LogicalSwapchain* pLogicalSwapchain, Config* pConfig,
-                                   const std::map<std::string, bool>& effectEnabledStates = {})
+                                   const std::map<std::string, bool>& effectEnabledStates = {},
+                                   const std::vector<std::string>& activeEffects = {})
     {
         LogicalDevice* pLogicalDevice = pLogicalSwapchain->pLogicalDevice;
 
@@ -94,15 +132,33 @@ namespace vkBasalt
         pLogicalSwapchain->effects.clear();
         pLogicalSwapchain->defaultTransfer.reset();
 
-        // Recreate effects
-        std::vector<std::string> effectStrings = pConfig->getOption<std::vector<std::string>>("effects", {"cas"});
+        // Use provided active effects list, or fall back to config
+        std::vector<std::string> effectStrings = activeEffects.empty()
+            ? pConfig->getOption<std::vector<std::string>>("effects", {"cas"})
+            : activeEffects;
+
+        // Check if we have enough fake images for the effects
+        // Fake images are allocated at swapchain creation based on maxEffectSlots
+        if (effectStrings.size() > pLogicalSwapchain->maxEffectSlots)
+        {
+            Logger::warn("Cannot add more effects than maxEffectSlots (" +
+                        std::to_string(effectStrings.size()) + " > " + std::to_string(pLogicalSwapchain->maxEffectSlots) +
+                        "). Increase maxEffects in config.");
+            effectStrings.resize(pLogicalSwapchain->maxEffectSlots);
+        }
 
         VkFormat unormFormat = convertToUNORM(pLogicalSwapchain->format);
         VkFormat srgbFormat  = convertToSRGB(pLogicalSwapchain->format);
 
+        Logger::info("reloading " + std::to_string(effectStrings.size()) + " effects, fakeImages.size()=" +
+                    std::to_string(pLogicalSwapchain->fakeImages.size()) + ", imageCount=" + std::to_string(pLogicalSwapchain->imageCount) +
+                    ", maxEffectSlots=" + std::to_string(pLogicalSwapchain->maxEffectSlots));
+
         for (uint32_t i = 0; i < effectStrings.size(); i++)
         {
-            Logger::debug("reloading effect: " + effectStrings[i]);
+            Logger::info("reloading effect " + std::to_string(i) + ": " + effectStrings[i] +
+                        ", firstImages start=" + std::to_string(pLogicalSwapchain->imageCount * i) +
+                        ", end=" + std::to_string(pLogicalSwapchain->imageCount * (i + 1)));
             std::vector<VkImage> firstImages(pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount * i,
                                              pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount * (i + 1));
             std::vector<VkImage> secondImages;
@@ -553,8 +609,14 @@ namespace vkBasalt
 
         std::vector<std::string> effectStrings = pConfig->getOption<std::vector<std::string>>("effects", {"cas"});
 
+        // Allow dynamic effect loading by allocating for more effects than configured
+        // maxEffects defaults to 10, allowing users to enable additional effects at runtime
+        int32_t maxEffects = pConfig->getOption<int32_t>("maxEffects", 10);
+        size_t effectSlots = std::max(effectStrings.size(), (size_t)maxEffects);
+        pLogicalSwapchain->maxEffectSlots = effectSlots;
+
         // create 1 more set of images when we can't use the swapchain it self
-        uint32_t fakeImageCount = pLogicalSwapchain->imageCount * (effectStrings.size() + !pLogicalDevice->supportsMutableFormat);
+        uint32_t fakeImageCount = pLogicalSwapchain->imageCount * (effectSlots + !pLogicalDevice->supportsMutableFormat);
 
         pLogicalSwapchain->fakeImages =
             createFakeSwapchainImages(pLogicalDevice, pLogicalSwapchain->swapchainCreateInfo, fakeImageCount, pLogicalSwapchain->fakeImageMemory);
@@ -819,7 +881,14 @@ namespace vkBasalt
                 LogicalSwapchain* pLogicalSwapchain = swapchainPair.second.get();
                 if (pLogicalSwapchain->fakeImages.size() > 0)
                 {
-                    reloadEffectsForSwapchain(pLogicalSwapchain, pConfig.get(), effectEnabledStates);
+                    // Get active effects from overlay (includes user-activated effects)
+                    std::vector<std::string> activeEffects;
+                    if (pLogicalSwapchain->imguiOverlay)
+                        activeEffects = pLogicalSwapchain->imguiOverlay->getActiveEffects();
+                    else
+                        activeEffects = pConfig->getOption<std::vector<std::string>>("effects", {"cas"});
+
+                    reloadEffectsForSwapchain(pLogicalSwapchain, pConfig.get(), effectEnabledStates, activeEffects);
                 }
             }
         }
@@ -866,6 +935,7 @@ namespace vkBasalt
             {
                 OverlayState overlayState;
                 overlayState.effectNames = pConfig->getOption<std::vector<std::string>>("effects", {"cas"});
+                overlayState.availableEffects = getAvailableEffects(pConfig.get());
                 overlayState.configPath = pConfig->getConfigFilePath();
                 overlayState.effectsEnabled = presentEffect;
 

@@ -29,6 +29,7 @@ namespace vkBasalt
         std::vector<VkImage>                 images;
         std::vector<VkImageView>             imageViews;  // for overlay rendering
         std::vector<VkImage>                 fakeImages;
+        size_t                               maxEffectSlots = 0;  // Max number of effects supported
         std::vector<VkCommandBuffer>         commandBuffersEffect;
         std::vector<VkCommandBuffer>         commandBuffersNoEffect;
         std::vector<VkSemaphore>             semaphores;

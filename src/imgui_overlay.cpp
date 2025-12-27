@@ -2,6 +2,7 @@
 #include "logger.hpp"
 #include "mouse_input.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 #include "imgui/imgui.h"
@@ -140,8 +141,15 @@ namespace vkBasalt
     {
         state = newState;
 
-        // Initialize enabled state for new effects (default to enabled)
-        for (const auto& effectName : state.effectNames)
+        // Initialize selectedEffects with config effects on first call
+        if (selectedEffects.empty())
+        {
+            for (const auto& effectName : state.effectNames)
+                selectedEffects.insert(effectName);
+        }
+
+        // Initialize enabled state for selected effects (default to enabled)
+        for (const auto& effectName : selectedEffects)
         {
             if (effectEnabledStates.find(effectName) == effectEnabledStates.end())
                 effectEnabledStates[effectName] = true;
@@ -176,6 +184,21 @@ namespace vkBasalt
     std::vector<EffectParameter> ImGuiOverlay::getModifiedParams()
     {
         return editableParams;
+    }
+
+    std::vector<std::string> ImGuiOverlay::getActiveEffects() const
+    {
+        std::vector<std::string> activeEffects;
+
+        // Return enabled effects from selectedEffects
+        for (const auto& effectName : selectedEffects)
+        {
+            auto it = effectEnabledStates.find(effectName);
+            if (it != effectEnabledStates.end() && it->second)
+                activeEffects.push_back(effectName);
+        }
+
+        return activeEffects;
     }
 
     void ImGuiOverlay::initVulkanBackend(VkFormat swapchainFormat, uint32_t imageCount)
@@ -322,125 +345,222 @@ namespace vkBasalt
 
         // vkBasalt info window
         ImGui::Begin("vkBasalt Controls");
-        ImGui::Text("Config: %s", state.configPath.c_str());
-        ImGui::Separator();
-        ImGui::Text("Effects %s (Home to toggle)", state.effectsEnabled ? "ON" : "OFF");
-        ImGui::Separator();
 
-        // Show all effects with their parameters
-        bool changedThisFrame = false;
-        int effectIndex = 0;
-        for (const auto& effectName : state.effectNames)
+        if (inSelectionMode)
         {
-            effectIndex++;
-            ImGui::PushID(effectIndex);
+            // Selection mode - show all available effects with checkboxes
+            ImGui::Text("Select Effects (max %zu)", maxEffects);
+            ImGui::Separator();
 
-            // Checkbox to enable/disable effect
-            bool& effectEnabled = effectEnabledStates[effectName];
-            if (ImGui::Checkbox("##enabled", &effectEnabled))
+            size_t selectedCount = tempSelectedEffects.size();
+            ImGui::Text("Selected: %zu / %zu", selectedCount, maxEffects);
+            ImGui::Separator();
+
+            // Sort effects: built-in first (alphabetically), then reshade (alphabetically)
+            std::vector<std::string> builtinEffects, reshadeEffects;
+            for (const auto& effectName : state.availableEffects)
             {
-                changedThisFrame = true;
-                paramsDirty = true;
-                lastChangeTime = std::chrono::steady_clock::now();
+                if (effectName.size() > 3 && effectName.substr(effectName.size() - 3) == ".fx")
+                    reshadeEffects.push_back(effectName);
+                else
+                    builtinEffects.push_back(effectName);
+            }
+            std::sort(builtinEffects.begin(), builtinEffects.end());
+            std::sort(reshadeEffects.begin(), reshadeEffects.end());
+
+            // Helper lambda to render effect checkbox
+            auto renderEffectCheckbox = [&](const std::string& effectName) {
+                bool isSelected = tempSelectedEffects.find(effectName) != tempSelectedEffects.end();
+                bool wasSelected = isSelected;
+
+                // Disable checkbox if at max and not selected
+                bool atLimit = selectedCount >= maxEffects && !isSelected;
+                if (atLimit)
+                    ImGui::BeginDisabled();
+
+                if (ImGui::Checkbox(effectName.c_str(), &isSelected))
+                {
+                    if (isSelected && !wasSelected)
+                        tempSelectedEffects.insert(effectName);
+                    else if (!isSelected && wasSelected)
+                        tempSelectedEffects.erase(effectName);
+                }
+
+                if (atLimit)
+                    ImGui::EndDisabled();
+            };
+
+            // Show built-in effects first
+            if (!builtinEffects.empty())
+            {
+                ImGui::Text("Built-in:");
+                for (const auto& effectName : builtinEffects)
+                    renderEffectCheckbox(effectName);
+            }
+
+            // Show reshade effects
+            if (!reshadeEffects.empty())
+            {
+                if (!builtinEffects.empty())
+                    ImGui::Separator();
+                ImGui::Text("Reshade:");
+                for (const auto& effectName : reshadeEffects)
+                    renderEffectCheckbox(effectName);
+            }
+
+            ImGui::Separator();
+
+            if (ImGui::Button("OK"))
+            {
+                // Apply selection
+                selectedEffects = tempSelectedEffects;
+                // Initialize enabled states for new effects
+                for (const auto& effectName : selectedEffects)
+                {
+                    if (effectEnabledStates.find(effectName) == effectEnabledStates.end())
+                        effectEnabledStates[effectName] = true;
+                }
+                inSelectionMode = false;
+                applyRequested = true;  // Trigger reload with new effects
             }
             ImGui::SameLine();
-
-            bool treeOpen = ImGui::TreeNode("effect", "%s", effectName.c_str());
-            ImGui::PopID();
-
-            if (treeOpen)
+            if (ImGui::Button("Cancel"))
             {
-                // Find and show parameters for this effect
-                int paramIndex = 0;
-                for (auto& param : editableParams)
-                {
-                    if (param.effectName != effectName)
-                        continue;
-
-                    ImGui::PushID(paramIndex);
-                    bool changed = false;
-                    switch (param.type)
-                    {
-                    case ParamType::Float:
-                        if (ImGui::SliderFloat(param.label.c_str(), &param.valueFloat, param.minFloat, param.maxFloat))
-                        {
-                            // Snap to step if specified
-                            if (param.step > 0.0f)
-                                param.valueFloat = std::round(param.valueFloat / param.step) * param.step;
-                            changed = true;
-                        }
-                        break;
-                    case ParamType::Int:
-                        // Check for combo box (ui_type="combo" or has items)
-                        if (!param.items.empty())
-                        {
-                            // Build items string for Combo (null-separated, double-null terminated)
-                            std::string itemsStr;
-                            for (const auto& item : param.items)
-                                itemsStr += item + '\0';
-                            itemsStr += '\0';
-                            if (ImGui::Combo(param.label.c_str(), &param.valueInt, itemsStr.c_str()))
-                                changed = true;
-                        }
-                        else
-                        {
-                            if (ImGui::SliderInt(param.label.c_str(), &param.valueInt, param.minInt, param.maxInt))
-                            {
-                                // Snap to step if specified
-                                if (param.step > 0.0f)
-                                {
-                                    int step = (int)param.step;
-                                    if (step > 0)
-                                        param.valueInt = (param.valueInt / step) * step;
-                                }
-                                changed = true;
-                            }
-                        }
-                        break;
-                    case ParamType::Bool:
-                        if (ImGui::Checkbox(param.label.c_str(), &param.valueBool))
-                            changed = true;
-                        break;
-                    }
-                    if (changed)
-                    {
-                        paramsDirty = true;
-                        changedThisFrame = true;
-                        lastChangeTime = std::chrono::steady_clock::now();
-                    }
-                    ImGui::PopID();
-                    paramIndex++;
-                }
-                ImGui::TreePop();
-            }
-        }
-
-        ImGui::Separator();
-        ImGui::Checkbox("Apply automatically", &autoApply);
-        ImGui::SameLine(ImGui::GetWindowWidth() - 60);
-        if (autoApply)
-        {
-            ImGui::BeginDisabled();
-            ImGui::Button("Apply");
-            ImGui::EndDisabled();
-
-            // Auto-apply with debounce (200ms after last change)
-            // Only apply if no changes happened this frame to ensure latest value
-            if (paramsDirty && !changedThisFrame)
-            {
-                auto now = std::chrono::steady_clock::now();
-                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastChangeTime).count();
-                if (elapsed >= 200)
-                {
-                    applyRequested = true;
-                    paramsDirty = false;
-                }
+                inSelectionMode = false;
             }
         }
         else
         {
-            if (ImGui::Button("Apply"))
-                applyRequested = true;
+            // Normal mode - show config and effect controls
+            ImGui::Text("Config: %s", state.configPath.c_str());
+            ImGui::Separator();
+            ImGui::Text("Effects %s (Home to toggle)", state.effectsEnabled ? "ON" : "OFF");
+            ImGui::Separator();
+
+            // Select Effects button
+            if (ImGui::Button("Select Effects..."))
+            {
+                // Enter selection mode, copy current selection to temp
+                tempSelectedEffects = selectedEffects;
+                inSelectionMode = true;
+            }
+            ImGui::Separator();
+
+            // Show selected effects with their parameters
+            bool changedThisFrame = false;
+            int effectIndex = 0;
+            for (const auto& effectName : selectedEffects)
+            {
+                effectIndex++;
+                ImGui::PushID(effectIndex);
+
+                // Checkbox to enable/disable effect
+                bool& effectEnabled = effectEnabledStates[effectName];
+                if (ImGui::Checkbox("##enabled", &effectEnabled))
+                {
+                    changedThisFrame = true;
+                    paramsDirty = true;
+                    lastChangeTime = std::chrono::steady_clock::now();
+                }
+                ImGui::SameLine();
+
+                bool treeOpen = ImGui::TreeNode("effect", "%s", effectName.c_str());
+                ImGui::PopID();
+
+                if (treeOpen)
+                {
+                    // Find and show parameters for this effect
+                    int paramIndex = 0;
+                    for (auto& param : editableParams)
+                    {
+                        if (param.effectName != effectName)
+                            continue;
+
+                        ImGui::PushID(paramIndex);
+                        bool changed = false;
+                        switch (param.type)
+                        {
+                        case ParamType::Float:
+                            if (ImGui::SliderFloat(param.label.c_str(), &param.valueFloat, param.minFloat, param.maxFloat))
+                            {
+                                // Snap to step if specified
+                                if (param.step > 0.0f)
+                                    param.valueFloat = std::round(param.valueFloat / param.step) * param.step;
+                                changed = true;
+                            }
+                            break;
+                        case ParamType::Int:
+                            // Check for combo box (ui_type="combo" or has items)
+                            if (!param.items.empty())
+                            {
+                                // Build items string for Combo (null-separated, double-null terminated)
+                                std::string itemsStr;
+                                for (const auto& item : param.items)
+                                    itemsStr += item + '\0';
+                                itemsStr += '\0';
+                                if (ImGui::Combo(param.label.c_str(), &param.valueInt, itemsStr.c_str()))
+                                    changed = true;
+                            }
+                            else
+                            {
+                                if (ImGui::SliderInt(param.label.c_str(), &param.valueInt, param.minInt, param.maxInt))
+                                {
+                                    // Snap to step if specified
+                                    if (param.step > 0.0f)
+                                    {
+                                        int step = (int)param.step;
+                                        if (step > 0)
+                                            param.valueInt = (param.valueInt / step) * step;
+                                    }
+                                    changed = true;
+                                }
+                            }
+                            break;
+                        case ParamType::Bool:
+                            if (ImGui::Checkbox(param.label.c_str(), &param.valueBool))
+                                changed = true;
+                            break;
+                        }
+                        if (changed)
+                        {
+                            paramsDirty = true;
+                            changedThisFrame = true;
+                            lastChangeTime = std::chrono::steady_clock::now();
+                        }
+                        ImGui::PopID();
+                        paramIndex++;
+                    }
+                    ImGui::TreePop();
+                }
+            }
+
+            ImGui::Separator();
+            ImGui::Checkbox("Apply automatically", &autoApply);
+            ImGui::SameLine(ImGui::GetWindowWidth() - 60);
+            if (autoApply)
+            {
+                ImGui::BeginDisabled();
+                ImGui::Button("Apply");
+                ImGui::EndDisabled();
+
+                // Auto-apply with debounce (200ms after last change)
+                // Only apply if no changes happened this frame to ensure latest value
+                if (paramsDirty && !changedThisFrame)
+                {
+                    auto now = std::chrono::steady_clock::now();
+                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastChangeTime).count();
+                    if (elapsed >= 200)
+                    {
+                        applyRequested = true;
+                        paramsDirty = false;
+                    }
+                }
+            }
+            else
+            {
+                if (ImGui::Button("Apply"))
+                    applyRequested = true;
+            }
         }
 
         ImGui::End();

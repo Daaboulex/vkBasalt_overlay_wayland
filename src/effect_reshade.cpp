@@ -1238,10 +1238,19 @@ namespace vkBasalt
         preprocessor.add_macro_definition("BUFFER_RCP_WIDTH", "(1.0 / BUFFER_WIDTH)");
         preprocessor.add_macro_definition("BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)");
         preprocessor.add_macro_definition("BUFFER_COLOR_DEPTH", (inputOutputFormatUNORM == VK_FORMAT_A2R10G10B10_UNORM_PACK32) ? "10" : "8");
-        preprocessor.add_include_path(pConfig->getOption<std::string>("reshadeIncludePath"));
-        if (!preprocessor.append_file(pConfig->getOption<std::string>(effectName)))
+        std::string includePath = pConfig->getOption<std::string>("reshadeIncludePath");
+        preprocessor.add_include_path(includePath);
+
+        // First try to get effect path from config, otherwise construct from includePath + effectName
+        std::string effectPath = pConfig->getOption<std::string>(effectName, "");
+        if (effectPath.empty() && !includePath.empty())
         {
-            Logger::err("failed to load shader file: " + pConfig->getOption<std::string>(effectName));
+            effectPath = includePath + "/" + effectName;
+        }
+
+        if (effectPath.empty() || !preprocessor.append_file(effectPath))
+        {
+            Logger::err("failed to load shader file: " + effectPath);
             Logger::err("Does the filepath exist and does it not include spaces?");
         }
 

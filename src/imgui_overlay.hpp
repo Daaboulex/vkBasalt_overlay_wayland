@@ -6,6 +6,7 @@
 #include <string>
 #include <chrono>
 #include <map>
+#include <set>
 
 #include "vulkan_include.hpp"
 #include "logical_device.hpp"
@@ -41,7 +42,8 @@ namespace vkBasalt
 
     struct OverlayState
     {
-        std::vector<std::string> effectNames;
+        std::vector<std::string> effectNames;      // Effects in current config
+        std::vector<std::string> availableEffects; // All available effects (built-in + reshade)
         std::string configPath;
         bool effectsEnabled = true;
         std::vector<EffectParameter> parameters;
@@ -66,6 +68,9 @@ namespace vkBasalt
         // Returns map of effect name -> enabled state
         const std::map<std::string, bool>& getEffectEnabledStates() const { return effectEnabledStates; }
 
+        // Returns list of effects that should be active (for reloading)
+        std::vector<std::string> getActiveEffects() const;
+
         VkCommandBuffer recordFrame(uint32_t imageIndex, VkImageView imageView, uint32_t width, uint32_t height);
 
     private:
@@ -81,6 +86,10 @@ namespace vkBasalt
         OverlayState state;
         std::vector<EffectParameter> editableParams;  // Persistent editable values
         std::map<std::string, bool> effectEnabledStates;  // Effect name -> enabled
+        std::set<std::string> selectedEffects;           // Effects user has selected to be active
+        std::set<std::string> tempSelectedEffects;       // Temporary selection while in selection mode
+        bool inSelectionMode = false;
+        size_t maxEffects = 10;
         bool applyRequested = false;
         bool autoApply = false;
         bool paramsDirty = false;  // True when params changed, waiting for debounce
