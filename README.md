@@ -1,5 +1,3 @@
-# vkBasalt
-
 ## Fork Notice
 This is a fork with an experimental ImGui overlay for in-game effect configuration. Most of this fork was written with vibe-coding. I won't even pretend to own any of this code as I am not a C++ or Vulkan dev. I'm a webdev, I do CSS and I enjoy it. My monkey brain is too small for this low level stuff. I wanted these features in vkBasalt since forever so I just asked the AI to do it for me.
 
@@ -31,6 +29,7 @@ You should then be able to press `F11` to show the overlay GUI in-game.
 you can change this keybinding in your `vkBasalt.conf` with `overlayKey = <key>`.
 
 ---
+# vkBasalt
 
 vkBasalt is a Vulkan post processing layer to enhance the visual graphics of games.
 
