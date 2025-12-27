@@ -338,6 +338,7 @@ namespace vkBasalt
         io.MouseDown[0] = mouse.leftButton;
         io.MouseDown[1] = mouse.rightButton;
         io.MouseDown[2] = mouse.middleButton;
+        io.MouseWheel = mouse.scrollDelta;
 
         // ImGui frame
         ImGui_ImplVulkan_NewFrame();

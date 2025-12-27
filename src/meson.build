@@ -49,6 +49,7 @@ vkBasalt_src = [
 ]
 
 x11_dep = dependency('x11')
+xi_dep = dependency('xi')
 
 conf_paths = configuration_data()
 conf_paths.set_quoted('SYSCONFDIR', join_paths(get_option('prefix'), get_option('sysconfdir')))
@@ -69,7 +70,7 @@ shared_library(meson.project_name().to_lower(),
     link_with: [keyboard_input_x11_lib, mouse_input_lib],
     include_directories : [vkBasalt_include_path, imgui_inc],
     cpp_args : ['-DIMGUI_IMPL_VULKAN_NO_PROTOTYPES'],
-    dependencies : [x11_dep, reshade_dep],
+    dependencies : [x11_dep, xi_dep, reshade_dep],
     gnu_symbol_visibility: 'hidden',
     install : true,
     install_dir : lib_dir)
