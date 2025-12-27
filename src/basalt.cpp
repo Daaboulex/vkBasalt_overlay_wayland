@@ -934,7 +934,10 @@ namespace vkBasalt
             if (pLogicalSwapchain->imguiOverlay)
             {
                 OverlayState overlayState;
-                overlayState.effectNames = pConfig->getOption<std::vector<std::string>>("effects", {"cas"});
+                // Use actual active effects from overlay, not just config effects
+                overlayState.effectNames = pLogicalSwapchain->imguiOverlay->getActiveEffects();
+                if (overlayState.effectNames.empty())
+                    overlayState.effectNames = pConfig->getOption<std::vector<std::string>>("effects", {"cas"});
                 overlayState.availableEffects = getAvailableEffects(pConfig.get());
                 overlayState.configPath = pConfig->getConfigFilePath();
                 overlayState.effectsEnabled = presentEffect;
