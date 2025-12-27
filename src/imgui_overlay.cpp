@@ -145,7 +145,7 @@ namespace vkBasalt
         if (selectedEffects.empty())
         {
             for (const auto& effectName : state.effectNames)
-                selectedEffects.insert(effectName);
+                selectedEffects.push_back(effectName);
         }
 
         // Initialize enabled state for selected effects (default to enabled)
@@ -371,9 +371,14 @@ namespace vkBasalt
             std::sort(builtinEffects.begin(), builtinEffects.end());
             std::sort(reshadeEffects.begin(), reshadeEffects.end());
 
+            // Helper to check if effect is in vector
+            auto containsEffect = [](const std::vector<std::string>& vec, const std::string& name) {
+                return std::find(vec.begin(), vec.end(), name) != vec.end();
+            };
+
             // Helper lambda to render effect checkbox
             auto renderEffectCheckbox = [&](const std::string& effectName) {
-                bool isSelected = tempSelectedEffects.count(effectName) > 0;
+                bool isSelected = containsEffect(tempSelectedEffects, effectName);
 
                 // Disable checkbox if at max and not selected
                 bool atLimit = selectedCount >= maxEffects && !isSelected;
@@ -383,9 +388,9 @@ namespace vkBasalt
                 if (ImGui::Checkbox(effectName.c_str(), &isSelected))
                 {
                     if (isSelected)
-                        tempSelectedEffects.insert(effectName);
+                        tempSelectedEffects.push_back(effectName);
                     else
-                        tempSelectedEffects.erase(effectName);
+                        tempSelectedEffects.erase(std::find(tempSelectedEffects.begin(), tempSelectedEffects.end(), effectName));
                 }
 
                 if (atLimit)
@@ -460,11 +465,43 @@ namespace vkBasalt
 
             // Show selected effects with their parameters
             bool changedThisFrame = false;
-            int effectIndex = 0;
-            for (const auto& effectName : selectedEffects)
+            float itemHeight = ImGui::GetFrameHeightWithSpacing();
+            float listStartY = ImGui::GetCursorScreenPos().y;
+
+            // Reset drag target each frame
+            dragTargetIndex = -1;
+
+            for (size_t i = 0; i < selectedEffects.size(); i++)
             {
-                effectIndex++;
-                ImGui::PushID(effectIndex);
+                const std::string& effectName = selectedEffects[i];
+                ImGui::PushID(static_cast<int>(i));
+
+                // Highlight drop target
+                bool isDropTarget = isDragging && dragSourceIndex != static_cast<int>(i);
+                if (isDropTarget)
+                {
+                    ImVec2 rowMin = ImGui::GetCursorScreenPos();
+                    ImVec2 rowMax = ImVec2(rowMin.x + ImGui::GetContentRegionAvail().x, rowMin.y + itemHeight);
+                    if (ImGui::IsMouseHoveringRect(rowMin, rowMax))
+                    {
+                        dragTargetIndex = static_cast<int>(i);
+                        ImGui::GetWindowDrawList()->AddRectFilled(rowMin, rowMax, IM_COL32(100, 100, 255, 50));
+                    }
+                }
+
+                // Drag handle for reordering
+                ImGui::Button("::");
+                if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0))
+                {
+                    if (!isDragging)
+                    {
+                        isDragging = true;
+                        dragSourceIndex = static_cast<int>(i);
+                    }
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+                ImGui::SameLine();
 
                 // Checkbox to enable/disable effect
                 bool& effectEnabled = effectEnabledStates[effectName];
@@ -543,6 +580,31 @@ namespace vkBasalt
                         paramIndex++;
                     }
                     ImGui::TreePop();
+                }
+            }
+
+            // Handle drag end and reorder
+            if (isDragging)
+            {
+                // Show floating tooltip with dragged effect name
+                ImGui::SetTooltip("Moving: %s", selectedEffects[dragSourceIndex].c_str());
+
+                // Check if mouse released
+                if (!ImGui::IsMouseDown(0))
+                {
+                    if (dragTargetIndex >= 0 && dragTargetIndex != dragSourceIndex)
+                    {
+                        // Move the effect from source to target
+                        std::string moving = selectedEffects[dragSourceIndex];
+                        selectedEffects.erase(selectedEffects.begin() + dragSourceIndex);
+                        selectedEffects.insert(selectedEffects.begin() + dragTargetIndex, moving);
+                        changedThisFrame = true;
+                        paramsDirty = true;
+                        lastChangeTime = std::chrono::steady_clock::now();
+                    }
+                    isDragging = false;
+                    dragSourceIndex = -1;
+                    dragTargetIndex = -1;
                 }
             }
 

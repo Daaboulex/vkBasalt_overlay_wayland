@@ -86,10 +86,13 @@ namespace vkBasalt
         OverlayState state;
         std::vector<EffectParameter> editableParams;  // Persistent editable values
         std::map<std::string, bool> effectEnabledStates;  // Effect name -> enabled
-        std::set<std::string> selectedEffects;           // Effects user has selected to be active
-        std::set<std::string> tempSelectedEffects;       // Temporary selection while in selection mode
+        std::vector<std::string> selectedEffects;           // Effects user has selected (ordered)
+        std::vector<std::string> tempSelectedEffects;       // Temporary selection while in selection mode
         bool inSelectionMode = false;
         size_t maxEffects = 10;
+        int dragSourceIndex = -1;   // Index of effect being dragged, -1 if none
+        int dragTargetIndex = -1;   // Index where effect will be dropped
+        bool isDragging = false;    // True while actively dragging
         bool applyRequested = false;
         bool autoApply = false;
         bool paramsDirty = false;  // True when params changed, waiting for debounce
