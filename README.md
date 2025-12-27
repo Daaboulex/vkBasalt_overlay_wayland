@@ -3,8 +3,8 @@ This is a fork with an experimental ImGui overlay for in-game effect configurati
 
 ### How to try out the overlay GUI branch (without replacing system vkBasalt)
 ```
-git clone https://github.com/Boux/vkBasalt.git
-cd vkBasalt
+git clone https://github.com/Boux/vkBasalt_overlay.git
+cd vkBasalt_overlay
 git checkout feature/imgui
 meson setup --buildtype=debug ./build
 ninja -C ./build
@@ -13,17 +13,17 @@ If it fails to build, you are probably missing dependencies.
 
 Edit `./build/config/vkBasalt.json` and set `library_path` to the absolute path of the built library:
 ```json
-"library_path": "/path/to/this/repo/build/src/libvkbasalt.so"
+"library_path": "/path/to/vkBasalt_overlay/build/src/libvkbasalt.so"
 ```
 
 Test with vkgears to see if it works
 ```
-VK_ADD_IMPLICIT_LAYER_PATH=/path/to/this/repo/build/config ENABLE_VKBASALT=1 vkgears
+VK_ADD_IMPLICIT_LAYER_PATH=/path/to/vkBasalt_overlay/build/config ENABLE_VKBASALT=1 vkgears
 ```
 
 Steam game launch options (I have only tested with Tunic as of now)
 ```
-VK_ADD_IMPLICIT_LAYER_PATH=/path/to/this/repo/build/config ENABLE_VKBASALT=1 %command%
+VK_ADD_IMPLICIT_LAYER_PATH=/path/to/vkBasalt_overlay/build/config ENABLE_VKBASALT=1 %command%
 ```
 
 You should then be able to press `F11` to show the overlay GUI in-game.
