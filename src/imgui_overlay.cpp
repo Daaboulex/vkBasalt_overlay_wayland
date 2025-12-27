@@ -140,6 +140,13 @@ namespace vkBasalt
     {
         state = newState;
 
+        // Initialize enabled state for new effects (default to enabled)
+        for (const auto& effectName : state.effectNames)
+        {
+            if (effectEnabledStates.find(effectName) == effectEnabledStates.end())
+                effectEnabledStates[effectName] = true;
+        }
+
         // Sync editable params with new state
         // If params changed (different effect list), reset editableParams
         if (editableParams.size() != state.parameters.size())
@@ -320,89 +327,93 @@ namespace vkBasalt
         ImGui::Text("Effects %s (Home to toggle)", state.effectsEnabled ? "ON" : "OFF");
         ImGui::Separator();
 
-        // Group parameters by effect using index for unique IDs
-        std::string currentEffect;
-        int effectIndex = 0;
-        bool treeOpen = false;
-        int paramIndex = 0;
+        // Show all effects with their parameters
         bool changedThisFrame = false;
-        for (auto& param : editableParams)
+        int effectIndex = 0;
+        for (const auto& effectName : state.effectNames)
         {
-            if (param.effectName != currentEffect)
+            effectIndex++;
+            ImGui::PushID(effectIndex);
+
+            // Checkbox to enable/disable effect
+            bool& effectEnabled = effectEnabledStates[effectName];
+            if (ImGui::Checkbox("##enabled", &effectEnabled))
             {
-                if (treeOpen)
-                    ImGui::TreePop();
-                currentEffect = param.effectName;
-                effectIndex++;
-                ImGui::PushID(effectIndex);
-                treeOpen = ImGui::TreeNode("effect", "%s", currentEffect.c_str());
-                ImGui::PopID();
-                if (!treeOpen)
-                {
-                    paramIndex++;
-                    continue;
-                }
+                changedThisFrame = true;
+                paramsDirty = true;
+                lastChangeTime = std::chrono::steady_clock::now();
             }
+            ImGui::SameLine();
+
+            bool treeOpen = ImGui::TreeNode("effect", "%s", effectName.c_str());
+            ImGui::PopID();
 
             if (treeOpen)
             {
-                ImGui::PushID(paramIndex);
-                bool changed = false;
-                switch (param.type)
+                // Find and show parameters for this effect
+                int paramIndex = 0;
+                for (auto& param : editableParams)
                 {
-                case ParamType::Float:
-                    if (ImGui::SliderFloat(param.label.c_str(), &param.valueFloat, param.minFloat, param.maxFloat))
+                    if (param.effectName != effectName)
+                        continue;
+
+                    ImGui::PushID(paramIndex);
+                    bool changed = false;
+                    switch (param.type)
                     {
-                        // Snap to step if specified
-                        if (param.step > 0.0f)
-                            param.valueFloat = std::round(param.valueFloat / param.step) * param.step;
-                        changed = true;
-                    }
-                    break;
-                case ParamType::Int:
-                    // Check for combo box (ui_type="combo" or has items)
-                    if (!param.items.empty())
-                    {
-                        // Build items string for Combo (null-separated, double-null terminated)
-                        std::string itemsStr;
-                        for (const auto& item : param.items)
-                            itemsStr += item + '\0';
-                        itemsStr += '\0';
-                        if (ImGui::Combo(param.label.c_str(), &param.valueInt, itemsStr.c_str()))
-                            changed = true;
-                    }
-                    else
-                    {
-                        if (ImGui::SliderInt(param.label.c_str(), &param.valueInt, param.minInt, param.maxInt))
+                    case ParamType::Float:
+                        if (ImGui::SliderFloat(param.label.c_str(), &param.valueFloat, param.minFloat, param.maxFloat))
                         {
                             // Snap to step if specified
                             if (param.step > 0.0f)
-                            {
-                                int step = (int)param.step;
-                                if (step > 0)
-                                    param.valueInt = (param.valueInt / step) * step;
-                            }
+                                param.valueFloat = std::round(param.valueFloat / param.step) * param.step;
                             changed = true;
                         }
+                        break;
+                    case ParamType::Int:
+                        // Check for combo box (ui_type="combo" or has items)
+                        if (!param.items.empty())
+                        {
+                            // Build items string for Combo (null-separated, double-null terminated)
+                            std::string itemsStr;
+                            for (const auto& item : param.items)
+                                itemsStr += item + '\0';
+                            itemsStr += '\0';
+                            if (ImGui::Combo(param.label.c_str(), &param.valueInt, itemsStr.c_str()))
+                                changed = true;
+                        }
+                        else
+                        {
+                            if (ImGui::SliderInt(param.label.c_str(), &param.valueInt, param.minInt, param.maxInt))
+                            {
+                                // Snap to step if specified
+                                if (param.step > 0.0f)
+                                {
+                                    int step = (int)param.step;
+                                    if (step > 0)
+                                        param.valueInt = (param.valueInt / step) * step;
+                                }
+                                changed = true;
+                            }
+                        }
+                        break;
+                    case ParamType::Bool:
+                        if (ImGui::Checkbox(param.label.c_str(), &param.valueBool))
+                            changed = true;
+                        break;
                     }
-                    break;
-                case ParamType::Bool:
-                    if (ImGui::Checkbox(param.label.c_str(), &param.valueBool))
-                        changed = true;
-                    break;
+                    if (changed)
+                    {
+                        paramsDirty = true;
+                        changedThisFrame = true;
+                        lastChangeTime = std::chrono::steady_clock::now();
+                    }
+                    ImGui::PopID();
+                    paramIndex++;
                 }
-                if (changed)
-                {
-                    paramsDirty = true;
-                    changedThisFrame = true;
-                    lastChangeTime = std::chrono::steady_clock::now();
-                }
-                ImGui::PopID();
+                ImGui::TreePop();
             }
-            paramIndex++;
         }
-        if (treeOpen)
-            ImGui::TreePop();
 
         ImGui::Separator();
         ImGui::Checkbox("Apply automatically", &autoApply);

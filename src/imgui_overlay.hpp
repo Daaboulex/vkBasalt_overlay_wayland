@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <chrono>
+#include <map>
 
 #include "vulkan_include.hpp"
 #include "logical_device.hpp"
@@ -62,6 +63,9 @@ namespace vkBasalt
         bool hasModifiedParams() const { return applyRequested; }
         void clearApplyRequest() { applyRequested = false; }
 
+        // Returns map of effect name -> enabled state
+        const std::map<std::string, bool>& getEffectEnabledStates() const { return effectEnabledStates; }
+
         VkCommandBuffer recordFrame(uint32_t imageIndex, VkImageView imageView, uint32_t width, uint32_t height);
 
     private:
@@ -76,6 +80,7 @@ namespace vkBasalt
         uint32_t imageCount = 0;
         OverlayState state;
         std::vector<EffectParameter> editableParams;  // Persistent editable values
+        std::map<std::string, bool> effectEnabledStates;  // Effect name -> enabled
         bool applyRequested = false;
         bool autoApply = false;
         bool paramsDirty = false;  // True when params changed, waiting for debounce

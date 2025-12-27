@@ -76,7 +76,8 @@ namespace vkBasalt
     }
 
     // Helper function to reload effects for a swapchain (for hot-reload)
-    void reloadEffectsForSwapchain(LogicalSwapchain* pLogicalSwapchain, Config* pConfig)
+    void reloadEffectsForSwapchain(LogicalSwapchain* pLogicalSwapchain, Config* pConfig,
+                                   const std::map<std::string, bool>& effectEnabledStates = {})
     {
         LogicalDevice* pLogicalDevice = pLogicalSwapchain->pLogicalDevice;
 
@@ -116,6 +117,17 @@ namespace vkBasalt
             {
                 secondImages = std::vector<VkImage>(pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount * (i + 1),
                                                     pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount * (i + 2));
+            }
+
+            // Check if effect is disabled - if so, use TransferEffect to pass through
+            auto enabledIt = effectEnabledStates.find(effectStrings[i]);
+            bool effectEnabled = (enabledIt == effectEnabledStates.end()) || enabledIt->second;
+            if (!effectEnabled)
+            {
+                Logger::debug("effect disabled, using pass-through: " + effectStrings[i]);
+                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
+                    new TransferEffect(pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
+                continue;
             }
 
             if (effectStrings[i] == std::string("fxaa"))
@@ -765,6 +777,7 @@ namespace vkBasalt
         }
 
         // Check for Apply button press in overlay
+        std::map<std::string, bool> effectEnabledStates;
         for (auto& swapchainPair : swapchainMap)
         {
             if (swapchainPair.second->imguiOverlay && swapchainPair.second->imguiOverlay->hasModifiedParams())
@@ -788,6 +801,7 @@ namespace vkBasalt
                     }
                     pConfig->setOverride(param.name, valueStr);
                 }
+                effectEnabledStates = swapchainPair.second->imguiOverlay->getEffectEnabledStates();
                 swapchainPair.second->imguiOverlay->clearApplyRequest();
                 shouldReload = true;
                 break;  // Only process once
@@ -805,7 +819,7 @@ namespace vkBasalt
                 LogicalSwapchain* pLogicalSwapchain = swapchainPair.second.get();
                 if (pLogicalSwapchain->fakeImages.size() > 0)
                 {
-                    reloadEffectsForSwapchain(pLogicalSwapchain, pConfig.get());
+                    reloadEffectsForSwapchain(pLogicalSwapchain, pConfig.get(), effectEnabledStates);
                 }
             }
         }
