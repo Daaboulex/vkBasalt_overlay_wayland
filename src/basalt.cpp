@@ -76,12 +76,32 @@ namespace vkBasalt
         return *(void**) inst;
     }
 
-    // Helper function to get available effects separated by source
+    // Cached available effects data (to avoid re-parsing config every frame)
+    struct CachedEffectsData
+    {
+        std::vector<std::string> currentConfigEffects;
+        std::vector<std::string> defaultConfigEffects;
+        std::map<std::string, std::string> effectPaths;
+        std::string configPath;
+        bool initialized = false;
+    };
+    CachedEffectsData cachedEffects;
+
+    // Helper function to get available effects separated by source (uses cache)
     void getAvailableEffects(Config* pConfig,
                              std::vector<std::string>& currentConfigEffects,
                              std::vector<std::string>& defaultConfigEffects,
                              std::map<std::string, std::string>& effectPaths)
     {
+        // Use cache if available and config hasn't changed
+        if (cachedEffects.initialized && cachedEffects.configPath == pConfig->getConfigFilePath())
+        {
+            currentConfigEffects = cachedEffects.currentConfigEffects;
+            defaultConfigEffects = cachedEffects.defaultConfigEffects;
+            effectPaths = cachedEffects.effectPaths;
+            return;
+        }
+
         currentConfigEffects.clear();
         defaultConfigEffects.clear();
         effectPaths.clear();
@@ -109,6 +129,13 @@ namespace vkBasalt
                 }
             }
         }
+
+        // Update cache
+        cachedEffects.currentConfigEffects = currentConfigEffects;
+        cachedEffects.defaultConfigEffects = defaultConfigEffects;
+        cachedEffects.effectPaths = effectPaths;
+        cachedEffects.configPath = pConfig->getConfigFilePath();
+        cachedEffects.initialized = true;
     }
 
     // Helper function to reload effects for a swapchain (for hot-reload)
@@ -876,6 +903,7 @@ namespace vkBasalt
         {
             Logger::info("hot-reloading config and effects...");
             pConfig->reload();
+            cachedEffects.initialized = false;  // Invalidate cache
 
             // Reload effects for all swapchains
             for (auto& swapchainPair : swapchainMap)
