@@ -227,6 +227,18 @@ namespace vkBasalt
         return activeEffects;
     }
 
+    void ImGuiOverlay::setSelectedEffects(const std::vector<std::string>& effects)
+    {
+        selectedEffects = effects;
+        // Initialize enabled states for new effects
+        for (const auto& effectName : selectedEffects)
+        {
+            if (effectEnabledStates.find(effectName) == effectEnabledStates.end())
+                effectEnabledStates[effectName] = true;
+        }
+        saveToPersistentState();
+    }
+
     void ImGuiOverlay::initVulkanBackend(VkFormat swapchainFormat, uint32_t imageCount)
     {
         // Load Vulkan functions for ImGui using vkBasalt's dispatch tables
@@ -482,11 +494,118 @@ namespace vkBasalt
                 inSelectionMode = false;
             }
         }
+        else if (inConfigManageMode)
+        {
+            // Config management mode
+            ImGui::Text("Manage Configs");
+            ImGui::Separator();
+
+            // Refresh config list and get current default
+            configList = ConfigSerializer::listConfigs();
+            std::string currentDefault = ConfigSerializer::getDefaultConfig();
+
+            ImGui::BeginChild("ConfigList", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), false);
+            for (size_t i = 0; i < configList.size(); i++)
+            {
+                ImGui::PushID(static_cast<int>(i));
+                const std::string& cfg = configList[i];
+
+                // Selectable config name - click to load (limited width so buttons are clickable)
+                float buttonAreaWidth = 130;
+                float nameWidth = ImGui::GetWindowWidth() - buttonAreaWidth;
+                if (ImGui::Selectable(cfg.c_str(), false, 0, ImVec2(nameWidth, 0)))
+                {
+                    // Signal to basalt.cpp to load this config
+                    pendingConfigPath = ConfigSerializer::getConfigsDir() + "/" + cfg + ".conf";
+                    strncpy(saveConfigName, cfg.c_str(), sizeof(saveConfigName) - 1);
+                    applyRequested = true;
+                    inConfigManageMode = false;
+                }
+                ImGui::SameLine();
+
+                bool isDefault = (cfg == currentDefault);
+                if (isDefault)
+                    ImGui::BeginDisabled();
+                if (ImGui::SmallButton("Set Default"))
+                {
+                    ConfigSerializer::setDefaultConfig(cfg);
+                }
+                if (isDefault)
+                    ImGui::EndDisabled();
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Delete"))
+                {
+                    ConfigSerializer::deleteConfig(cfg);
+                }
+                ImGui::PopID();
+            }
+            if (configList.empty())
+            {
+                ImGui::Text("No saved configs");
+            }
+            ImGui::EndChild();
+
+            if (ImGui::Button("Back"))
+            {
+                inConfigManageMode = false;
+            }
+        }
         else
         {
             // Normal mode - show config and effect controls
-            ImGui::Text("Config: %s", state.configPath.c_str());
+
+            // Config section with title
+            ImGui::Text("Config:");
+            ImGui::SameLine();
+
+            static bool nameInitialized = false;
+            std::string currentName = state.configName;
+            if (currentName.size() > 5 && currentName.substr(currentName.size() - 5) == ".conf")
+                currentName = currentName.substr(0, currentName.size() - 5);
+            if (!nameInitialized && !currentName.empty())
+            {
+                strncpy(saveConfigName, currentName.c_str(), sizeof(saveConfigName) - 1);
+                nameInitialized = true;
+            }
+
+            ImGui::SetNextItemWidth(120);
+            ImGui::InputText("##configname", saveConfigName, sizeof(saveConfigName));
+            ImGui::SameLine();
+            if (ImGui::Button("Save"))
+            {
+                const char* nameToSave = saveConfigName[0] ? saveConfigName : currentName.c_str();
+                if (nameToSave[0] != '\0')
+                {
+                    std::vector<EffectParam> params;
+                    for (const auto& p : editableParams)
+                    {
+                        EffectParam ep;
+                        ep.effectName = p.effectName;
+                        ep.paramName = p.name;
+                        switch (p.type)
+                        {
+                        case ParamType::Float:
+                            ep.value = std::to_string(p.valueFloat);
+                            break;
+                        case ParamType::Int:
+                            ep.value = std::to_string(p.valueInt);
+                            break;
+                        case ParamType::Bool:
+                            ep.value = p.valueBool ? "true" : "false";
+                            break;
+                        }
+                        params.push_back(ep);
+                    }
+                    ConfigSerializer::saveConfig(nameToSave, selectedEffects, params);
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("..."))
+            {
+                inConfigManageMode = true;
+            }
             ImGui::Separator();
+
             ImGui::Text("Effects %s (Home to toggle)", state.effectsEnabled ? "ON" : "OFF");
             ImGui::Separator();
 
@@ -688,57 +807,6 @@ namespace vkBasalt
             // Save state when effects/params change
             if (changedThisFrame)
                 saveToPersistentState();
-
-            ImGui::Separator();
-
-            // Save Config UI
-            ImGui::Text("Save Config:");
-
-            // Initialize with current config name (without .conf extension)
-            static bool nameInitialized = false;
-            std::string currentName = state.configName;
-            if (currentName.size() > 5 && currentName.substr(currentName.size() - 5) == ".conf")
-                currentName = currentName.substr(0, currentName.size() - 5);
-            if (!nameInitialized && !currentName.empty())
-            {
-                strncpy(saveConfigName, currentName.c_str(), sizeof(saveConfigName) - 1);
-                nameInitialized = true;
-            }
-
-            // Text input for config name
-            ImGui::SetNextItemWidth(150);
-            ImGui::InputText("##configname", saveConfigName, sizeof(saveConfigName));
-
-            ImGui::SameLine();
-            if (ImGui::Button("Save"))
-            {
-                const char* nameToSave = saveConfigName[0] ? saveConfigName : currentName.c_str();
-                if (nameToSave[0] != '\0')
-                {
-                    // Collect params from editableParams
-                    std::vector<EffectParam> params;
-                    for (const auto& p : editableParams)
-                    {
-                        EffectParam ep;
-                        ep.effectName = p.effectName;
-                        ep.paramName = p.name;
-                        switch (p.type)
-                        {
-                        case ParamType::Float:
-                            ep.value = std::to_string(p.valueFloat);
-                            break;
-                        case ParamType::Int:
-                            ep.value = std::to_string(p.valueInt);
-                            break;
-                        case ParamType::Bool:
-                            ep.value = p.valueBool ? "true" : "false";
-                            break;
-                        }
-                        params.push_back(ep);
-                    }
-                    ConfigSerializer::saveConfig(nameToSave, selectedEffects, params);
-                }
-            }
         }
 
         ImGui::End();

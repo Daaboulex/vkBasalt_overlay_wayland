@@ -79,11 +79,19 @@ namespace vkBasalt
         bool hasModifiedParams() const { return applyRequested; }
         void clearApplyRequest() { applyRequested = false; }
 
+        // Config switching
+        bool hasPendingConfig() const { return !pendingConfigPath.empty(); }
+        std::string getPendingConfigPath() const { return pendingConfigPath; }
+        void clearPendingConfig() { pendingConfigPath.clear(); }
+
         // Returns map of effect name -> enabled state
         const std::map<std::string, bool>& getEffectEnabledStates() const { return effectEnabledStates; }
 
         // Returns list of effects that should be active (for reloading)
         std::vector<std::string> getActiveEffects() const;
+
+        // Set effects list (when loading a different config)
+        void setSelectedEffects(const std::vector<std::string>& effects);
 
         VkCommandBuffer recordFrame(uint32_t imageIndex, VkImageView imageView, uint32_t width, uint32_t height);
 
@@ -105,6 +113,8 @@ namespace vkBasalt
         std::vector<std::string> selectedEffects;           // Effects user has selected (ordered)
         std::vector<std::string> tempSelectedEffects;       // Temporary selection while in selection mode
         bool inSelectionMode = false;
+        bool inConfigManageMode = false;
+        std::vector<std::string> configList;
         size_t maxEffects = 10;
         int dragSourceIndex = -1;   // Index of effect being dragged, -1 if none
         int dragTargetIndex = -1;   // Index where effect will be dropped
@@ -117,6 +127,7 @@ namespace vkBasalt
         bool initialized = false;
         bool backendInitialized = false;
         char saveConfigName[64] = "";
+        std::string pendingConfigPath;
     };
 
 } // namespace vkBasalt

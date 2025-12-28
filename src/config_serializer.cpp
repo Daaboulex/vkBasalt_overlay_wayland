@@ -3,6 +3,7 @@
 
 #include <fstream>
 #include <cstdlib>
+#include <cstdio>
 #include <sys/stat.h>
 #include <dirent.h>
 #include <algorithm>
@@ -90,6 +91,64 @@ namespace vkBasalt
         file.close();
         Logger::info("Saved config to: " + filePath);
         return true;
+    }
+
+    bool ConfigSerializer::deleteConfig(const std::string& configName)
+    {
+        std::string configsDir = getConfigsDir();
+        if (configsDir.empty())
+            return false;
+
+        std::string filePath = configsDir + "/" + configName + ".conf";
+        if (std::remove(filePath.c_str()) == 0)
+        {
+            Logger::info("Deleted config: " + filePath);
+            return true;
+        }
+        Logger::err("Failed to delete config: " + filePath);
+        return false;
+    }
+
+    std::string ConfigSerializer::getDefaultConfigPath()
+    {
+        const char* home = std::getenv("HOME");
+        if (home)
+            return std::string(home) + "/.config/vkBasalt/default_config";
+        return "";
+    }
+
+    bool ConfigSerializer::setDefaultConfig(const std::string& configName)
+    {
+        std::string path = getDefaultConfigPath();
+        if (path.empty())
+            return false;
+
+        std::ofstream file(path);
+        if (!file.is_open())
+        {
+            Logger::err("Could not write default config file: " + path);
+            return false;
+        }
+
+        file << configName;
+        file.close();
+        Logger::info("Set default config: " + configName);
+        return true;
+    }
+
+    std::string ConfigSerializer::getDefaultConfig()
+    {
+        std::string path = getDefaultConfigPath();
+        if (path.empty())
+            return "";
+
+        std::ifstream file(path);
+        if (!file.is_open())
+            return "";
+
+        std::string configName;
+        std::getline(file, configName);
+        return configName;
     }
 
 } // namespace vkBasalt

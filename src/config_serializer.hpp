@@ -29,6 +29,14 @@ namespace vkBasalt
 
         // List available config files
         static std::vector<std::string> listConfigs();
+
+        // Delete a config file
+        static bool deleteConfig(const std::string& configName);
+
+        // Default config management
+        static bool setDefaultConfig(const std::string& configName);
+        static std::string getDefaultConfig();
+        static std::string getDefaultConfigPath();
     };
 
 } // namespace vkBasalt

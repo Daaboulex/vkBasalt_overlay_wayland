@@ -26,6 +26,7 @@
 #include "command_buffer.hpp"
 #include "buffer.hpp"
 #include "config.hpp"
+#include "config_serializer.hpp"
 #include "fake_swapchain.hpp"
 #include "renderpass.hpp"
 #include "format.hpp"
@@ -53,7 +54,8 @@
 
 namespace vkBasalt
 {
-    std::shared_ptr<Config> pConfig = nullptr;
+    std::shared_ptr<Config> pBaseConfig = nullptr;  // Always vkBasalt.conf
+    std::shared_ptr<Config> pConfig = nullptr;      // Current config (base + overlay)
 
     Logger Logger::s_instance;
 
@@ -88,6 +90,16 @@ namespace vkBasalt
     };
     CachedEffectsData cachedEffects;
 
+    // Cached parameters (to avoid re-parsing config every frame)
+    struct CachedParametersData
+    {
+        std::vector<EffectParameter> parameters;
+        std::vector<std::string> effectNames;  // Effects when params were collected
+        std::string configPath;
+        bool dirty = true;  // Set to true to force recollection
+    };
+    CachedParametersData cachedParams;
+
     // Debounce for resize - delays effect reload until resize stops
     struct ResizeDebounceState
     {
@@ -96,6 +108,62 @@ namespace vkBasalt
     };
     ResizeDebounceState resizeDebounce;
     constexpr int64_t RESIZE_DEBOUNCE_MS = 200;
+
+    // Initialize configs: base (vkBasalt.conf) + current (from env/default_config)
+    void initConfigs()
+    {
+        if (pBaseConfig != nullptr)
+            return;  // Already initialized
+
+        // Load base config (vkBasalt.conf) - used for paths, effect definitions
+        pBaseConfig = std::make_shared<Config>();
+
+        // Determine current config path
+        std::string currentConfigPath;
+
+        // 1. Check env var
+        const char* envConfig = std::getenv("VKBASALT_CONFIG_FILE");
+        if (envConfig && *envConfig)
+        {
+            currentConfigPath = envConfig;
+        }
+        // 2. Check default_config file
+        else
+        {
+            std::string defaultName = ConfigSerializer::getDefaultConfig();
+            if (!defaultName.empty())
+                currentConfigPath = ConfigSerializer::getConfigsDir() + "/" + defaultName + ".conf";
+        }
+
+        // Load current config if specified, otherwise use base
+        if (!currentConfigPath.empty())
+        {
+            std::ifstream file(currentConfigPath);
+            if (file.good())
+            {
+                pConfig = std::make_shared<Config>(currentConfigPath);
+                pConfig->setFallback(pBaseConfig.get());
+                Logger::info("current config: " + currentConfigPath);
+            }
+            else
+            {
+                pConfig = pBaseConfig;  // Fall back to base
+            }
+        }
+        else
+        {
+            pConfig = pBaseConfig;  // No current config, use base
+        }
+    }
+
+    // Switch to a new config (called from overlay)
+    void switchConfig(const std::string& configPath)
+    {
+        pConfig = std::make_shared<Config>(configPath);
+        pConfig->setFallback(pBaseConfig.get());
+        cachedParams.dirty = true;
+        Logger::info("switched to config: " + configPath);
+    }
 
     // Helper function to get available effects separated by source (uses cache)
     void getAvailableEffects(Config* pConfig,
@@ -124,11 +192,10 @@ namespace vkBasalt
             effectPaths[name] = path;
         }
 
-        // Also load effect definitions from the default config file (ignoring VKBASALT_CONFIG_FILE env var)
-        Config defaultConfig(true);
-        if (defaultConfig.getConfigFilePath() != pConfig->getConfigFilePath())
+        // Also load effect definitions from the base config file (vkBasalt.conf)
+        if (pBaseConfig && pBaseConfig->getConfigFilePath() != pConfig->getConfigFilePath())
         {
-            auto defaultEffects = defaultConfig.getEffectDefinitions();
+            auto defaultEffects = pBaseConfig->getEffectDefinitions();
             for (const auto& [name, path] : defaultEffects)
             {
                 // Only add if not already in current config
@@ -938,8 +1005,23 @@ namespace vkBasalt
         if (shouldReload)
         {
             Logger::info("hot-reloading config and effects...");
-            pConfig->reload();
+
+            // Check if overlay wants to load a different config
+            if (pLogicalDevice->imguiOverlay && pLogicalDevice->imguiOverlay->hasPendingConfig())
+            {
+                std::string newConfigPath = pLogicalDevice->imguiOverlay->getPendingConfigPath();
+                switchConfig(newConfigPath);
+                // Update overlay with effects from the new config
+                std::vector<std::string> newEffects = pConfig->getOption<std::vector<std::string>>("effects", {});
+                pLogicalDevice->imguiOverlay->setSelectedEffects(newEffects);
+                pLogicalDevice->imguiOverlay->clearPendingConfig();
+            }
+            else
+            {
+                pConfig->reload();
+            }
             cachedEffects.initialized = false;  // Invalidate cache
+            cachedParams.dirty = true;          // Invalidate params cache
 
             // Get active effects from overlay (at device level)
             std::vector<std::string> activeEffects;
@@ -1014,7 +1096,7 @@ namespace vkBasalt
             VkSemaphore finalSemaphore = pLogicalSwapchain->semaphores[index];
 
             // Update overlay state and render if visible (overlay is at device level)
-            if (pLogicalDevice->imguiOverlay)
+            if (pLogicalDevice->imguiOverlay && pLogicalDevice->imguiOverlay->isVisible())
             {
                 OverlayState overlayState;
                 // Use actual active effects from overlay, not just config effects
@@ -1028,9 +1110,18 @@ namespace vkBasalt
                 overlayState.configName = std::filesystem::path(overlayState.configPath).filename().string();
                 overlayState.effectsEnabled = presentEffect;
 
-                // Collect parameters from all effects
-                overlayState.parameters = collectEffectParameters(
-                    pConfig, overlayState.effectNames, pLogicalSwapchain->effects);
+                // Only recollect parameters when dirty or effects changed
+                bool effectsChanged = cachedParams.effectNames != overlayState.effectNames;
+                bool configChanged = cachedParams.configPath != overlayState.configPath;
+                if (cachedParams.dirty || effectsChanged || configChanged)
+                {
+                    cachedParams.parameters = collectEffectParameters(
+                        pConfig, overlayState.effectNames, pLogicalSwapchain->effects);
+                    cachedParams.effectNames = overlayState.effectNames;
+                    cachedParams.configPath = overlayState.configPath;
+                    cachedParams.dirty = false;
+                }
+                overlayState.parameters = cachedParams.parameters;
 
                 pLogicalDevice->imguiOverlay->updateState(overlayState);
             }
@@ -1338,10 +1429,7 @@ extern "C"
 
     VK_BASALT_EXPORT PFN_vkVoidFunction VKAPI_CALL vkBasalt_GetDeviceProcAddr(VkDevice device, const char* pName)
     {
-        if (vkBasalt::pConfig == nullptr)
-        {
-            vkBasalt::pConfig = std::shared_ptr<vkBasalt::Config>(new vkBasalt::Config());
-        }
+        vkBasalt::initConfigs();
 
         INTERCEPT_CALLS
 
@@ -1353,10 +1441,7 @@ extern "C"
 
     VK_BASALT_EXPORT PFN_vkVoidFunction VKAPI_CALL vkBasalt_GetInstanceProcAddr(VkInstance instance, const char* pName)
     {
-        if (vkBasalt::pConfig == nullptr)
-        {
-            vkBasalt::pConfig = std::shared_ptr<vkBasalt::Config>(new vkBasalt::Config());
-        }
+        vkBasalt::initConfigs();
 
         INTERCEPT_CALLS
 

@@ -7,3 +7,5 @@
 - When a config is serialized and saved, it should only save the uniform parameter values that differ from the default value from the effect file.
 - If there are parameters to save for multiple different effects, the blocks of effect parameters should be separated by newlines and a comment for each block.
 - The config serializer logic should be in its own file as to not bloat the rest of the codebase.
+
+- The config name should be at the top. Right now it just displays the config path, it should be a text input where you can give it a name, and a save button next to it. next to the save button there should be a "..." button that opens a menu (or switches to a view) where you can see the list of all the available configs and an option to set them as default or to delete them.
