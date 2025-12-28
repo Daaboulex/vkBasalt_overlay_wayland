@@ -415,26 +415,32 @@ namespace vkBasalt
             float footerHeight = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y;
             ImGui::BeginChild("SelectionList", ImVec2(0, -footerHeight), false);
 
-            // Category 1: Built-in effects
+            // Sort effects for each category
+            std::vector<std::string> sortedCurrentConfig = state.currentConfigEffects;
+            std::vector<std::string> sortedDefaultConfig = state.defaultConfigEffects;
+            std::sort(sortedCurrentConfig.begin(), sortedCurrentConfig.end());
+            std::sort(sortedDefaultConfig.begin(), sortedDefaultConfig.end());
+
+            // Category 1: Built-in effects (already sorted in definition)
             ImGui::Text("Built-in:");
             for (const auto& effectName : builtinEffects)
                 renderEffectCheckbox(effectName);
 
             // Category 2: ReShade effects from current config
-            if (!state.currentConfigEffects.empty())
+            if (!sortedCurrentConfig.empty())
             {
                 ImGui::Separator();
                 ImGui::Text("ReShade (%s):", state.configName.c_str());
-                for (const auto& effectName : state.currentConfigEffects)
+                for (const auto& effectName : sortedCurrentConfig)
                     renderEffectCheckbox(effectName);
             }
 
             // Category 3: ReShade effects from default config (no duplicates)
-            if (!state.defaultConfigEffects.empty())
+            if (!sortedDefaultConfig.empty())
             {
                 ImGui::Separator();
                 ImGui::Text("ReShade (all):");
-                for (const auto& effectName : state.defaultConfigEffects)
+                for (const auto& effectName : sortedDefaultConfig)
                     renderEffectCheckbox(effectName);
             }
 
