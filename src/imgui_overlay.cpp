@@ -184,9 +184,17 @@ namespace vkBasalt
         {
             for (const auto& effectName : state.effectNames)
                 selectedEffects.push_back(effectName);
+
+            // Set enabled states from config's disabledEffects
+            for (const auto& effectName : selectedEffects)
+            {
+                bool isDisabled = std::find(state.disabledEffects.begin(), state.disabledEffects.end(), effectName)
+                                  != state.disabledEffects.end();
+                effectEnabledStates[effectName] = !isDisabled;
+            }
         }
 
-        // Initialize enabled state for selected effects (default to enabled)
+        // Initialize enabled state for new effects (default to enabled)
         for (const auto& effectName : selectedEffects)
         {
             if (effectEnabledStates.find(effectName) == effectEnabledStates.end())

@@ -758,6 +758,15 @@ namespace vkBasalt
         }
 
         std::vector<std::string> effectStrings = pConfig->getOption<std::vector<std::string>>("effects", {"cas"});
+        std::vector<std::string> disabledEffects = pConfig->getOption<std::vector<std::string>>("disabledEffects", {});
+
+        // Filter out disabled effects
+        effectStrings.erase(
+            std::remove_if(effectStrings.begin(), effectStrings.end(),
+                [&disabledEffects](const std::string& effect) {
+                    return std::find(disabledEffects.begin(), disabledEffects.end(), effect) != disabledEffects.end();
+                }),
+            effectStrings.end());
 
         // Allow dynamic effect loading by allocating for more effects than configured
         // maxEffects defaults to 10, allowing users to enable additional effects at runtime
@@ -1154,7 +1163,10 @@ namespace vkBasalt
                 // Use active effects for display, but collect params for ALL selected effects
                 overlayState.effectNames = pLogicalDevice->imguiOverlay->getActiveEffects();
                 if (overlayState.effectNames.empty())
+                {
                     overlayState.effectNames = pConfig->getOption<std::vector<std::string>>("effects", {"cas"});
+                    overlayState.disabledEffects = pConfig->getOption<std::vector<std::string>>("disabledEffects", {});
+                }
                 getAvailableEffects(pConfig.get(), overlayState.currentConfigEffects,
                                     overlayState.defaultConfigEffects, overlayState.effectPaths);
                 overlayState.configPath = pConfig->getConfigFilePath();
