@@ -718,20 +718,6 @@ namespace vkBasalt
                     }
                 }
 
-                // Drag handle for reordering
-                ImGui::Button("::");
-                if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0))
-                {
-                    if (!isDragging)
-                    {
-                        isDragging = true;
-                        dragSourceIndex = static_cast<int>(i);
-                    }
-                }
-                if (ImGui::IsItemHovered())
-                    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
-                ImGui::SameLine();
-
                 // Checkbox to enable/disable effect (read/write via registry)
                 bool effectEnabled = pEffectRegistry ? pEffectRegistry->isEffectEnabled(effectName) : true;
                 if (ImGui::Checkbox("##enabled", &effectEnabled))
@@ -745,6 +731,16 @@ namespace vkBasalt
                 ImGui::SameLine();
 
                 bool treeOpen = ImGui::TreeNode("effect", "%s", effectName.c_str());
+
+                // Drag from tree node header for reordering
+                if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0))
+                {
+                    if (!isDragging)
+                    {
+                        isDragging = true;
+                        dragSourceIndex = static_cast<int>(i);
+                    }
+                }
                 ImGui::PopID();
 
                 if (treeOpen)
