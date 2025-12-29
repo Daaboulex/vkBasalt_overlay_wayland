@@ -58,7 +58,7 @@ namespace vkBasalt
         std::vector<std::string> selectedEffects;
         std::map<std::string, bool> effectEnabledStates;
         std::vector<EffectParameter> editableParams;
-        bool autoApply = false;
+        bool autoApply = true;
         bool visible = false;
         bool initialized = false;  // True once user has interacted with overlay
     };
@@ -123,7 +123,7 @@ namespace vkBasalt
         int dragTargetIndex = -1;   // Index where effect will be dropped
         bool isDragging = false;    // True while actively dragging
         bool applyRequested = false;
-        bool autoApply = false;
+        bool autoApply = true;
         bool paramsDirty = false;  // True when params changed, waiting for debounce
         std::chrono::steady_clock::time_point lastChangeTime;
         bool visible = false;
