@@ -295,7 +295,7 @@ namespace vkBasalt
 
         // Use provided active effects list, or fall back to config
         std::vector<std::string> effectStrings = activeEffects.empty()
-            ? pConfig->getOption<std::vector<std::string>>("effects", {"cas"})
+            ? pConfig->getOption<std::vector<std::string>>("effects", {})
             : activeEffects;
 
         // Check if we have enough fake images for the effects
@@ -780,7 +780,7 @@ namespace vkBasalt
             pLogicalDevice->vkd.CreateImageView(pLogicalDevice->device, &viewInfo, nullptr, &pLogicalSwapchain->imageViews[i]);
         }
 
-        std::vector<std::string> effectStrings = pConfig->getOption<std::vector<std::string>>("effects", {"cas"});
+        std::vector<std::string> effectStrings = pConfig->getOption<std::vector<std::string>>("effects", {});
         std::vector<std::string> disabledEffects = pConfig->getOption<std::vector<std::string>>("disabledEffects", {});
 
         // Filter out disabled effects
@@ -1139,7 +1139,7 @@ namespace vkBasalt
                 if (pLogicalDevice->imguiOverlay)
                     activeEffects = pLogicalDevice->imguiOverlay->getActiveEffects();
                 else
-                    activeEffects = pConfig->getOption<std::vector<std::string>>("effects", {"cas"});
+                    activeEffects = pConfig->getOption<std::vector<std::string>>("effects", {});
 
                 for (auto& swapchainPair : swapchainMap)
                 {
@@ -1212,7 +1212,7 @@ namespace vkBasalt
                 overlayState.effectNames = pLogicalDevice->imguiOverlay->getActiveEffects();
                 if (overlayState.effectNames.empty())
                 {
-                    overlayState.effectNames = pConfig->getOption<std::vector<std::string>>("effects", {"cas"});
+                    overlayState.effectNames = pConfig->getOption<std::vector<std::string>>("effects", {});
                     overlayState.disabledEffects = pConfig->getOption<std::vector<std::string>>("disabledEffects", {});
                 }
                 getAvailableEffects(pConfig.get(), overlayState.currentConfigEffects,
