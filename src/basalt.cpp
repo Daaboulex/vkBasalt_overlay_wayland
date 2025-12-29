@@ -315,6 +315,16 @@ namespace vkBasalt
                     std::to_string(pLogicalSwapchain->fakeImages.size()) + ", imageCount=" + std::to_string(pLogicalSwapchain->imageCount) +
                     ", maxEffectSlots=" + std::to_string(pLogicalSwapchain->maxEffectSlots));
 
+        // If no effects, add pass-through so rendering still works
+        if (effectStrings.empty())
+        {
+            std::vector<VkImage> firstImages(pLogicalSwapchain->fakeImages.begin(),
+                                             pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount);
+            pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new TransferEffect(
+                pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent,
+                firstImages, pLogicalSwapchain->images, pConfig)));
+        }
+
         for (uint32_t i = 0; i < effectStrings.size(); i++)
         {
             Logger::info("reloading effect " + std::to_string(i) + ": " + effectStrings[i] +
