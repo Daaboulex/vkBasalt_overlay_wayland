@@ -509,7 +509,10 @@ namespace vkBasalt
         if (inSelectionMode)
         {
             // Add Effects mode - two column layout
-            ImGui::Text("Add Effects (max %zu)", maxEffects);
+            if (insertPosition >= 0)
+                ImGui::Text("Insert Effects at position %d (max %zu)", insertPosition, maxEffects);
+            else
+                ImGui::Text("Add Effects (max %zu)", maxEffects);
             ImGui::Separator();
 
             size_t currentCount = selectedEffects.size();
@@ -634,10 +637,13 @@ namespace vkBasalt
 
             if (ImGui::Button("Done"))
             {
-                // Apply pending effects
+                // Apply pending effects - insert at position or append
+                int pos = (insertPosition >= 0 && insertPosition <= static_cast<int>(selectedEffects.size()))
+                          ? insertPosition : static_cast<int>(selectedEffects.size());
                 for (const auto& [instanceName, effectType] : pendingAddEffects)
                 {
-                    selectedEffects.push_back(instanceName);
+                    selectedEffects.insert(selectedEffects.begin() + pos, instanceName);
+                    pos++;  // Insert subsequent effects after the previous one
                     if (pEffectRegistry)
                     {
                         pEffectRegistry->ensureEffect(instanceName, effectType);
@@ -650,12 +656,14 @@ namespace vkBasalt
                     saveToPersistentState();
                 }
                 pendingAddEffects.clear();
+                insertPosition = -1;
                 inSelectionMode = false;
             }
             ImGui::SameLine();
             if (ImGui::Button("Cancel"))
             {
                 pendingAddEffects.clear();
+                insertPosition = -1;
                 inSelectionMode = false;
             }
         }
@@ -760,6 +768,8 @@ namespace vkBasalt
             if (ImGui::Button("Add Effects..."))
             {
                 inSelectionMode = true;
+                insertPosition = -1;  // Append to end
+                pendingAddEffects.clear();
             }
             ImGui::Separator();
 
@@ -855,6 +865,14 @@ namespace vkBasalt
                     }
 
                     ImGui::Separator();
+
+                    // Insert effects here
+                    if (ImGui::MenuItem("Insert effects here..."))
+                    {
+                        insertPosition = static_cast<int>(i);
+                        inSelectionMode = true;
+                        pendingAddEffects.clear();
+                    }
 
                     // Remove effect
                     if (ImGui::MenuItem("Remove"))

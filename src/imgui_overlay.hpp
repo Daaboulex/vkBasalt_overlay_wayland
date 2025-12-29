@@ -131,6 +131,7 @@ namespace vkBasalt
         std::vector<std::string> selectedEffects;           // Effects user has selected (ordered)
         std::vector<std::pair<std::string, std::string>> pendingAddEffects;  // {instanceName, effectType} to add
         bool inSelectionMode = false;
+        int insertPosition = -1;  // Position to insert effects (-1 = append to end)
         bool inConfigManageMode = false;
         std::vector<std::string> configList;
         size_t maxEffects = 10;
