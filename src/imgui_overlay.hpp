@@ -42,6 +42,7 @@ namespace vkBasalt
         float step = 0.0f;                    // ui_step - increment step for sliders
         std::string uiType;                   // ui_type - "slider", "drag", "combo", etc.
         std::vector<std::string> items;       // ui_items - combo box options
+        std::string tooltip;                  // ui_tooltip - hover description
     };
 
     struct OverlayState

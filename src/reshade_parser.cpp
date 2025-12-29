@@ -154,6 +154,10 @@ namespace vkBasalt
             if (itemsIt != spec.annotations.end())
                 p.items = parseNullSeparatedString(itemsIt->value.string_data);
 
+            auto tooltipIt = findAnnotation(spec.annotations, "ui_tooltip");
+            if (tooltipIt != spec.annotations.end())
+                p.tooltip = tooltipIt->value.string_data;
+
             return p;
         }
 

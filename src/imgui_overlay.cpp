@@ -767,6 +767,8 @@ namespace vkBasalt
                                     param.valueFloat = std::round(param.valueFloat / param.step) * param.step;
                                 changed = true;
                             }
+                            if (!param.tooltip.empty() && ImGui::IsItemHovered())
+                                ImGui::SetTooltip("%s", param.tooltip.c_str());
                             break;
                         case ParamType::Int:
                             // Check for combo box (ui_type="combo" or has items)
@@ -794,10 +796,14 @@ namespace vkBasalt
                                     changed = true;
                                 }
                             }
+                            if (!param.tooltip.empty() && ImGui::IsItemHovered())
+                                ImGui::SetTooltip("%s", param.tooltip.c_str());
                             break;
                         case ParamType::Bool:
                             if (ImGui::Checkbox(param.label.c_str(), &param.valueBool))
                                 changed = true;
+                            if (!param.tooltip.empty() && ImGui::IsItemHovered())
+                                ImGui::SetTooltip("%s", param.tooltip.c_str());
                             break;
                         }
                         if (changed)
