@@ -87,7 +87,7 @@ Configuration is stored in `~/.config/vkBasalt-overlay/`. All required config fi
 | Key | Default | Description |
 |-----|---------|-------------|
 | Toggle Effects | `Home` | Enable/disable all effects |
-| Reload Config | `End` | Reload configuration file |
+| Reload Config | `F10` | Reload configuration file |
 | Toggle Overlay | `End` | Show/hide the overlay GUI |
 
 ### Settings File
@@ -104,7 +104,7 @@ maxEffects = 10
 
 # Key bindings
 toggleKey = Home
-reloadKey = End
+reloadKey = F10
 overlayKey = End
 
 # Startup behavior
