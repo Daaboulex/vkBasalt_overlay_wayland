@@ -74,7 +74,7 @@ namespace vkBasalt
         ImGuiOverlay(LogicalDevice* device, VkFormat swapchainFormat, uint32_t imageCount, OverlayPersistentState* persistentState);
         ~ImGuiOverlay();
 
-        void toggle() { visible = !visible; saveToPersistentState(); }
+        void toggle();
         bool isVisible() const { return visible; }
 
         void updateState(const OverlayState& state);
@@ -98,6 +98,10 @@ namespace vkBasalt
 
         // Trigger debounced reload (for config switch)
         void markDirty() { paramsDirty = true; lastChangeTime = std::chrono::steady_clock::now(); }
+
+        // Settings were saved (keybindings need reload)
+        bool hasSettingsSaved() const { return settingsSaved; }
+        void clearSettingsSaved() { settingsSaved = false; }
 
         // Returns list of effects that should be active (enabled, for reloading)
         std::vector<std::string> getActiveEffects() const;
@@ -133,7 +137,22 @@ namespace vkBasalt
         bool inSelectionMode = false;
         int insertPosition = -1;  // Position to insert effects (-1 = append to end)
         bool inConfigManageMode = false;
+        bool inSettingsMode = false;
         std::vector<std::string> configList;
+
+        // Settings state (editable copies of config values)
+        char settingsTexturePath[512] = "";
+        char settingsIncludePath[512] = "";
+        int settingsMaxEffects = 10;
+        bool settingsBlockInput = false;
+        char settingsToggleKey[32] = "Home";
+        char settingsReloadKey[32] = "F10";
+        char settingsOverlayKey[32] = "End";
+        bool settingsEnableOnLaunch = true;
+        bool settingsDepthCapture = false;
+        bool settingsInitialized = false;
+        int listeningForKey = 0;  // 0=none, 1=toggle, 2=reload, 3=overlay
+        bool settingsSaved = false;  // True when settings saved, cleared by basalt.cpp
         size_t maxEffects = 10;
         int dragSourceIndex = -1;   // Index of effect being dragged, -1 if none
         int dragTargetIndex = -1;   // Index where effect will be dropped

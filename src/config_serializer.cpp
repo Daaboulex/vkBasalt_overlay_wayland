@@ -14,11 +14,11 @@ namespace vkBasalt
     {
         const char* xdgConfig = std::getenv("XDG_CONFIG_HOME");
         if (xdgConfig)
-            return std::string(xdgConfig) + "/vkBasalt";
+            return std::string(xdgConfig) + "/vkBasalt-overlay";
 
         const char* home = std::getenv("HOME");
         if (home)
-            return std::string(home) + "/.config/vkBasalt";
+            return std::string(home) + "/.config/vkBasalt-overlay";
 
         return "";
     }
@@ -150,7 +150,7 @@ namespace vkBasalt
     {
         const char* home = std::getenv("HOME");
         if (home)
-            return std::string(home) + "/.config/vkBasalt/default_config";
+            return std::string(home) + "/.config/vkBasalt-overlay/default_config";
         return "";
     }
 
@@ -186,6 +186,139 @@ namespace vkBasalt
         std::string configName;
         std::getline(file, configName);
         return configName;
+    }
+
+    VkBasaltSettings ConfigSerializer::loadSettings()
+    {
+        VkBasaltSettings settings;
+        std::string configPath = getBaseConfigDir() + "/vkBasalt.conf";
+
+        std::ifstream file(configPath);
+        if (!file.is_open())
+            return settings;
+
+        std::string line;
+        while (std::getline(file, line))
+        {
+            // Skip comments and empty lines
+            size_t start = line.find_first_not_of(" \t");
+            if (start == std::string::npos || line[start] == '#')
+                continue;
+
+            size_t eq = line.find('=');
+            if (eq == std::string::npos)
+                continue;
+
+            std::string key = line.substr(0, eq);
+            std::string value = line.substr(eq + 1);
+
+            // Trim whitespace
+            auto trimWs = [](std::string& s) {
+                size_t start = s.find_first_not_of(" \t");
+                size_t end = s.find_last_not_of(" \t");
+                s = (start == std::string::npos) ? "" : s.substr(start, end - start + 1);
+            };
+            trimWs(key);
+            trimWs(value);
+
+            if (key == "reshadeTexturePath")
+                settings.reshadeTexturePath = value;
+            else if (key == "reshadeIncludePath")
+                settings.reshadeIncludePath = value;
+            else if (key == "maxEffects")
+                settings.maxEffects = std::stoi(value);
+            else if (key == "overlayBlockInput")
+                settings.overlayBlockInput = (value == "true" || value == "1");
+            else if (key == "toggleKey")
+                settings.toggleKey = value;
+            else if (key == "reloadKey")
+                settings.reloadKey = value;
+            else if (key == "overlayKey")
+                settings.overlayKey = value;
+            else if (key == "enableOnLaunch")
+                settings.enableOnLaunch = (value == "true" || value == "1");
+            else if (key == "depthCapture")
+                settings.depthCapture = (value == "on");
+        }
+
+        return settings;
+    }
+
+    bool ConfigSerializer::saveSettings(const VkBasaltSettings& settings)
+    {
+        std::string baseDir = getBaseConfigDir();
+        if (baseDir.empty())
+        {
+            Logger::err("Could not determine config directory");
+            return false;
+        }
+
+        mkdir(baseDir.c_str(), 0755);
+
+        std::string configPath = baseDir + "/vkBasalt.conf";
+        std::ofstream file(configPath);
+        if (!file.is_open())
+        {
+            Logger::err("Could not open vkBasalt.conf for writing: " + configPath);
+            return false;
+        }
+
+        // Write settings with comments
+        file << "# vkBasalt configuration\n\n";
+
+        if (!settings.reshadeTexturePath.empty())
+            file << "reshadeTexturePath = " << settings.reshadeTexturePath << "\n";
+        if (!settings.reshadeIncludePath.empty())
+            file << "reshadeIncludePath = " << settings.reshadeIncludePath << "\n";
+
+        file << "\n# Overlay settings\n";
+        file << "overlayBlockInput = " << (settings.overlayBlockInput ? "true" : "false") << "\n";
+        file << "maxEffects = " << settings.maxEffects << "\n";
+
+        file << "\n# Key bindings\n";
+        file << "toggleKey = " << settings.toggleKey << "\n";
+        file << "reloadKey = " << settings.reloadKey << "\n";
+        file << "overlayKey = " << settings.overlayKey << "\n";
+
+        file << "\n# Startup behavior\n";
+        file << "enableOnLaunch = " << (settings.enableOnLaunch ? "true" : "false") << "\n";
+        file << "depthCapture = " << (settings.depthCapture ? "on" : "off") << "\n";
+
+        file.close();
+        Logger::info("Saved settings to: " + configPath);
+        return true;
+    }
+
+    void ConfigSerializer::ensureConfigExists()
+    {
+        std::string baseDir = getBaseConfigDir();
+        if (baseDir.empty())
+            return;
+
+        // Create directory if needed
+        mkdir(baseDir.c_str(), 0755);
+
+        // Create reshade directories
+        std::string reshadeDir = baseDir + "/reshade";
+        std::string texturesDir = reshadeDir + "/Textures";
+        std::string shadersDir = reshadeDir + "/Shaders";
+        mkdir(reshadeDir.c_str(), 0755);
+        mkdir(texturesDir.c_str(), 0755);
+        mkdir(shadersDir.c_str(), 0755);
+
+        std::string configPath = baseDir + "/vkBasalt.conf";
+
+        // Check if file exists
+        struct stat st;
+        if (stat(configPath.c_str(), &st) == 0)
+            return;  // File exists
+
+        // Create with defaults
+        VkBasaltSettings defaults;
+        defaults.reshadeTexturePath = texturesDir;
+        defaults.reshadeIncludePath = shadersDir;
+        saveSettings(defaults);
+        Logger::info("Created default vkBasalt.conf");
     }
 
 } // namespace vkBasalt
