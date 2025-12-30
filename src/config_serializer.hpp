@@ -17,8 +17,6 @@ namespace vkBasalt
     // Global vkBasalt settings (from vkBasalt.conf)
     struct VkBasaltSettings
     {
-        std::string reshadeTexturePath;
-        std::string reshadeIncludePath;
         int maxEffects = 10;
         bool overlayBlockInput = false;
         std::string toggleKey = "Home";

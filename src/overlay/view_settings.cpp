@@ -11,23 +11,6 @@ namespace vkBasalt
     {
         ImGui::BeginChild("SettingsContent", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), false);
 
-        // Paths section
-        ImGui::Text("Paths");
-        ImGui::Separator();
-
-        ImGui::Text("ReShade Textures (requires restart):");
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Directory containing ReShade texture files (.png, .jpg, etc.)\nChanges require restarting the application.");
-        ImGui::SetNextItemWidth(-1);
-        ImGui::InputText("##texturePath", settingsTexturePath, sizeof(settingsTexturePath));
-
-        ImGui::Text("ReShade Shaders (requires restart):");
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Directory containing ReShade shader files (.fx, .fxh)\nChanges require restarting the application.");
-        ImGui::SetNextItemWidth(-1);
-        ImGui::InputText("##includePath", settingsIncludePath, sizeof(settingsIncludePath));
-
-        ImGui::Spacing();
         ImGui::Text("Overlay Options");
         ImGui::Separator();
 
@@ -109,8 +92,6 @@ namespace vkBasalt
         if (ImGui::Button("Save"))
         {
             VkBasaltSettings newSettings;
-            newSettings.reshadeTexturePath = settingsTexturePath;
-            newSettings.reshadeIncludePath = settingsIncludePath;
             newSettings.maxEffects = settingsMaxEffects;
             newSettings.overlayBlockInput = settingsBlockInput;
             newSettings.toggleKey = settingsToggleKey;

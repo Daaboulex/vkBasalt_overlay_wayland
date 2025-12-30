@@ -222,11 +222,7 @@ namespace vkBasalt
             trimWs(key);
             trimWs(value);
 
-            if (key == "reshadeTexturePath")
-                settings.reshadeTexturePath = value;
-            else if (key == "reshadeIncludePath")
-                settings.reshadeIncludePath = value;
-            else if (key == "maxEffects")
+            if (key == "maxEffects")
                 settings.maxEffects = std::stoi(value);
             else if (key == "overlayBlockInput")
                 settings.overlayBlockInput = (value == "true" || value == "1");
@@ -267,12 +263,7 @@ namespace vkBasalt
         // Write settings with comments
         file << "# vkBasalt configuration\n\n";
 
-        if (!settings.reshadeTexturePath.empty())
-            file << "reshadeTexturePath = " << settings.reshadeTexturePath << "\n";
-        if (!settings.reshadeIncludePath.empty())
-            file << "reshadeIncludePath = " << settings.reshadeIncludePath << "\n";
-
-        file << "\n# Overlay settings\n";
+        file << "# Overlay settings\n";
         file << "overlayBlockInput = " << (settings.overlayBlockInput ? "true" : "false") << "\n";
         file << "maxEffects = " << settings.maxEffects << "\n";
 
@@ -299,14 +290,6 @@ namespace vkBasalt
         // Create directory if needed
         mkdir(baseDir.c_str(), 0755);
 
-        // Create reshade directories
-        std::string reshadeDir = baseDir + "/reshade";
-        std::string texturesDir = reshadeDir + "/Textures";
-        std::string shadersDir = reshadeDir + "/Shaders";
-        mkdir(reshadeDir.c_str(), 0755);
-        mkdir(texturesDir.c_str(), 0755);
-        mkdir(shadersDir.c_str(), 0755);
-
         std::string configPath = baseDir + "/vkBasalt.conf";
 
         // Check if file exists
@@ -316,8 +299,6 @@ namespace vkBasalt
 
         // Create with defaults
         VkBasaltSettings defaults;
-        defaults.reshadeTexturePath = texturesDir;
-        defaults.reshadeIncludePath = shadersDir;
         saveSettings(defaults);
         Logger::info("Created default vkBasalt.conf");
     }

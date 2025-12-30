@@ -49,8 +49,6 @@ namespace vkBasalt
         if (!settingsInitialized)
         {
             VkBasaltSettings currentSettings = ConfigSerializer::loadSettings();
-            strncpy(settingsTexturePath, currentSettings.reshadeTexturePath.c_str(), sizeof(settingsTexturePath) - 1);
-            strncpy(settingsIncludePath, currentSettings.reshadeIncludePath.c_str(), sizeof(settingsIncludePath) - 1);
             settingsMaxEffects = currentSettings.maxEffects;
             settingsBlockInput = currentSettings.overlayBlockInput;
             strncpy(settingsToggleKey, currentSettings.toggleKey.c_str(), sizeof(settingsToggleKey) - 1);

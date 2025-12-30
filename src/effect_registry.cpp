@@ -5,6 +5,7 @@
 #include <set>
 
 #include "reshade_parser.hpp"
+#include "config_serializer.hpp"
 #include "logger.hpp"
 
 namespace vkBasalt
@@ -65,20 +66,20 @@ namespace vkBasalt
             if (!path.empty() && std::filesystem::exists(path))
                 return path;
 
-            // Try constructing from reshadeIncludePath
-            std::string includePath = pConfig->getOption<std::string>("reshadeIncludePath");
-            if (includePath.empty())
-                return "";
+            // Search in shader manager discovered paths
+            ShaderManagerConfig shaderMgrConfig = ConfigSerializer::loadShaderManagerConfig();
+            for (const auto& shaderPath : shaderMgrConfig.discoveredShaderPaths)
+            {
+                // Try with .fx extension
+                path = shaderPath + "/" + name + ".fx";
+                if (std::filesystem::exists(path))
+                    return path;
 
-            // Try with .fx extension
-            path = includePath + "/" + name + ".fx";
-            if (std::filesystem::exists(path))
-                return path;
-
-            // Try without extension
-            path = includePath + "/" + name;
-            if (std::filesystem::exists(path))
-                return path;
+                // Try without extension
+                path = shaderPath + "/" + name;
+                if (std::filesystem::exists(path))
+                    return path;
+            }
 
             return "";
         }

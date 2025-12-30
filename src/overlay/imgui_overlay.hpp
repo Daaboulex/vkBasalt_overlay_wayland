@@ -159,8 +159,6 @@ namespace vkBasalt
         bool shaderMgrInitialized = false;
 
         // Settings state (editable copies of config values)
-        char settingsTexturePath[512] = "";
-        char settingsIncludePath[512] = "";
         int settingsMaxEffects = 10;
         bool settingsBlockInput = false;
         char settingsToggleKey[32] = "Home";
