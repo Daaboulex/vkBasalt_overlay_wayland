@@ -519,6 +519,12 @@ namespace vkBasalt
         {
             if (ImGui::BeginTabItem("Effects"))
             {
+                // Reset to main view when switching back to Effects tab
+                if (currentTab != 0)
+                {
+                    inSelectionMode = false;
+                    inConfigManageMode = false;
+                }
                 currentTab = 0;
                 if (inSelectionMode)
                     renderAddEffectsView();
