@@ -28,6 +28,14 @@ namespace vkBasalt
         bool depthCapture = false;
     };
 
+    // Shader Manager configuration (from shader_manager.conf)
+    struct ShaderManagerConfig
+    {
+        std::vector<std::string> parentDirectories;       // User-added parent dirs to scan
+        std::vector<std::string> discoveredShaderPaths;   // Auto-discovered Shaders/ dirs
+        std::vector<std::string> discoveredTexturePaths;  // Auto-discovered Textures/ dirs
+    };
+
     class ConfigSerializer
     {
     public:
@@ -63,6 +71,10 @@ namespace vkBasalt
         // Global settings management (vkBasalt.conf)
         static VkBasaltSettings loadSettings();
         static bool saveSettings(const VkBasaltSettings& settings);
+
+        // Shader Manager config (shader_manager.conf)
+        static ShaderManagerConfig loadShaderManagerConfig();
+        static bool saveShaderManagerConfig(const ShaderManagerConfig& config);
 
         // Ensure vkBasalt.conf exists with defaults (call early at startup)
         static void ensureConfigExists();

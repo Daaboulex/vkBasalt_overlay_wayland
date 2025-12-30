@@ -321,4 +321,87 @@ namespace vkBasalt
         Logger::info("Created default vkBasalt.conf");
     }
 
+    ShaderManagerConfig ConfigSerializer::loadShaderManagerConfig()
+    {
+        ShaderManagerConfig config;
+        std::string configPath = getBaseConfigDir() + "/shader_manager.conf";
+
+        std::ifstream file(configPath);
+        if (!file.is_open())
+            return config;
+
+        std::string line;
+        while (std::getline(file, line))
+        {
+            // Skip comments and empty lines
+            size_t start = line.find_first_not_of(" \t");
+            if (start == std::string::npos || line[start] == '#')
+                continue;
+
+            size_t eq = line.find('=');
+            if (eq == std::string::npos)
+                continue;
+
+            std::string key = line.substr(0, eq);
+            std::string value = line.substr(eq + 1);
+
+            // Trim whitespace
+            auto trimWs = [](std::string& s) {
+                size_t start = s.find_first_not_of(" \t");
+                size_t end = s.find_last_not_of(" \t");
+                s = (start == std::string::npos) ? "" : s.substr(start, end - start + 1);
+            };
+            trimWs(key);
+            trimWs(value);
+
+            if (key == "parentDir" && !value.empty())
+                config.parentDirectories.push_back(value);
+            else if (key == "shaderPath" && !value.empty())
+                config.discoveredShaderPaths.push_back(value);
+            else if (key == "texturePath" && !value.empty())
+                config.discoveredTexturePaths.push_back(value);
+        }
+
+        return config;
+    }
+
+    bool ConfigSerializer::saveShaderManagerConfig(const ShaderManagerConfig& config)
+    {
+        std::string baseDir = getBaseConfigDir();
+        if (baseDir.empty())
+        {
+            Logger::err("Could not determine config directory");
+            return false;
+        }
+
+        mkdir(baseDir.c_str(), 0755);
+
+        std::string configPath = baseDir + "/shader_manager.conf";
+        std::ofstream file(configPath);
+        if (!file.is_open())
+        {
+            Logger::err("Could not open shader_manager.conf for writing: " + configPath);
+            return false;
+        }
+
+        file << "# Shader Manager configuration\n";
+        file << "# Parent directories are scanned recursively for Shaders/ and Textures/ subdirs\n\n";
+
+        file << "# Parent directories (user-added)\n";
+        for (const auto& dir : config.parentDirectories)
+            file << "parentDir = " << dir << "\n";
+
+        file << "\n# Discovered shader paths (auto-generated on scan)\n";
+        for (const auto& path : config.discoveredShaderPaths)
+            file << "shaderPath = " << path << "\n";
+
+        file << "\n# Discovered texture paths (auto-generated on scan)\n";
+        for (const auto& path : config.discoveredTexturePaths)
+            file << "texturePath = " << path << "\n";
+
+        file.close();
+        Logger::info("Saved shader manager config to: " + configPath);
+        return true;
+    }
+
 } // namespace vkBasalt
