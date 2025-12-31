@@ -11,7 +11,12 @@ A Vulkan post-processing layer with an in-game GUI for real-time effect configur
 
 Feature showcase: https://www.youtube.com/watch?v=_KJTToAynr0
 
-<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/16ff2926-9dbe-4d0b-83af-7552e3ed4c54" />
+<details>
+  <summary>Click to view screenshots</summary>
+  <img width="1920" height="1080" alt="Screenshot_20251231_184224" src="https://github.com/user-attachments/assets/06f05dfd-b429-4f1d-bb5d-b9d49a1719b1" />
+  <img width="1920" height="1080" alt="Screenshot_20251231_183856" src="https://github.com/user-attachments/assets/3ba85dc9-d3de-4795-bd3a-6bbc2028e0dd" />
+  <img width="1920" height="1080" alt="Screenshot_20251231_183700" src="https://github.com/user-attachments/assets/195e44df-1cd6-47bd-b543-5ee431b53483" />
+</details>
 
 ## Bugs and Jank
 
