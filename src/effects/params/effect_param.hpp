@@ -11,6 +11,7 @@ namespace vkBasalt
     enum class ParamType
     {
         Float,
+        Float2,
         Int,
         Bool
     };
@@ -28,6 +29,7 @@ namespace vkBasalt
         std::string uiType;      // ui_type - "slider", "drag", "combo", etc.
 
         virtual ParamType getType() const = 0;
+        virtual const char* getTypeName() const = 0;
         virtual bool hasChanged() const = 0;
         virtual void resetToDefault() = 0;
         virtual std::vector<std::pair<std::string, std::string>> serialize() const = 0;
@@ -45,6 +47,7 @@ namespace vkBasalt
         float step = 0.0f;
 
         ParamType getType() const override { return ParamType::Float; }
+        const char* getTypeName() const override { return "FLOAT"; }
 
         bool hasChanged() const override
         {
@@ -78,6 +81,59 @@ namespace vkBasalt
         }
     };
 
+    // Float2 parameter (vec2)
+    class Float2Param : public EffectParam
+    {
+    public:
+        float value[2] = {0.0f, 0.0f};
+        float defaultValue[2] = {0.0f, 0.0f};
+        float minValue[2] = {0.0f, 0.0f};
+        float maxValue[2] = {1.0f, 1.0f};
+        float step = 0.0f;
+
+        ParamType getType() const override { return ParamType::Float2; }
+        const char* getTypeName() const override { return "FLOAT2"; }
+
+        bool hasChanged() const override
+        {
+            return value[0] != defaultValue[0] || value[1] != defaultValue[1];
+        }
+
+        void resetToDefault() override
+        {
+            value[0] = defaultValue[0];
+            value[1] = defaultValue[1];
+        }
+
+        std::vector<std::pair<std::string, std::string>> serialize() const override
+        {
+            return {
+                {name + ".x", std::to_string(value[0])},
+                {name + ".y", std::to_string(value[1])}
+            };
+        }
+
+        std::unique_ptr<EffectParam> clone() const override
+        {
+            auto p = std::make_unique<Float2Param>();
+            p->effectName = effectName;
+            p->name = name;
+            p->label = label;
+            p->tooltip = tooltip;
+            p->uiType = uiType;
+            p->value[0] = value[0];
+            p->value[1] = value[1];
+            p->defaultValue[0] = defaultValue[0];
+            p->defaultValue[1] = defaultValue[1];
+            p->minValue[0] = minValue[0];
+            p->minValue[1] = minValue[1];
+            p->maxValue[0] = maxValue[0];
+            p->maxValue[1] = maxValue[1];
+            p->step = step;
+            return p;
+        }
+    };
+
     // Int parameter
     class IntParam : public EffectParam
     {
@@ -90,6 +146,7 @@ namespace vkBasalt
         std::vector<std::string> items;  // ui_items - combo box options
 
         ParamType getType() const override { return ParamType::Int; }
+        const char* getTypeName() const override { return "INT"; }
 
         bool hasChanged() const override
         {
@@ -132,6 +189,7 @@ namespace vkBasalt
         bool defaultValue = false;
 
         ParamType getType() const override { return ParamType::Bool; }
+        const char* getTypeName() const override { return "BOOL"; }
 
         bool hasChanged() const override
         {

@@ -21,6 +21,7 @@ overlay_src = [
     'overlay/params/field_editor.cpp',
     'overlay/params/fields/field_bool.cpp',
     'overlay/params/fields/field_float.cpp',
+    'overlay/params/fields/field_float2.cpp',
     'overlay/params/fields/field_int.cpp',
 ]
 

@@ -126,8 +126,41 @@ namespace vkBasalt
             std::string uiType = (typeIt != spec.annotations.end()) ? typeIt->value.string_data : "";
 
             // Create appropriate subclass based on spec type
-            if (spec.type.is_floating_point())
+            if (spec.type.is_floating_point() && spec.type.rows == 2)
             {
+                // float2 / vec2
+                auto p = std::make_unique<Float2Param>();
+                p->effectName = effectName;
+                p->name = spec.name;
+                p->label = label;
+                p->tooltip = tooltip;
+                p->uiType = uiType;
+                p->defaultValue[0] = spec.initializer_value.as_float[0];
+                p->defaultValue[1] = spec.initializer_value.as_float[1];
+                p->value[0] = p->defaultValue[0];
+                p->value[1] = p->defaultValue[1];
+
+                // Apply range from annotations (same min/max for both components)
+                auto minIt = findAnnotation(spec.annotations, "ui_min");
+                auto maxIt = findAnnotation(spec.annotations, "ui_max");
+                if (minIt != spec.annotations.end())
+                {
+                    p->minValue[0] = p->minValue[1] = getAnnotationFloat(*minIt);
+                }
+                if (maxIt != spec.annotations.end())
+                {
+                    p->maxValue[0] = p->maxValue[1] = getAnnotationFloat(*maxIt);
+                }
+
+                auto stepIt = findAnnotation(spec.annotations, "ui_step");
+                if (stepIt != spec.annotations.end())
+                    p->step = getAnnotationFloat(*stepIt);
+
+                return p;
+            }
+            else if (spec.type.is_floating_point() && spec.type.rows == 1)
+            {
+                // scalar float
                 auto p = std::make_unique<FloatParam>();
                 p->effectName = effectName;
                 p->name = spec.name;
@@ -230,16 +263,87 @@ namespace vkBasalt
         if (!errors.empty())
             Logger::err("reshade_parser parse errors: " + errors);
 
-        // Extract module and convert spec constants to parameters
+        // Extract module and convert uniforms to parameters
         reshadefx::module module;
         codegen->write_result(module);
 
-        for (const auto& spec : module.spec_constants)
+        // Process spec_constants
+        // Note: float2/float3/float4 are split into multiple scalar spec_constants with the same name
+        // We need to detect and combine them
+        for (size_t i = 0; i < module.spec_constants.size(); i++)
         {
+            const auto& spec = module.spec_constants[i];
+
             if (shouldSkipSpecConstant(spec))
                 continue;
 
-            auto param = convertSpecConstant(spec, effectName, pConfig);
+            // Check if this is part of a vector (same name appears multiple times consecutively)
+            size_t componentCount = 1;
+            while (i + componentCount < module.spec_constants.size() &&
+                   module.spec_constants[i + componentCount].name == spec.name)
+            {
+                componentCount++;
+            }
+
+            if (componentCount == 2 && spec.type.is_floating_point())
+            {
+                // float2 - combine two scalar floats
+
+                auto labelIt = findAnnotation(spec.annotations, "ui_label");
+                std::string label = (labelIt != spec.annotations.end()) ? labelIt->value.string_data : spec.name;
+
+                auto tooltipIt = findAnnotation(spec.annotations, "ui_tooltip");
+                std::string tooltip = (tooltipIt != spec.annotations.end()) ? tooltipIt->value.string_data : "";
+
+                auto typeIt = findAnnotation(spec.annotations, "ui_type");
+                std::string uiType = (typeIt != spec.annotations.end()) ? typeIt->value.string_data : "";
+
+                auto p = std::make_unique<Float2Param>();
+                p->effectName = effectName;
+                p->name = spec.name;
+                p->label = label;
+                p->tooltip = tooltip;
+                p->uiType = uiType;
+
+                // Get default values from both spec constants
+                p->defaultValue[0] = spec.initializer_value.as_float[0];
+                p->defaultValue[1] = module.spec_constants[i + 1].initializer_value.as_float[0];
+                p->value[0] = p->defaultValue[0];
+                p->value[1] = p->defaultValue[1];
+
+                // Apply range from annotations
+                auto minIt = findAnnotation(spec.annotations, "ui_min");
+                auto maxIt = findAnnotation(spec.annotations, "ui_max");
+                if (minIt != spec.annotations.end())
+                    p->minValue[0] = p->minValue[1] = getAnnotationFloat(*minIt);
+                if (maxIt != spec.annotations.end())
+                    p->maxValue[0] = p->maxValue[1] = getAnnotationFloat(*maxIt);
+
+                auto stepIt = findAnnotation(spec.annotations, "ui_step");
+                if (stepIt != spec.annotations.end())
+                    p->step = getAnnotationFloat(*stepIt);
+
+                params.push_back(std::move(p));
+
+                // Skip the second component since we've already processed it
+                i += 1;
+            }
+            else
+            {
+                // Regular scalar parameter
+                auto param = convertSpecConstant(spec, effectName, pConfig);
+                if (param)
+                    params.push_back(std::move(param));
+            }
+        }
+
+        // Process uniforms (runtime-changeable values)
+        for (const auto& uniform : module.uniforms)
+        {
+            if (shouldSkipSpecConstant(uniform))
+                continue;
+
+            auto param = convertSpecConstant(uniform, effectName, pConfig);
             if (param)
                 params.push_back(std::move(param));
         }

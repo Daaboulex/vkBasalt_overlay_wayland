@@ -13,9 +13,9 @@
 namespace vkBasalt
 {
     // Build version - increment this each build
-    static constexpr int BUILD_NUMBER = 3;
+    static constexpr int BUILD_NUMBER = 7;
     static constexpr const char* BUILD_DATE = "2025-12-31";
-    static constexpr const char* BUILD_INFO = "effects-directory-reorg";
+    static constexpr const char* BUILD_INFO = "float2-consecutive-scalars";
     namespace
     {
         // Ring buffer for storing history
