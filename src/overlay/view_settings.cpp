@@ -11,28 +11,6 @@ namespace vkBasalt
     {
         ImGui::BeginChild("SettingsContent", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), false);
 
-        ImGui::Text("Overlay Options");
-        ImGui::Separator();
-
-        ImGui::Checkbox("Block Input When Overlay Open", &settingsBlockInput);
-        if (ImGui::IsItemHovered())
-        {
-            ImGui::BeginTooltip();
-            ImGui::Text("When enabled, keyboard and mouse input is captured by the overlay.");
-            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Warning: Experimental feature! May cause some games to freeze.");
-            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Also blocks ALL input system-wide, even outside the game window!");
-            ImGui::EndTooltip();
-        }
-
-        ImGui::Text("Max Effects (requires restart):");
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Maximum number of effects that can be active simultaneously.\nChanges require restarting the application.");
-        ImGui::SetNextItemWidth(100);
-        ImGui::InputInt("##maxEffects", &settingsMaxEffects);
-        if (settingsMaxEffects < 1) settingsMaxEffects = 1;
-        if (settingsMaxEffects > 50) settingsMaxEffects = 50;
-
-        ImGui::Spacing();
         ImGui::Text("Key Bindings");
         ImGui::Separator();
         ImGui::TextDisabled("Click a button and press any key to set binding");
@@ -73,6 +51,28 @@ namespace vkBasalt
                       settingsReloadKey, sizeof(settingsReloadKey), 2);
         renderKeyBind("Toggle Overlay:", "Key to show/hide this overlay",
                       settingsOverlayKey, sizeof(settingsOverlayKey), 3);
+
+        ImGui::Spacing();
+        ImGui::Text("Overlay Options");
+        ImGui::Separator();
+
+        ImGui::Checkbox("Block Input When Overlay Open", &settingsBlockInput);
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::BeginTooltip();
+            ImGui::Text("When enabled, keyboard and mouse input is captured by the overlay.");
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Warning: Experimental feature! May cause some games to freeze.");
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Also blocks ALL input system-wide, even outside the game window!");
+            ImGui::EndTooltip();
+        }
+
+        ImGui::Text("Max Effects (requires restart):");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Maximum number of effects that can be active simultaneously.\nChanges require restarting the application.");
+        ImGui::SetNextItemWidth(100);
+        ImGui::InputInt("##maxEffects", &settingsMaxEffects);
+        if (settingsMaxEffects < 1) settingsMaxEffects = 1;
+        if (settingsMaxEffects > 50) settingsMaxEffects = 50;
 
         ImGui::Spacing();
         ImGui::Text("Startup Behavior");
