@@ -37,14 +37,6 @@ Upstream requires editing config files and restarting. This fork adds:
 - **Up to 200 effects** with VRAM estimates
 - **Graceful error handling** - failed effects show errors instead of crashing
 
-### Built-in Effects
-- **CAS** - Contrast Adaptive Sharpening
-- **DLS** - Denoised Luma Sharpening
-- **FXAA** - Fast Approximate Anti-Aliasing
-- **SMAA** - Enhanced Subpixel Morphological Anti-Aliasing
-- **Deband** - Debanding filter
-- **LUT** - 3D Color Lookup Table
-
 ### ReShade Support
 Use ReShade FX shaders from the [reshade-shaders repository](https://github.com/crosire/reshade-shaders) or custom shaders.
 
