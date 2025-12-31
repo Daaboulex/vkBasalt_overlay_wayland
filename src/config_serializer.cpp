@@ -267,6 +267,8 @@ namespace vkBasalt
                 settings.depthCapture = (value == "on");
             else if (key == "autoApplyDelay")
                 settings.autoApplyDelay = std::stoi(value);
+            else if (key == "showDebugWindow")
+                settings.showDebugWindow = (value == "true" || value == "1");
         }
 
         return settings;
@@ -307,6 +309,9 @@ namespace vkBasalt
         file << "\n# Startup behavior\n";
         file << "enableOnLaunch = " << (settings.enableOnLaunch ? "true" : "false") << "\n";
         file << "depthCapture = " << (settings.depthCapture ? "on" : "off") << "\n";
+
+        file << "\n# Debug\n";
+        file << "showDebugWindow = " << (settings.showDebugWindow ? "true" : "false") << "\n";
 
         file.close();
         Logger::info("Saved settings to: " + configPath);

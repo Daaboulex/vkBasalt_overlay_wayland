@@ -13,6 +13,7 @@ overlay_src = [
     'overlay/imgui_overlay.cpp',
     'overlay/view_add_effects.cpp',
     'overlay/view_configs.cpp',
+    'overlay/view_debug.cpp',
     'overlay/view_diagnostics.cpp',
     'overlay/view_settings.cpp',
     'overlay/view_shader_manager.cpp',

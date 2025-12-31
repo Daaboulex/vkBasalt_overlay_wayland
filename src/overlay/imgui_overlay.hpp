@@ -104,6 +104,7 @@ namespace vkBasalt
         void renderShaderTestSection();  // Shader test UI (part of shader manager)
         void renderMainView(const KeyboardState& keyboard);
         void renderDiagnosticsView();
+        void renderDebugWindow();  // Debug window with effect registry and log data
 
         LogicalDevice* pLogicalDevice;
         OverlayPersistentState* pPersistentState;
@@ -149,6 +150,10 @@ namespace vkBasalt
         int settingsAutoApplyDelay = 200;  // ms delay before auto-applying changes
         bool settingsInitialized = false;
         int listeningForKey = 0;  // 0=none, 1=toggle, 2=reload, 3=overlay
+        bool settingsShowDebugWindow = false;  // Show debug window
+        int debugWindowTab = 0;  // 0=Registry, 1=Log
+        bool debugLogFilters[5] = {true, true, true, true, true};  // Trace, Debug, Info, Warn, Error
+        char debugLogSearch[128] = "";  // Search filter for log tab
         bool settingsSaved = false;  // True when settings saved, cleared by basalt.cpp
         bool shaderPathsChanged = false;  // True when shader manager saved, cleared by basalt.cpp
         size_t maxEffects = 10;

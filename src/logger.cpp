@@ -64,10 +64,15 @@ namespace vkBasalt
 
     void Logger::emitMsg(LogLevel level, const std::string& message)
     {
+        std::lock_guard<std::mutex> lock(m_mutex);
+
+        // Always store in history (regardless of log level filter)
+        m_history.push_back({level, message});
+        if (m_history.size() > MAX_HISTORY_SIZE)
+            m_history.erase(m_history.begin());
+
         if (level >= m_minLevel)
         {
-            std::lock_guard<std::mutex> lock(m_mutex);
-
             static std::array<const char*, 5> s_prefixes = {
                 {"vkBasalt trace: ", "vkBasalt debug: ", "vkBasalt info:  ", "vkBasalt warn:  ", "vkBasalt err:   "}};
 
@@ -81,6 +86,27 @@ namespace vkBasalt
                 *m_outStream << prefix << line << std::endl;
             }
         }
+    }
+
+    std::vector<LogEntry> Logger::getHistory()
+    {
+        std::lock_guard<std::mutex> lock(s_instance.m_mutex);
+        return s_instance.m_history;
+    }
+
+    void Logger::clearHistory()
+    {
+        std::lock_guard<std::mutex> lock(s_instance.m_mutex);
+        s_instance.m_history.clear();
+    }
+
+    const char* Logger::levelName(LogLevel level)
+    {
+        static std::array<const char*, 5> names = {{"TRACE", "DEBUG", "INFO", "WARN", "ERROR"}};
+        uint32_t idx = static_cast<uint32_t>(level);
+        if (idx < names.size())
+            return names[idx];
+        return "UNKNOWN";
     }
 
     LogLevel Logger::getMinLogLevel()

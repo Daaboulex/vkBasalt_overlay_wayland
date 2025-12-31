@@ -28,6 +28,7 @@ namespace vkBasalt
         bool enableOnLaunch = true;
         bool depthCapture = false;
         int autoApplyDelay = 200;  // ms delay before auto-applying changes
+        bool showDebugWindow = false;  // Show debug window with raw effect registry data
     };
 
     // Shader Manager configuration (from shader_manager.conf)

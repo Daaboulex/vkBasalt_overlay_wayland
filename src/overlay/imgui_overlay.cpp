@@ -576,6 +576,9 @@ namespace vkBasalt
             renderDiagnosticsView();
         ImGui::End();
 
+        // Debug window (separate, controlled by setting)
+        renderDebugWindow();
+
         // Focus Effects window on first frame of the session
         static bool firstFrame = true;
         if (firstFrame)

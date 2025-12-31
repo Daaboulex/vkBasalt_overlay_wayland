@@ -93,6 +93,7 @@ namespace vkBasalt
             settingsEnableOnLaunch = currentSettings.enableOnLaunch;
             settingsDepthCapture = currentSettings.depthCapture;
             settingsAutoApplyDelay = currentSettings.autoApplyDelay;
+            settingsShowDebugWindow = currentSettings.showDebugWindow;
             settingsInitialized = true;
         }
 
