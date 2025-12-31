@@ -1,5 +1,6 @@
 #include "imgui_overlay.hpp"
 #include "config_serializer.hpp"
+#include "logger.hpp"
 
 #include <cstring>
 
@@ -139,7 +140,10 @@ namespace vkBasalt
         ImGui::Separator();
 
         if (ImGui::Checkbox("Show Debug Window", &settingsShowDebugWindow))
+        {
+            Logger::setHistoryEnabled(settingsShowDebugWindow);
             saveSettings();
+        }
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Show debug window with effect registry data and log output.");
 

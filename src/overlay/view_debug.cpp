@@ -24,8 +24,8 @@ namespace vkBasalt
         // Tab bar for different debug views
         if (ImGui::BeginTabBar("DebugTabs"))
         {
-            // Effect Registry tab
-            if (ImGui::BeginTabItem("Effect Registry"))
+            // Effects tab
+            if (ImGui::BeginTabItem("Effects"))
             {
                 debugWindowTab = 0;
 
@@ -88,14 +88,6 @@ namespace vkBasalt
                                         typeName,
                                         param->name.c_str(),
                                         valueStr.c_str());
-
-                                    if (!param->tooltip.empty())
-                                    {
-                                        ImGui::SameLine();
-                                        ImGui::TextDisabled("(?)");
-                                        if (ImGui::IsItemHovered())
-                                            ImGui::SetTooltip("%s", param->tooltip.c_str());
-                                    }
                                 }
                                 ImGui::TreePop();
                             }
@@ -119,18 +111,6 @@ namespace vkBasalt
 
                         ImGui::TreePop();
                     }
-                }
-
-                // Selected effects list
-                ImGui::Spacing();
-                ImGui::Separator();
-                const auto& selected = pEffectRegistry->getSelectedEffects();
-                ImGui::Text("Selected Effects Order (%zu):", selected.size());
-                for (size_t i = 0; i < selected.size(); i++)
-                {
-                    bool enabled = pEffectRegistry->isEffectEnabled(selected[i]);
-                    ImGui::TextDisabled("  %zu. %s %s", i + 1, selected[i].c_str(),
-                        enabled ? "" : "(disabled)");
                 }
 
                 ImGui::EndTabItem();

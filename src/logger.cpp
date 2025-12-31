@@ -66,10 +66,13 @@ namespace vkBasalt
     {
         std::lock_guard<std::mutex> lock(m_mutex);
 
-        // Always store in history (regardless of log level filter)
-        m_history.push_back({level, message});
-        if (m_history.size() > MAX_HISTORY_SIZE)
-            m_history.erase(m_history.begin());
+        // Store in history only if enabled (to save memory when debug window is off)
+        if (m_historyEnabled)
+        {
+            m_history.push_back({level, message});
+            if (m_history.size() > MAX_HISTORY_SIZE)
+                m_history.erase(m_history.begin());
+        }
 
         if (level >= m_minLevel)
         {
@@ -98,6 +101,20 @@ namespace vkBasalt
     {
         std::lock_guard<std::mutex> lock(s_instance.m_mutex);
         s_instance.m_history.clear();
+    }
+
+    void Logger::setHistoryEnabled(bool enabled)
+    {
+        std::lock_guard<std::mutex> lock(s_instance.m_mutex);
+        s_instance.m_historyEnabled = enabled;
+        if (!enabled)
+            s_instance.m_history.clear();  // Free memory when disabled
+    }
+
+    bool Logger::isHistoryEnabled()
+    {
+        std::lock_guard<std::mutex> lock(s_instance.m_mutex);
+        return s_instance.m_historyEnabled;
     }
 
     const char* Logger::levelName(LogLevel level)

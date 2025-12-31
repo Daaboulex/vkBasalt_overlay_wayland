@@ -2,6 +2,7 @@
 #include "effects/effect_registry.hpp"
 #include "config_serializer.hpp"
 #include "params/field_editor.hpp"
+#include "logger.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -94,6 +95,7 @@ namespace vkBasalt
             settingsDepthCapture = currentSettings.depthCapture;
             settingsAutoApplyDelay = currentSettings.autoApplyDelay;
             settingsShowDebugWindow = currentSettings.showDebugWindow;
+            Logger::setHistoryEnabled(settingsShowDebugWindow);
             settingsInitialized = true;
         }
 

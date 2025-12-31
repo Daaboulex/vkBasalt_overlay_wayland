@@ -55,6 +55,10 @@ namespace vkBasalt
         // Clear log history
         static void clearHistory();
 
+        // Enable/disable history storage (disabled by default to save memory)
+        static void setHistoryEnabled(bool enabled);
+        static bool isHistoryEnabled();
+
         // Get level name string
         static const char* levelName(LogLevel level);
 
@@ -69,6 +73,7 @@ namespace vkBasalt
         std::unique_ptr<std::ostream, std::function<void(std::ostream*)>> m_outStream;
 
         std::vector<LogEntry> m_history;
+        bool m_historyEnabled = false;  // Disabled by default to save memory
 
         void emitMsg(LogLevel level, const std::string& message);
 
