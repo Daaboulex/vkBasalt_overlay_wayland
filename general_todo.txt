@@ -2,6 +2,7 @@
 - native wayland support for GUI
 - manually edit param value
 - lut built-in effect crashes the game
+- fix depth capture
 
-- clear all effects button
 - auto-save shader manager
+- save button feedback
