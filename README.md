@@ -9,7 +9,7 @@ If you want to request features, feel free to do so, it's still pretty incomplet
 
 A Vulkan post-processing layer with an in-game GUI for real-time effect configuration.
 
-Feature showcase: https://www.youtube.com/watch?v=_KJTToAynr0
+Feature showcase (slightly outdated): https://www.youtube.com/watch?v=_KJTToAynr0
 
 <details>
   <summary>Click to view screenshots</summary>
@@ -29,6 +29,8 @@ Upstream requires editing config files and restarting. This fork adds:
 - **In-game overlay** (`End` key) with dockable windows
 - **Add/remove/reorder effects** without restart
 - **Parameter sliders** for all types (float, int, bool, vectors)
+- **Preprocessor definitions** - edit `#define` values directly
+- **Multiple effect instances** - use the same effect multiple times (e.g., cas.1, cas.2)
 - **Save/load named configs**
 - **Shader manager** - browse and test ReShade shaders
 - **Diagnostics** - FPS, frame time, GPU/VRAM usage (AMD)
