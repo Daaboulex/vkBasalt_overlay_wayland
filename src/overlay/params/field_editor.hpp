@@ -1,7 +1,7 @@
 #ifndef FIELD_EDITOR_HPP_INCLUDED
 #define FIELD_EDITOR_HPP_INCLUDED
 
-#include "effect_param.hpp"
+#include "effects/params/effect_param.hpp"
 #include <memory>
 #include <map>
 #include <functional>

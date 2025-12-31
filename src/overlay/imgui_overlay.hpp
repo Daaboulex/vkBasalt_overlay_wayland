@@ -11,7 +11,7 @@
 #include "vulkan_include.hpp"
 #include "logical_device.hpp"
 #include "keyboard_input.hpp"
-#include "effect_param.hpp"
+#include "effects/params/effect_param.hpp"
 
 namespace vkBasalt
 {

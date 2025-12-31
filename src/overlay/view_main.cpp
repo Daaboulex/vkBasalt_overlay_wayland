@@ -1,5 +1,5 @@
 #include "imgui_overlay.hpp"
-#include "effect_registry.hpp"
+#include "effects/effect_registry.hpp"
 #include "config_serializer.hpp"
 #include "params/field_editor.hpp"
 

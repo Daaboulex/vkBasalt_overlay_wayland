@@ -9,7 +9,7 @@
 #include <memory>
 
 #include "vulkan_include.hpp"
-#include "effect_param.hpp"
+#include "params/effect_param.hpp"
 
 namespace vkBasalt
 {

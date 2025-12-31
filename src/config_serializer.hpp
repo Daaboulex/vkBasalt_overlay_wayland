@@ -5,7 +5,7 @@
 #include <vector>
 #include <map>
 
-#include "effect_config.hpp"
+#include "effects/effect_config.hpp"
 
 namespace vkBasalt
 {

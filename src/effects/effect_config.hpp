@@ -5,7 +5,7 @@
 #include <vector>
 #include <memory>
 
-#include "effect_param.hpp"
+#include "params/effect_param.hpp"
 
 namespace vkBasalt
 {

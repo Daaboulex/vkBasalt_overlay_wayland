@@ -7,8 +7,8 @@
 #include <functional>
 #include <map>
 
-#include "effect.hpp"
-#include "effect_param.hpp"
+#include "../effect.hpp"
+#include "../params/effect_param.hpp"
 #include "logical_device.hpp"
 #include "config.hpp"
 

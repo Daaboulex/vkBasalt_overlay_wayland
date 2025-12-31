@@ -1,5 +1,5 @@
 #include "imgui_overlay.hpp"
-#include "effect_registry.hpp"
+#include "effects/effect_registry.hpp"
 
 #include <algorithm>
 #include <cstring>

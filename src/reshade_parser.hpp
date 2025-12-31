@@ -5,8 +5,8 @@
 #include <vector>
 #include <memory>
 
-#include "effect_config.hpp"
-#include "effect_param.hpp"
+#include "effects/effect_config.hpp"
+#include "effects/params/effect_param.hpp"
 #include "config.hpp"
 
 namespace vkBasalt

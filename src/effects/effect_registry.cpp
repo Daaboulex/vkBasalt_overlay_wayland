@@ -6,7 +6,7 @@
 
 #include "reshade_parser.hpp"
 #include "config_serializer.hpp"
-#include "builtin_effects.hpp"
+#include "builtin/builtin_effects.hpp"
 #include "logger.hpp"
 
 namespace vkBasalt

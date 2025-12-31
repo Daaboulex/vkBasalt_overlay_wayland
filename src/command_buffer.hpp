@@ -11,7 +11,7 @@
 
 #include "logical_device.hpp"
 
-#include "effect.hpp"
+#include "effects/effect.hpp"
 namespace vkBasalt
 {
 

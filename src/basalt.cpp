@@ -35,12 +35,12 @@
 #include "format.hpp"
 #include "logger.hpp"
 
-#include "effect.hpp"
-#include "effect_reshade.hpp"
-#include "effect_transfer.hpp"
-#include "builtin_effects.hpp"
+#include "effects/effect.hpp"
+#include "effects/effect_reshade.hpp"
+#include "effects/effect_transfer.hpp"
+#include "effects/builtin/builtin_effects.hpp"
 #include "imgui_overlay.hpp"
-#include "effect_registry.hpp"
+#include "effects/effect_registry.hpp"
 
 #define VKBASALT_NAME "VK_LAYER_VKBASALT_post_processing"
 
