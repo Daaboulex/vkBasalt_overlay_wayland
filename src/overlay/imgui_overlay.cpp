@@ -249,14 +249,16 @@ namespace vkBasalt
                 if (!p->hasChanged())
                     continue;
 
-                // Use polymorphic serialize method
+                // Use polymorphic serialize method - may return multiple values (e.g., Float2 returns .x and .y)
                 auto serialized = p->serialize();
-                if (!serialized.empty())
+                for (const auto& [suffix, value] : serialized)
                 {
                     ConfigParam cp;
                     cp.effectName = p->effectName;
-                    cp.paramName = p->name;
-                    cp.value = serialized[0].second;
+                    // For multi-component params, suffix contains ".x", ".y", etc.
+                    // For single-component params, suffix is empty
+                    cp.paramName = suffix.empty() ? p->name : suffix;
+                    cp.value = value;
                     params.push_back(cp);
                 }
             }

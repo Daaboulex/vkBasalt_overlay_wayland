@@ -137,8 +137,10 @@ namespace vkBasalt
                 p->uiType = uiType;
                 p->defaultValue[0] = spec.initializer_value.as_float[0];
                 p->defaultValue[1] = spec.initializer_value.as_float[1];
-                p->value[0] = p->defaultValue[0];
-                p->value[1] = p->defaultValue[1];
+
+                // Load values from config (keys are effectName.paramName.x and effectName.paramName.y)
+                p->value[0] = pConfig->getInstanceOption<float>(effectName, spec.name + ".x", p->defaultValue[0]);
+                p->value[1] = pConfig->getInstanceOption<float>(effectName, spec.name + ".y", p->defaultValue[1]);
 
                 // Apply range from annotations (same min/max for both components)
                 auto minIt = findAnnotation(spec.annotations, "ui_min");
@@ -308,8 +310,10 @@ namespace vkBasalt
                 // Get default values from both spec constants
                 p->defaultValue[0] = spec.initializer_value.as_float[0];
                 p->defaultValue[1] = module.spec_constants[i + 1].initializer_value.as_float[0];
-                p->value[0] = p->defaultValue[0];
-                p->value[1] = p->defaultValue[1];
+
+                // Load values from config (keys are effectName.paramName.x and effectName.paramName.y)
+                p->value[0] = pConfig->getInstanceOption<float>(effectName, spec.name + ".x", p->defaultValue[0]);
+                p->value[1] = pConfig->getInstanceOption<float>(effectName, spec.name + ".y", p->defaultValue[1]);
 
                 // Apply range from annotations
                 auto minIt = findAnnotation(spec.annotations, "ui_min");

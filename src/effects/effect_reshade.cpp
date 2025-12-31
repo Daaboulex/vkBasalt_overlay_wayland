@@ -35,7 +35,7 @@ namespace vkBasalt
                                  VkExtent2D           imageExtent,
                                  std::vector<VkImage> inputImages,
                                  std::vector<VkImage> outputImages,
-                                 Config*              pConfig,
+                                 EffectRegistry*      pEffectRegistry,
                                  std::string          effectName,
                                  std::string          effectPath,
                                  std::vector<PreprocessorDefinition> customDefs)
@@ -46,7 +46,7 @@ namespace vkBasalt
         this->imageExtent           = imageExtent;
         this->inputImages           = inputImages;
         this->outputImages          = outputImages;
-        this->pConfig               = pConfig;
+        this->pEffectRegistry       = pEffectRegistry;
         this->effectName            = effectName;
         this->effectPath            = effectPath;
         this->customPreprocessorDefs = customDefs;
@@ -581,46 +581,89 @@ namespace vkBasalt
             std::vector<VkSpecializationMapEntry> specMapEntrys;
             std::vector<char>                     specData;
 
+            // Track vector component index (for float2/float3/float4 which are split into multiple spec constants)
+            std::string prevSpecName;
+            int vectorComponentIndex = 0;
+
             for (uint32_t specId = 0, offset = 0; auto &opt : module.spec_constants)
             {
                 if (!opt.name.empty())
                 {
-                    // Use instance-prefixed lookup (e.g., "4xBRZ.coef" not just "coef")
-                    std::string val = pConfig->getInstanceOption<std::string>(effectName, opt.name);
-                    if (!val.empty())
+                    // Track which component of a vector this is (consecutive same-named spec constants = vector components)
+                    if (opt.name == prevSpecName)
                     {
-                        std::variant<int32_t, uint32_t, float> convertedValue;
-                        offset = static_cast<uint32_t>(specData.size());
-                        switch (opt.type.base)
-                        {
-                            case reshadefx::type::t_bool:
-                                convertedValue = (int32_t) pConfig->getInstanceOption<bool>(effectName, opt.name);
+                        vectorComponentIndex++;
+                    }
+                    else
+                    {
+                        vectorComponentIndex = 0;
+                        prevSpecName = opt.name;
+                    }
+
+                    // Get parameter from EffectRegistry (the single source of truth)
+                    EffectParam* param = pEffectRegistry->getParameter(effectName, opt.name);
+                    if (!param)
+                    {
+                        specId++;
+                        continue;
+                    }
+
+                    std::variant<int32_t, uint32_t, float> convertedValue;
+                    offset = static_cast<uint32_t>(specData.size());
+
+                    switch (opt.type.base)
+                    {
+                        case reshadefx::type::t_bool:
+                            if (auto* bp = dynamic_cast<BoolParam*>(param))
+                            {
+                                convertedValue = (int32_t)(bp->value ? 1 : 0);
                                 specData.resize(offset + sizeof(VkBool32));
                                 std::memcpy(specData.data() + offset, &convertedValue, sizeof(VkBool32));
                                 specMapEntrys.push_back({specId, offset, sizeof(VkBool32)});
-                                break;
-                            case reshadefx::type::t_int:
-                                convertedValue = pConfig->getInstanceOption<int32_t>(effectName, opt.name);
+                            }
+                            break;
+                        case reshadefx::type::t_int:
+                            if (auto* ip = dynamic_cast<IntParam*>(param))
+                            {
+                                convertedValue = ip->value;
                                 specData.resize(offset + sizeof(int32_t));
                                 std::memcpy(specData.data() + offset, &convertedValue, sizeof(int32_t));
                                 specMapEntrys.push_back({specId, offset, sizeof(int32_t)});
-                                break;
-                            case reshadefx::type::t_uint:
-                                convertedValue = (uint32_t) pConfig->getInstanceOption<int32_t>(effectName, opt.name);
+                            }
+                            break;
+                        case reshadefx::type::t_uint:
+                            if (auto* ip = dynamic_cast<IntParam*>(param))
+                            {
+                                convertedValue = (uint32_t)ip->value;
                                 specData.resize(offset + sizeof(uint32_t));
                                 std::memcpy(specData.data() + offset, &convertedValue, sizeof(uint32_t));
                                 specMapEntrys.push_back({specId, offset, sizeof(uint32_t)});
-                                break;
-                            case reshadefx::type::t_float:
-                                convertedValue = pConfig->getInstanceOption<float>(effectName, opt.name);
+                            }
+                            break;
+                        case reshadefx::type::t_float:
+                            // Could be FloatParam or Float2Param (vector component)
+                            if (auto* f2p = dynamic_cast<Float2Param*>(param))
+                            {
+                                // Float2 - use vectorComponentIndex to get correct component
+                                if (vectorComponentIndex < 2)
+                                {
+                                    convertedValue = f2p->value[vectorComponentIndex];
+                                    specData.resize(offset + sizeof(float));
+                                    std::memcpy(specData.data() + offset, &convertedValue, sizeof(float));
+                                    specMapEntrys.push_back({specId, offset, sizeof(float)});
+                                }
+                            }
+                            else if (auto* fp = dynamic_cast<FloatParam*>(param))
+                            {
+                                convertedValue = fp->value;
                                 specData.resize(offset + sizeof(float));
                                 std::memcpy(specData.data() + offset, &convertedValue, sizeof(float));
                                 specMapEntrys.push_back({specId, offset, sizeof(float)});
-                                break;
-                            default:
-                                // do nothing
-                                break;
-                        }
+                            }
+                            break;
+                        default:
+                            // do nothing
+                            break;
                     }
                 }
                 specId++;
@@ -1076,9 +1119,8 @@ namespace vkBasalt
             auto typeIt = findAnnotation(spec.annotations, "ui_type");
             std::string uiType = (typeIt != spec.annotations.end()) ? typeIt->value.string_data : "";
 
-            // Check if value is configured
-            std::string configVal = pConfig->getOption<std::string>(spec.name);
-            bool hasConfig = !configVal.empty();
+            // Get current value from EffectRegistry (the single source of truth)
+            EffectParam* registryParam = pEffectRegistry->getParameter(effectName, spec.name);
 
             // Create appropriate subclass based on spec type
             if (spec.type.is_floating_point())
@@ -1090,7 +1132,11 @@ namespace vkBasalt
                 p->tooltip = tooltip;
                 p->uiType = uiType;
                 p->defaultValue = spec.initializer_value.as_float[0];
-                p->value = hasConfig ? pConfig->getOption<float>(spec.name) : p->defaultValue;
+                // Get value from registry if available
+                if (auto* rp = dynamic_cast<FloatParam*>(registryParam))
+                    p->value = rp->value;
+                else
+                    p->value = p->defaultValue;
 
                 auto minIt = findAnnotation(spec.annotations, "ui_min");
                 auto maxIt = findAnnotation(spec.annotations, "ui_max");
@@ -1114,7 +1160,11 @@ namespace vkBasalt
                 p->tooltip = tooltip;
                 p->uiType = uiType;
                 p->defaultValue = (spec.initializer_value.as_uint[0] != 0);
-                p->value = hasConfig ? pConfig->getOption<bool>(spec.name) : p->defaultValue;
+                // Get value from registry if available
+                if (auto* rp = dynamic_cast<BoolParam*>(registryParam))
+                    p->value = rp->value;
+                else
+                    p->value = p->defaultValue;
 
                 params.push_back(std::move(p));
             }
@@ -1127,7 +1177,11 @@ namespace vkBasalt
                 p->tooltip = tooltip;
                 p->uiType = uiType;
                 p->defaultValue = spec.initializer_value.as_int[0];
-                p->value = hasConfig ? pConfig->getOption<int32_t>(spec.name) : p->defaultValue;
+                // Get value from registry if available
+                if (auto* rp = dynamic_cast<IntParam*>(registryParam))
+                    p->value = rp->value;
+                else
+                    p->value = p->defaultValue;
 
                 auto minIt = findAnnotation(spec.annotations, "ui_min");
                 auto maxIt = findAnnotation(spec.annotations, "ui_max");
@@ -1300,7 +1354,7 @@ namespace vkBasalt
         std::string shaderPath = this->effectPath;
         if (shaderPath.empty())
         {
-            shaderPath = pConfig->getOption<std::string>(effectName, "");
+            shaderPath = pEffectRegistry->getEffectFilePath(effectName);
             if (shaderPath.empty())
             {
                 // Search discovered shader paths for the effect

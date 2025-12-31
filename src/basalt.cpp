@@ -185,22 +185,13 @@ namespace vkBasalt
     // Apply modified parameters from overlay to config
     void applyOverlayParams(LogicalDevice* pLogicalDevice)
     {
+        // Parameters are already in EffectRegistry (the single source of truth)
+        // Effects read directly from the registry when recreated
+        // This function just logs for debugging
         if (!pLogicalDevice->imguiOverlay)
             return;
 
-        auto params = pLogicalDevice->imguiOverlay->getModifiedParams();
-        Logger::info("Applying " + std::to_string(params.size()) + " modified parameters from overlay");
-
-        for (const auto& param : params)
-        {
-            // Use polymorphic serialize method
-            auto serialized = param->serialize();
-            if (!serialized.empty())
-            {
-                // First element's value is the main value
-                pConfig->setOverride(param->effectName + "." + param->name, serialized[0].second);
-            }
-        }
+        Logger::info("Applying parameters from overlay - effects will read from EffectRegistry");
     }
 
     // Initialize configs: base (vkBasalt.conf) + current (from env/default_config)
@@ -446,7 +437,7 @@ namespace vkBasalt
                 {
                     pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new ReshadeEffect(
                         pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent,
-                        firstImages, secondImages, pConfig, effectStrings[i], effectPath, customDefs)));
+                        firstImages, secondImages, &effectRegistry, effectStrings[i], effectPath, customDefs)));
                 }
                 catch (const std::exception& e)
                 {

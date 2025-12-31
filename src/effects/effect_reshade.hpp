@@ -13,6 +13,7 @@
 #include "effect.hpp"
 #include "config.hpp"
 #include "effect_config.hpp"
+#include "effect_registry.hpp"
 #include "reshade_uniforms.hpp"
 
 #include "logical_device.hpp"
@@ -31,7 +32,7 @@ namespace vkBasalt
                       VkExtent2D           imageExtent,
                       std::vector<VkImage> inputImages,
                       std::vector<VkImage> outputImages,
-                      Config*              pConfig,
+                      EffectRegistry*      pEffectRegistry,
                       std::string          effectName,
                       std::string          effectPath = "",  // Optional: explicit path to .fx file
                       std::vector<PreprocessorDefinition> customDefs = {});  // Custom preprocessor definitions
@@ -79,7 +80,7 @@ namespace vkBasalt
         std::vector<bool>                     switchSamplers;
         VkExtent2D                            imageExtent;
         std::vector<VkSampler>                samplers;
-        Config*                               pConfig;
+        EffectRegistry*                       pEffectRegistry;
         std::string                           effectName;
         std::string                           effectPath;  // Path to .fx file (may differ from effectName)
         std::vector<PreprocessorDefinition>   customPreprocessorDefs;  // User-defined macros
