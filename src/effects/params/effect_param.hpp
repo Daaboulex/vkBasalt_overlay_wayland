@@ -12,6 +12,8 @@ namespace vkBasalt
     {
         Float,
         Float2,
+        Float3,
+        Float4,
         Int,
         Bool
     };
@@ -129,6 +131,116 @@ namespace vkBasalt
             p->minValue[1] = minValue[1];
             p->maxValue[0] = maxValue[0];
             p->maxValue[1] = maxValue[1];
+            p->step = step;
+            return p;
+        }
+    };
+
+    // Float3 parameter (vec3)
+    class Float3Param : public EffectParam
+    {
+    public:
+        float value[3] = {0.0f, 0.0f, 0.0f};
+        float defaultValue[3] = {0.0f, 0.0f, 0.0f};
+        float minValue[3] = {0.0f, 0.0f, 0.0f};
+        float maxValue[3] = {1.0f, 1.0f, 1.0f};
+        float step = 0.0f;
+
+        ParamType getType() const override { return ParamType::Float3; }
+        const char* getTypeName() const override { return "FLOAT3"; }
+
+        bool hasChanged() const override
+        {
+            return value[0] != defaultValue[0] || value[1] != defaultValue[1] || value[2] != defaultValue[2];
+        }
+
+        void resetToDefault() override
+        {
+            for (int i = 0; i < 3; i++)
+                value[i] = defaultValue[i];
+        }
+
+        std::vector<std::pair<std::string, std::string>> serialize() const override
+        {
+            return {
+                {name + ".x", std::to_string(value[0])},
+                {name + ".y", std::to_string(value[1])},
+                {name + ".z", std::to_string(value[2])}
+            };
+        }
+
+        std::unique_ptr<EffectParam> clone() const override
+        {
+            auto p = std::make_unique<Float3Param>();
+            p->effectName = effectName;
+            p->name = name;
+            p->label = label;
+            p->tooltip = tooltip;
+            p->uiType = uiType;
+            for (int i = 0; i < 3; i++)
+            {
+                p->value[i] = value[i];
+                p->defaultValue[i] = defaultValue[i];
+                p->minValue[i] = minValue[i];
+                p->maxValue[i] = maxValue[i];
+            }
+            p->step = step;
+            return p;
+        }
+    };
+
+    // Float4 parameter (vec4)
+    class Float4Param : public EffectParam
+    {
+    public:
+        float value[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        float defaultValue[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        float minValue[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        float maxValue[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+        float step = 0.0f;
+
+        ParamType getType() const override { return ParamType::Float4; }
+        const char* getTypeName() const override { return "FLOAT4"; }
+
+        bool hasChanged() const override
+        {
+            for (int i = 0; i < 4; i++)
+                if (value[i] != defaultValue[i])
+                    return true;
+            return false;
+        }
+
+        void resetToDefault() override
+        {
+            for (int i = 0; i < 4; i++)
+                value[i] = defaultValue[i];
+        }
+
+        std::vector<std::pair<std::string, std::string>> serialize() const override
+        {
+            return {
+                {name + ".x", std::to_string(value[0])},
+                {name + ".y", std::to_string(value[1])},
+                {name + ".z", std::to_string(value[2])},
+                {name + ".w", std::to_string(value[3])}
+            };
+        }
+
+        std::unique_ptr<EffectParam> clone() const override
+        {
+            auto p = std::make_unique<Float4Param>();
+            p->effectName = effectName;
+            p->name = name;
+            p->label = label;
+            p->tooltip = tooltip;
+            p->uiType = uiType;
+            for (int i = 0; i < 4; i++)
+            {
+                p->value[i] = value[i];
+                p->defaultValue[i] = defaultValue[i];
+                p->minValue[i] = minValue[i];
+                p->maxValue[i] = maxValue[i];
+            }
             p->step = step;
             return p;
         }

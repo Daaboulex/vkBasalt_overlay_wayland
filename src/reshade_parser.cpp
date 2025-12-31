@@ -125,40 +125,54 @@ namespace vkBasalt
             auto typeIt = findAnnotation(spec.annotations, "ui_type");
             std::string uiType = (typeIt != spec.annotations.end()) ? typeIt->value.string_data : "";
 
-            // Create appropriate subclass based on spec type
-            if (spec.type.is_floating_point() && spec.type.rows == 2)
-            {
-                // float2 / vec2
-                auto p = std::make_unique<Float2Param>();
+            // Helper lambda to populate float vector parameters
+            auto populateFloatVector = [&](auto& p, int componentCount) {
+                static const char* suffixes[] = {".x", ".y", ".z", ".w"};
                 p->effectName = effectName;
                 p->name = spec.name;
                 p->label = label;
                 p->tooltip = tooltip;
                 p->uiType = uiType;
-                p->defaultValue[0] = spec.initializer_value.as_float[0];
-                p->defaultValue[1] = spec.initializer_value.as_float[1];
 
-                // Load values from config (keys are effectName.paramName.x and effectName.paramName.y)
-                p->value[0] = pConfig->getInstanceOption<float>(effectName, spec.name + ".x", p->defaultValue[0]);
-                p->value[1] = pConfig->getInstanceOption<float>(effectName, spec.name + ".y", p->defaultValue[1]);
-
-                // Apply range from annotations (same min/max for both components)
                 auto minIt = findAnnotation(spec.annotations, "ui_min");
                 auto maxIt = findAnnotation(spec.annotations, "ui_max");
-                if (minIt != spec.annotations.end())
+                for (int c = 0; c < componentCount; c++)
                 {
-                    p->minValue[0] = p->minValue[1] = getAnnotationFloat(*minIt);
-                }
-                if (maxIt != spec.annotations.end())
-                {
-                    p->maxValue[0] = p->maxValue[1] = getAnnotationFloat(*maxIt);
+                    p->defaultValue[c] = spec.initializer_value.as_float[c];
+                    p->value[c] = pConfig->getInstanceOption<float>(effectName, spec.name + suffixes[c], p->defaultValue[c]);
+                    if (minIt != spec.annotations.end())
+                        p->minValue[c] = getAnnotationFloat(*minIt);
+                    if (maxIt != spec.annotations.end())
+                        p->maxValue[c] = getAnnotationFloat(*maxIt);
                 }
 
                 auto stepIt = findAnnotation(spec.annotations, "ui_step");
                 if (stepIt != spec.annotations.end())
                     p->step = getAnnotationFloat(*stepIt);
+            };
 
-                return p;
+            // Create appropriate subclass based on spec type
+            if (spec.type.is_floating_point() && spec.type.rows >= 2 && spec.type.rows <= 4)
+            {
+                // float2/float3/float4 vector types
+                if (spec.type.rows == 2)
+                {
+                    auto p = std::make_unique<Float2Param>();
+                    populateFloatVector(p, 2);
+                    return p;
+                }
+                else if (spec.type.rows == 3)
+                {
+                    auto p = std::make_unique<Float3Param>();
+                    populateFloatVector(p, 3);
+                    return p;
+                }
+                else // rows == 4
+                {
+                    auto p = std::make_unique<Float4Param>();
+                    populateFloatVector(p, 4);
+                    return p;
+                }
             }
             else if (spec.type.is_floating_point() && spec.type.rows == 1)
             {
@@ -287,9 +301,10 @@ namespace vkBasalt
                 componentCount++;
             }
 
-            if (componentCount == 2 && spec.type.is_floating_point())
+            if (componentCount >= 2 && componentCount <= 4 && spec.type.is_floating_point())
             {
-                // float2 - combine two scalar floats
+                // float2/float3/float4 - combine multiple scalar spec_constants with same name
+                static const char* suffixes[] = {".x", ".y", ".z", ".w"};
 
                 auto labelIt = findAnnotation(spec.annotations, "ui_label");
                 std::string label = (labelIt != spec.annotations.end()) ? labelIt->value.string_data : spec.name;
@@ -300,37 +315,53 @@ namespace vkBasalt
                 auto typeIt = findAnnotation(spec.annotations, "ui_type");
                 std::string uiType = (typeIt != spec.annotations.end()) ? typeIt->value.string_data : "";
 
-                auto p = std::make_unique<Float2Param>();
-                p->effectName = effectName;
-                p->name = spec.name;
-                p->label = label;
-                p->tooltip = tooltip;
-                p->uiType = uiType;
-
-                // Get default values from both spec constants
-                p->defaultValue[0] = spec.initializer_value.as_float[0];
-                p->defaultValue[1] = module.spec_constants[i + 1].initializer_value.as_float[0];
-
-                // Load values from config (keys are effectName.paramName.x and effectName.paramName.y)
-                p->value[0] = pConfig->getInstanceOption<float>(effectName, spec.name + ".x", p->defaultValue[0]);
-                p->value[1] = pConfig->getInstanceOption<float>(effectName, spec.name + ".y", p->defaultValue[1]);
-
-                // Apply range from annotations
                 auto minIt = findAnnotation(spec.annotations, "ui_min");
                 auto maxIt = findAnnotation(spec.annotations, "ui_max");
-                if (minIt != spec.annotations.end())
-                    p->minValue[0] = p->minValue[1] = getAnnotationFloat(*minIt);
-                if (maxIt != spec.annotations.end())
-                    p->maxValue[0] = p->maxValue[1] = getAnnotationFloat(*maxIt);
-
                 auto stepIt = findAnnotation(spec.annotations, "ui_step");
-                if (stepIt != spec.annotations.end())
-                    p->step = getAnnotationFloat(*stepIt);
 
-                params.push_back(std::move(p));
+                // Helper lambda to populate spec constant vector params
+                // Note: spec_constants store each component separately, so we read from [i + c]
+                auto populateSpecVector = [&](auto& p, size_t count) {
+                    p->effectName = effectName;
+                    p->name = spec.name;
+                    p->label = label;
+                    p->tooltip = tooltip;
+                    p->uiType = uiType;
 
-                // Skip the second component since we've already processed it
-                i += 1;
+                    for (size_t c = 0; c < count; c++)
+                    {
+                        p->defaultValue[c] = module.spec_constants[i + c].initializer_value.as_float[0];
+                        p->value[c] = pConfig->getInstanceOption<float>(effectName, spec.name + suffixes[c], p->defaultValue[c]);
+                        if (minIt != spec.annotations.end())
+                            p->minValue[c] = getAnnotationFloat(*minIt);
+                        if (maxIt != spec.annotations.end())
+                            p->maxValue[c] = getAnnotationFloat(*maxIt);
+                    }
+                    if (stepIt != spec.annotations.end())
+                        p->step = getAnnotationFloat(*stepIt);
+                };
+
+                if (componentCount == 2)
+                {
+                    auto p = std::make_unique<Float2Param>();
+                    populateSpecVector(p, 2);
+                    params.push_back(std::move(p));
+                }
+                else if (componentCount == 3)
+                {
+                    auto p = std::make_unique<Float3Param>();
+                    populateSpecVector(p, 3);
+                    params.push_back(std::move(p));
+                }
+                else // componentCount == 4
+                {
+                    auto p = std::make_unique<Float4Param>();
+                    populateSpecVector(p, 4);
+                    params.push_back(std::move(p));
+                }
+
+                // Skip the remaining components since we've already processed them
+                i += componentCount - 1;
             }
             else
             {

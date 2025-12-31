@@ -641,10 +641,29 @@ namespace vkBasalt
                             }
                             break;
                         case reshadefx::type::t_float:
-                            // Could be FloatParam or Float2Param (vector component)
-                            if (auto* f2p = dynamic_cast<Float2Param*>(param))
+                            // Could be FloatParam, Float2Param, Float3Param, or Float4Param (vector component)
+                            if (auto* f4p = dynamic_cast<Float4Param*>(param))
                             {
-                                // Float2 - use vectorComponentIndex to get correct component
+                                if (vectorComponentIndex < 4)
+                                {
+                                    convertedValue = f4p->value[vectorComponentIndex];
+                                    specData.resize(offset + sizeof(float));
+                                    std::memcpy(specData.data() + offset, &convertedValue, sizeof(float));
+                                    specMapEntrys.push_back({specId, offset, sizeof(float)});
+                                }
+                            }
+                            else if (auto* f3p = dynamic_cast<Float3Param*>(param))
+                            {
+                                if (vectorComponentIndex < 3)
+                                {
+                                    convertedValue = f3p->value[vectorComponentIndex];
+                                    specData.resize(offset + sizeof(float));
+                                    std::memcpy(specData.data() + offset, &convertedValue, sizeof(float));
+                                    specMapEntrys.push_back({specId, offset, sizeof(float)});
+                                }
+                            }
+                            else if (auto* f2p = dynamic_cast<Float2Param*>(param))
+                            {
                                 if (vectorComponentIndex < 2)
                                 {
                                     convertedValue = f2p->value[vectorComponentIndex];

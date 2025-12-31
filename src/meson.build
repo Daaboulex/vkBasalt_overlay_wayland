@@ -23,6 +23,8 @@ overlay_src = [
     'overlay/params/fields/field_bool.cpp',
     'overlay/params/fields/field_float.cpp',
     'overlay/params/fields/field_float2.cpp',
+    'overlay/params/fields/field_float3.cpp',
+    'overlay/params/fields/field_float4.cpp',
     'overlay/params/fields/field_int.cpp',
 ]
 
