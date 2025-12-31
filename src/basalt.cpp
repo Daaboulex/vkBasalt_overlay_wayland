@@ -277,6 +277,130 @@ namespace vkBasalt
         cachedEffects.initialized = true;
     }
 
+    // Helper function to create effects for a swapchain
+    // This centralizes the effect creation logic used by both initial swapchain setup and hot-reload
+    void createEffectsForSwapchain(
+        LogicalSwapchain* pLogicalSwapchain,
+        LogicalDevice* pLogicalDevice,
+        Config* pConfig,
+        const std::vector<std::string>& effectStrings,
+        bool checkEnabledState = true)
+    {
+        VkFormat unormFormat = convertToUNORM(pLogicalSwapchain->format);
+        VkFormat srgbFormat = convertToSRGB(pLogicalSwapchain->format);
+
+        // If no effects, add pass-through so rendering still works
+        if (effectStrings.empty())
+        {
+            std::vector<VkImage> firstImages(pLogicalSwapchain->fakeImages.begin(),
+                                             pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount);
+            pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new TransferEffect(
+                pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent,
+                firstImages, pLogicalSwapchain->images, pConfig)));
+            return;
+        }
+
+        for (uint32_t i = 0; i < effectStrings.size(); i++)
+        {
+            Logger::debug("creating effect " + std::to_string(i) + ": " + effectStrings[i]);
+
+            // Calculate input images for this effect
+            std::vector<VkImage> firstImages(pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount * i,
+                                             pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount * (i + 1));
+
+            // Calculate output images - last effect writes to swapchain or final fake images
+            std::vector<VkImage> secondImages;
+            if (i == effectStrings.size() - 1)
+            {
+                secondImages = pLogicalDevice->supportsMutableFormat
+                    ? pLogicalSwapchain->images
+                    : std::vector<VkImage>(pLogicalSwapchain->fakeImages.end() - pLogicalSwapchain->imageCount,
+                                           pLogicalSwapchain->fakeImages.end());
+            }
+            else
+            {
+                secondImages = std::vector<VkImage>(pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount * (i + 1),
+                                                    pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount * (i + 2));
+            }
+
+            // Check if effect should be skipped (disabled or failed)
+            bool effectFailed = effectRegistry.hasEffectFailed(effectStrings[i]);
+            bool effectDisabled = checkEnabledState && !effectRegistry.isEffectEnabled(effectStrings[i]);
+
+            if (effectFailed || effectDisabled)
+            {
+                Logger::debug("effect " + std::string(effectFailed ? "failed" : "disabled") + ", using pass-through: " + effectStrings[i]);
+                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
+                    new TransferEffect(pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
+                continue;
+            }
+
+            // Get effect type from registry (handles instance names like "cas.2")
+            std::string effectType = effectRegistry.getEffectType(effectStrings[i]);
+            if (effectType.empty())
+                effectType = effectStrings[i];
+
+            // Create the appropriate effect type
+            if (effectType == "fxaa")
+            {
+                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
+                    new FxaaEffect(pLogicalDevice, srgbFormat, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
+            }
+            else if (effectType == "cas")
+            {
+                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
+                    new CasEffect(pLogicalDevice, unormFormat, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
+            }
+            else if (effectType == "deband")
+            {
+                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
+                    new DebandEffect(pLogicalDevice, unormFormat, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
+            }
+            else if (effectType == "smaa")
+            {
+                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
+                    new SmaaEffect(pLogicalDevice, unormFormat, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
+            }
+            else if (effectType == "lut")
+            {
+                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
+                    new LutEffect(pLogicalDevice, unormFormat, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
+            }
+            else if (effectType == "dls")
+            {
+                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
+                    new DlsEffect(pLogicalDevice, unormFormat, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
+            }
+            else
+            {
+                // ReShade effect - wrap in try-catch to handle compilation failures gracefully
+                std::string effectPath = effectRegistry.getEffectFilePath(effectStrings[i]);
+                try
+                {
+                    pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new ReshadeEffect(
+                        pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent,
+                        firstImages, secondImages, pConfig, effectStrings[i], effectPath)));
+                }
+                catch (const std::exception& e)
+                {
+                    Logger::err("Failed to create ReshadeEffect " + effectStrings[i] + ": " + e.what());
+                    effectRegistry.setEffectError(effectStrings[i], e.what());
+                    pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
+                        new TransferEffect(pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
+                }
+            }
+        }
+
+        // If device doesn't support mutable format, add final transfer to swapchain
+        if (!pLogicalDevice->supportsMutableFormat)
+        {
+            pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new TransferEffect(
+                pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent,
+                std::vector<VkImage>(pLogicalSwapchain->fakeImages.end() - pLogicalSwapchain->imageCount, pLogicalSwapchain->fakeImages.end()),
+                pLogicalSwapchain->images, pConfig)));
+        }
+    }
+
     // Helper function to reload effects for a swapchain (for hot-reload)
     void reloadEffectsForSwapchain(LogicalSwapchain* pLogicalSwapchain, Config* pConfig,
                                    const std::vector<std::string>& activeEffects = {})
@@ -311,126 +435,10 @@ namespace vkBasalt
             effectStrings.resize(pLogicalSwapchain->maxEffectSlots);
         }
 
-        VkFormat unormFormat = convertToUNORM(pLogicalSwapchain->format);
-        VkFormat srgbFormat  = convertToSRGB(pLogicalSwapchain->format);
+        Logger::info("reloading " + std::to_string(effectStrings.size()) + " effects");
 
-        Logger::info("reloading " + std::to_string(effectStrings.size()) + " effects, fakeImages.size()=" +
-                    std::to_string(pLogicalSwapchain->fakeImages.size()) + ", imageCount=" + std::to_string(pLogicalSwapchain->imageCount) +
-                    ", maxEffectSlots=" + std::to_string(pLogicalSwapchain->maxEffectSlots));
-
-        // If no effects, add pass-through so rendering still works
-        if (effectStrings.empty())
-        {
-            std::vector<VkImage> firstImages(pLogicalSwapchain->fakeImages.begin(),
-                                             pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount);
-            pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new TransferEffect(
-                pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent,
-                firstImages, pLogicalSwapchain->images, pConfig)));
-        }
-
-        for (uint32_t i = 0; i < effectStrings.size(); i++)
-        {
-            Logger::info("reloading effect " + std::to_string(i) + ": " + effectStrings[i] +
-                        ", firstImages start=" + std::to_string(pLogicalSwapchain->imageCount * i) +
-                        ", end=" + std::to_string(pLogicalSwapchain->imageCount * (i + 1)));
-            std::vector<VkImage> firstImages(pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount * i,
-                                             pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount * (i + 1));
-            std::vector<VkImage> secondImages;
-            if (i == effectStrings.size() - 1)
-            {
-                secondImages = pLogicalDevice->supportsMutableFormat
-                                   ? pLogicalSwapchain->images
-                                   : std::vector<VkImage>(pLogicalSwapchain->fakeImages.end() - pLogicalSwapchain->imageCount,
-                                                          pLogicalSwapchain->fakeImages.end());
-            }
-            else
-            {
-                secondImages = std::vector<VkImage>(pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount * (i + 1),
-                                                    pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount * (i + 2));
-            }
-
-            // Check if effect is disabled or failed - if so, use TransferEffect to pass through
-            // Use global effectRegistry as single source of truth
-            bool effectEnabled = effectRegistry.isEffectEnabled(effectStrings[i]);
-            bool effectFailed = effectRegistry.hasEffectFailed(effectStrings[i]);
-            if (!effectEnabled || effectFailed)
-            {
-                Logger::debug("effect " + std::string(effectFailed ? "failed" : "disabled") + ", using pass-through: " + effectStrings[i]);
-                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
-                    new TransferEffect(pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
-                continue;
-            }
-
-            // Use effectType from registry to handle instance names like "cas.2"
-            std::string effectType = effectRegistry.getEffectType(effectStrings[i]);
-            if (effectType.empty())
-                effectType = effectStrings[i];  // Fallback to effect name if no type stored
-
-            if (effectType == std::string("fxaa"))
-            {
-                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
-                    new FxaaEffect(pLogicalDevice, srgbFormat, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
-            }
-            else if (effectType == std::string("cas"))
-            {
-                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
-                    new CasEffect(pLogicalDevice, unormFormat, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
-            }
-            else if (effectType == std::string("deband"))
-            {
-                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
-                    new DebandEffect(pLogicalDevice, unormFormat, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
-            }
-            else if (effectType == std::string("smaa"))
-            {
-                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
-                    new SmaaEffect(pLogicalDevice, unormFormat, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
-            }
-            else if (effectType == std::string("lut"))
-            {
-                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
-                    new LutEffect(pLogicalDevice, unormFormat, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
-            }
-            else if (effectType == std::string("dls"))
-            {
-                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
-                    new DlsEffect(pLogicalDevice, unormFormat, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
-            }
-            else
-            {
-                // Get effect file path from registry (supports instance names like "Cartoon.2")
-                std::string effectPath = effectRegistry.getEffectFilePath(effectStrings[i]);
-                try
-                {
-                    pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new ReshadeEffect(pLogicalDevice,
-                                                                                                   pLogicalSwapchain->format,
-                                                                                                   pLogicalSwapchain->imageExtent,
-                                                                                                   firstImages,
-                                                                                                   secondImages,
-                                                                                                   pConfig,
-                                                                                                   effectStrings[i],
-                                                                                                   effectPath)));
-                }
-                catch (const std::exception& e)
-                {
-                    Logger::err("Failed to create ReshadeEffect " + effectStrings[i] + ": " + e.what());
-                    effectRegistry.setEffectError(effectStrings[i], e.what());
-                    pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
-                        new TransferEffect(pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
-                }
-            }
-        }
-
-        if (!pLogicalDevice->supportsMutableFormat)
-        {
-            pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new TransferEffect(
-                pLogicalDevice,
-                pLogicalSwapchain->format,
-                pLogicalSwapchain->imageExtent,
-                std::vector<VkImage>(pLogicalSwapchain->fakeImages.end() - pLogicalSwapchain->imageCount, pLogicalSwapchain->fakeImages.end()),
-                pLogicalSwapchain->images,
-                pConfig)));
-        }
+        // Create effects using centralized helper
+        createEffectsForSwapchain(pLogicalSwapchain, pLogicalDevice, pConfig, effectStrings, true);
 
         VkImageView depthImageView = pLogicalDevice->depthImageViews.size() ? pLogicalDevice->depthImageViews[0] : VK_NULL_HANDLE;
         VkImage     depthImage     = pLogicalDevice->depthImageViews.size() ? pLogicalDevice->depthImages[0] : VK_NULL_HANDLE;
@@ -848,131 +856,10 @@ namespace vkBasalt
         }
         else
         {
-        // Normal effect creation from config
-        VkFormat unormFormat = convertToUNORM(pLogicalSwapchain->format);
-        VkFormat srgbFormat  = convertToSRGB(pLogicalSwapchain->format);
-
-        // If no effects (all disabled), add pass-through so commandBuffersEffect still works
-        if (effectStrings.empty())
-        {
-            std::vector<VkImage> firstImages(pLogicalSwapchain->fakeImages.begin(),
-                                             pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount);
-            pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new TransferEffect(
-                pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent,
-                firstImages, pLogicalSwapchain->images, pConfig.get())));
+            // Normal effect creation from config using centralized helper
+            // checkEnabledState=false because disabled effects were already filtered out above
+            createEffectsForSwapchain(pLogicalSwapchain, pLogicalDevice, pConfig.get(), effectStrings, false);
         }
-
-        for (uint32_t i = 0; i < effectStrings.size(); i++)
-        {
-            Logger::debug("current effectString " + effectStrings[i]);
-            std::vector<VkImage> firstImages(pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount * i,
-                                             pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount * (i + 1));
-            Logger::debug(std::to_string(firstImages.size()) + " images in firstImages");
-            std::vector<VkImage> secondImages;
-            if (i == effectStrings.size() - 1)
-            {
-                secondImages = pLogicalDevice->supportsMutableFormat
-                                   ? pLogicalSwapchain->images
-                                   : std::vector<VkImage>(pLogicalSwapchain->fakeImages.end() - pLogicalSwapchain->imageCount,
-                                                          pLogicalSwapchain->fakeImages.end());
-                Logger::debug("using swapchain images as second images");
-            }
-            else
-            {
-                secondImages = std::vector<VkImage>(pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount * (i + 1),
-                                                    pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount * (i + 2));
-                Logger::debug("not using swapchain images as second images");
-            }
-            Logger::debug(std::to_string(secondImages.size()) + " images in secondImages");
-
-            // Check if effect is disabled or failed - if so, use TransferEffect to pass through
-            bool effectFailed = effectRegistry.hasEffectFailed(effectStrings[i]);
-            if (effectFailed)
-            {
-                Logger::debug("effect failed, using pass-through: " + effectStrings[i]);
-                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
-                    new TransferEffect(pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig.get())));
-                continue;
-            }
-
-            // Use effectType from registry to handle instance names like "cas.2"
-            std::string effectType = effectRegistry.getEffectType(effectStrings[i]);
-            if (effectType.empty())
-                effectType = effectStrings[i];  // Fallback to effect name if no type stored
-
-            if (effectType == std::string("fxaa"))
-            {
-                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
-                    new FxaaEffect(pLogicalDevice, srgbFormat, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig.get())));
-                Logger::debug("created FxaaEffect");
-            }
-            else if (effectType == std::string("cas"))
-            {
-                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
-                    new CasEffect(pLogicalDevice, unormFormat, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig.get())));
-                Logger::debug("created CasEffect");
-            }
-            else if (effectType == std::string("deband"))
-            {
-                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
-                    new DebandEffect(pLogicalDevice, unormFormat, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig.get())));
-                Logger::debug("created DebandEffect");
-            }
-            else if (effectType == std::string("smaa"))
-            {
-                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
-                    new SmaaEffect(pLogicalDevice, unormFormat, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig.get())));
-                Logger::debug("created SmaaEffect");
-            }
-            else if (effectType == std::string("lut"))
-            {
-                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
-                    new LutEffect(pLogicalDevice, unormFormat, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig.get())));
-                Logger::debug("created LutEffect");
-            }
-            else if (effectType == std::string("dls"))
-            {
-                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
-                    new DlsEffect(pLogicalDevice, unormFormat, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig.get())));
-                Logger::debug("created DlsEffect");
-            }
-            else
-            {
-                // Get effect file path from registry (supports instance names like "Cartoon.2")
-                std::string effectPath = effectRegistry.getEffectFilePath(effectStrings[i]);
-                try
-                {
-                    pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new ReshadeEffect(pLogicalDevice,
-                                                                                                   pLogicalSwapchain->format,
-                                                                                                   pLogicalSwapchain->imageExtent,
-                                                                                                   firstImages,
-                                                                                                   secondImages,
-                                                                                                   pConfig.get(),
-                                                                                                   effectStrings[i],
-                                                                                                   effectPath)));
-                    Logger::debug("created ReshadeEffect");
-                }
-                catch (const std::exception& e)
-                {
-                    Logger::err("Failed to create ReshadeEffect " + effectStrings[i] + ": " + e.what());
-                    effectRegistry.setEffectError(effectStrings[i], e.what());
-                    pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
-                        new TransferEffect(pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig.get())));
-                }
-            }
-        }
-
-        if (!pLogicalDevice->supportsMutableFormat)
-        {
-            pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new TransferEffect(
-                pLogicalDevice,
-                pLogicalSwapchain->format,
-                pLogicalSwapchain->imageExtent,
-                std::vector<VkImage>(pLogicalSwapchain->fakeImages.end() - pLogicalSwapchain->imageCount, pLogicalSwapchain->fakeImages.end()),
-                pLogicalSwapchain->images,
-                pConfig.get())));
-        }
-        } // end else (normal effect creation)
 
         VkImageView depthImageView = pLogicalDevice->depthImageViews.size() ? pLogicalDevice->depthImageViews[0] : VK_NULL_HANDLE;
         VkImage     depthImage     = pLogicalDevice->depthImageViews.size() ? pLogicalDevice->depthImages[0] : VK_NULL_HANDLE;
