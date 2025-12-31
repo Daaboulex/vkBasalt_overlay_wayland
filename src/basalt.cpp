@@ -114,6 +114,24 @@ namespace vkBasalt
     ResizeDebounceState resizeDebounce;
     constexpr int64_t RESIZE_DEBOUNCE_MS = 200;
 
+    // Helper for key press with debounce - returns true on key-down edge
+    bool handleKeyPress(uint32_t keySymbol, bool& wasPressed)
+    {
+        if (isKeyPressed(keySymbol))
+        {
+            if (!wasPressed)
+            {
+                wasPressed = true;
+                return true;
+            }
+        }
+        else
+        {
+            wasPressed = false;
+        }
+        return false;
+    }
+
     // Helper struct for depth image state
     struct DepthState
     {
@@ -168,6 +186,34 @@ namespace vkBasalt
         writeCommandBuffers(pLogicalDevice, {pLogicalSwapchain->defaultTransfer},
                            VK_NULL_HANDLE, VK_NULL_HANDLE, VK_FORMAT_UNDEFINED,
                            pLogicalSwapchain->commandBuffersNoEffect);
+    }
+
+    // Apply modified parameters from overlay to config
+    void applyOverlayParams(LogicalDevice* pLogicalDevice)
+    {
+        if (!pLogicalDevice->imguiOverlay)
+            return;
+
+        auto params = pLogicalDevice->imguiOverlay->getModifiedParams();
+        Logger::info("Applying " + std::to_string(params.size()) + " modified parameters from overlay");
+
+        for (const auto& param : params)
+        {
+            std::string valueStr;
+            switch (param.type)
+            {
+            case ParamType::Float:
+                valueStr = std::to_string(param.valueFloat);
+                break;
+            case ParamType::Int:
+                valueStr = std::to_string(param.valueInt);
+                break;
+            case ParamType::Bool:
+                valueStr = param.valueBool ? "true" : "false";
+                break;
+            }
+            pConfig->setOverride(param.effectName + "." + param.name, valueStr);
+        }
     }
 
     // Initialize configs: base (vkBasalt.conf) + current (from env/default_config)
@@ -504,6 +550,83 @@ namespace vkBasalt
         reallocateCommandBuffers(pLogicalDevice, pLogicalSwapchain, depth);
 
         Logger::info("effects reloaded successfully");
+    }
+
+    // Reload effects for all swapchains belonging to a device
+    void reloadAllSwapchains(LogicalDevice* pLogicalDevice, const std::vector<std::string>& activeEffects)
+    {
+        for (auto& [_, pLogicalSwapchain] : swapchainMap)
+        {
+            if (!pLogicalSwapchain->fakeImages.empty())
+                reloadEffectsForSwapchain(pLogicalSwapchain.get(), pConfig.get(), activeEffects);
+        }
+    }
+
+    // Build and update overlay state for rendering
+    void updateOverlayState(LogicalDevice* pLogicalDevice, bool effectsEnabled)
+    {
+        if (!pLogicalDevice->imguiOverlay || !pLogicalDevice->imguiOverlay->isVisible())
+            return;
+
+        OverlayState overlayState;
+        overlayState.effectNames = pLogicalDevice->imguiOverlay->getActiveEffects();
+        if (overlayState.effectNames.empty())
+        {
+            overlayState.effectNames = pConfig->getOption<std::vector<std::string>>("effects", {});
+            overlayState.disabledEffects = pConfig->getOption<std::vector<std::string>>("disabledEffects", {});
+        }
+        getAvailableEffects(pConfig.get(), overlayState.currentConfigEffects,
+                            overlayState.defaultConfigEffects, overlayState.effectPaths);
+        overlayState.configPath = pConfig->getConfigFilePath();
+        overlayState.configName = std::filesystem::path(overlayState.configPath).filename().string();
+        overlayState.effectsEnabled = effectsEnabled;
+
+        // Ensure all selected effects are in the registry
+        for (const auto& effectName : pLogicalDevice->imguiOverlay->getSelectedEffects())
+        {
+            if (effectRegistry.hasEffect(effectName))
+                continue;
+            auto pathIt = overlayState.effectPaths.find(effectName);
+            std::string effectPath = (pathIt != overlayState.effectPaths.end()) ? pathIt->second : "";
+            effectRegistry.ensureEffect(effectName, effectPath);
+        }
+
+        overlayState.parameters = effectRegistry.getAllParameters();
+        pLogicalDevice->imguiOverlay->updateState(overlayState);
+    }
+
+    // Submit overlay command buffer if visible, returns semaphore to wait on
+    VkResult submitOverlayFrame(LogicalDevice* pLogicalDevice, LogicalSwapchain* pSwapchain,
+                                uint32_t index, VkSemaphore& outSemaphore)
+    {
+        outSemaphore = pSwapchain->semaphores[index];  // Default: wait on effects semaphore
+
+        if (!pLogicalDevice->imguiOverlay)
+            return VK_SUCCESS;
+
+        VkCommandBuffer overlayCmd = pLogicalDevice->imguiOverlay->recordFrame(
+            index, pSwapchain->imageViews[index],
+            pSwapchain->imageExtent.width, pSwapchain->imageExtent.height);
+
+        if (overlayCmd == VK_NULL_HANDLE)
+            return VK_SUCCESS;
+
+        VkPipelineStageFlags overlayWaitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        VkSubmitInfo overlaySubmit = {};
+        overlaySubmit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        overlaySubmit.waitSemaphoreCount = 1;
+        overlaySubmit.pWaitSemaphores = &pSwapchain->semaphores[index];
+        overlaySubmit.pWaitDstStageMask = &overlayWaitStage;
+        overlaySubmit.commandBufferCount = 1;
+        overlaySubmit.pCommandBuffers = &overlayCmd;
+        overlaySubmit.signalSemaphoreCount = 1;
+        overlaySubmit.pSignalSemaphores = &pSwapchain->overlaySemaphores[index];
+
+        VkResult vr = pLogicalDevice->vkd.QueueSubmit(pLogicalDevice->queue, 1, &overlaySubmit, VK_NULL_HANDLE);
+        if (vr == VK_SUCCESS)
+            outSemaphore = pSwapchain->overlaySemaphores[index];
+
+        return vr;
     }
 
     VkResult VKAPI_CALL vkBasalt_CreateInstance(const VkInstanceCreateInfo*  pCreateInfo,
@@ -1012,37 +1135,16 @@ namespace vkBasalt
         }
 
         // Toggle effect on/off (keyboard)
-        if (isKeyPressed(keySymbol))
-        {
-            if (!pressed)
-            {
-                presentEffect = !presentEffect;
-                pressed       = true;
-            }
-        }
-        else
-        {
-            pressed = false;
-        }
+        if (handleKeyPress(keySymbol, pressed))
+            presentEffect = !presentEffect;
 
         // Hot-reload: check for key press or config file change
         bool shouldReload = false;
-
-        if (isKeyPressed(reloadKeySymbol))
+        if (handleKeyPress(reloadKeySymbol, reloadPressed))
         {
-            if (!reloadPressed)
-            {
-                Logger::debug("reload key pressed");
-                shouldReload = true;
-                reloadPressed = true;
-            }
+            Logger::debug("reload key pressed");
+            shouldReload = true;
         }
-        else
-        {
-            reloadPressed = false;
-        }
-
-        // Also check if config file was modified
         if (pConfig->hasConfigChanged())
         {
             Logger::debug("config file changed detected");
@@ -1050,20 +1152,11 @@ namespace vkBasalt
         }
 
         // Toggle overlay on/off
-        if (isKeyPressed(overlayKeySymbol))
+        if (handleKeyPress(overlayKeySymbol, overlayPressed))
         {
-            if (!overlayPressed)
-            {
-                // Overlay is now at device level
-                LogicalDevice* pDevice = deviceMap[GetKey(queue)].get();
-                if (pDevice->imguiOverlay)
-                    pDevice->imguiOverlay->toggle();
-                overlayPressed = true;
-            }
-        }
-        else
-        {
-            overlayPressed = false;
+            LogicalDevice* pDevice = deviceMap[GetKey(queue)].get();
+            if (pDevice->imguiOverlay)
+                pDevice->imguiOverlay->toggle();
         }
 
         // Check for Apply button press in overlay (overlay is at device level)
@@ -1079,33 +1172,9 @@ namespace vkBasalt
         if (pLogicalDevice->imguiOverlay && pLogicalDevice->imguiOverlay->hasModifiedParams())
         {
             // If we're loading a new config, don't apply old params - just trigger reload
-            bool loadingNewConfig = pLogicalDevice->imguiOverlay->hasPendingConfig();
+            if (!pLogicalDevice->imguiOverlay->hasPendingConfig())
+                applyOverlayParams(pLogicalDevice);
 
-            if (!loadingNewConfig)
-            {
-                Logger::info("Applying modified parameters from overlay");
-                auto params = pLogicalDevice->imguiOverlay->getModifiedParams();
-                for (const auto& param : params)
-                {
-                    std::string valueStr;
-                    switch (param.type)
-                    {
-                    case ParamType::Float:
-                        valueStr = std::to_string(param.valueFloat);
-                        break;
-                    case ParamType::Int:
-                        valueStr = std::to_string(param.valueInt);
-                        break;
-                    case ParamType::Bool:
-                        valueStr = param.valueBool ? "true" : "false";
-                        break;
-                    }
-                    // Use prefixed name (e.g., "4xBRZ.coef" not just "coef")
-                    pConfig->setOverride(param.effectName + "." + param.name, valueStr);
-                }
-            }
-
-            // Effect enabled states are now in the global effectRegistry (single source of truth)
             pLogicalDevice->imguiOverlay->clearApplyRequest();
             shouldReload = true;
         }
@@ -1119,7 +1188,7 @@ namespace vkBasalt
             {
                 std::string newConfigPath = pLogicalDevice->imguiOverlay->getPendingConfigPath();
                 switchConfig(newConfigPath);
-                // Update overlay with effects and disabled effects from the new config
+                // Update overlay with effects from the new config
                 std::vector<std::string> newEffects = pConfig->getOption<std::vector<std::string>>("effects", {});
                 std::vector<std::string> disabledEffects = pConfig->getOption<std::vector<std::string>>("disabledEffects", {});
                 pLogicalDevice->imguiOverlay->setSelectedEffects(newEffects, disabledEffects);
@@ -1132,18 +1201,11 @@ namespace vkBasalt
                 cachedEffects.initialized = false;
                 cachedParams.dirty = true;
 
-                std::vector<std::string> activeEffects;
-                if (pLogicalDevice->imguiOverlay)
-                    activeEffects = pLogicalDevice->imguiOverlay->getActiveEffects();
-                else
-                    activeEffects = pConfig->getOption<std::vector<std::string>>("effects", {});
+                std::vector<std::string> activeEffects = pLogicalDevice->imguiOverlay
+                    ? pLogicalDevice->imguiOverlay->getActiveEffects()
+                    : pConfig->getOption<std::vector<std::string>>("effects", {});
 
-                for (auto& swapchainPair : swapchainMap)
-                {
-                    LogicalSwapchain* pLogicalSwapchain = swapchainPair.second.get();
-                    if (pLogicalSwapchain->fakeImages.size() > 0)
-                        reloadEffectsForSwapchain(pLogicalSwapchain, pConfig.get(), activeEffects);
-                }
+                reloadAllSwapchains(pLogicalDevice, activeEffects);
             }
         }
 
@@ -1171,97 +1233,40 @@ namespace vkBasalt
 
         std::vector<VkPipelineStageFlags> waitStages(pPresentInfo->waitSemaphoreCount, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 
-        for (unsigned int i = 0; i < (*pPresentInfo).swapchainCount; i++)
+        for (unsigned int i = 0; i < pPresentInfo->swapchainCount; i++)
         {
-            uint32_t          index             = (*pPresentInfo).pImageIndices[i];
-            VkSwapchainKHR    swapchain         = (*pPresentInfo).pSwapchains[i];
+            uint32_t          index             = pPresentInfo->pImageIndices[i];
+            VkSwapchainKHR    swapchain         = pPresentInfo->pSwapchains[i];
             LogicalSwapchain* pLogicalSwapchain = swapchainMap[swapchain].get();
 
+            // Update all effects for this frame
             for (auto& effect : pLogicalSwapchain->effects)
-            {
                 effect->updateEffect();
-            }
 
-            VkSubmitInfo submitInfo;
+            // Submit effect command buffer
+            VkSubmitInfo submitInfo = {};
             submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-            submitInfo.pNext              = nullptr;
             submitInfo.waitSemaphoreCount = i == 0 ? pPresentInfo->waitSemaphoreCount : 0;
             submitInfo.pWaitSemaphores    = i == 0 ? pPresentInfo->pWaitSemaphores : nullptr;
             submitInfo.pWaitDstStageMask  = i == 0 ? waitStages.data() : nullptr;
             submitInfo.commandBufferCount = 1;
-            submitInfo.pCommandBuffers =
-                presentEffect ? &(pLogicalSwapchain->commandBuffersEffect[index]) : &(pLogicalSwapchain->commandBuffersNoEffect[index]);
+            submitInfo.pCommandBuffers    = presentEffect
+                ? &pLogicalSwapchain->commandBuffersEffect[index]
+                : &pLogicalSwapchain->commandBuffersNoEffect[index];
             submitInfo.signalSemaphoreCount = 1;
-            submitInfo.pSignalSemaphores    = &(pLogicalSwapchain->semaphores[index]);
+            submitInfo.pSignalSemaphores    = &pLogicalSwapchain->semaphores[index];
 
             VkResult vr = pLogicalDevice->vkd.QueueSubmit(pLogicalDevice->queue, 1, &submitInfo, VK_NULL_HANDLE);
             if (vr != VK_SUCCESS)
                 return vr;
 
-            // Default: wait on effects semaphore for present
-            VkSemaphore finalSemaphore = pLogicalSwapchain->semaphores[index];
+            // Update and render overlay
+            updateOverlayState(pLogicalDevice, presentEffect);
 
-            // Update overlay state and render if visible (overlay is at device level)
-            if (pLogicalDevice->imguiOverlay && pLogicalDevice->imguiOverlay->isVisible())
-            {
-                OverlayState overlayState;
-                // Use active effects for display, but collect params for ALL selected effects
-                overlayState.effectNames = pLogicalDevice->imguiOverlay->getActiveEffects();
-                if (overlayState.effectNames.empty())
-                {
-                    overlayState.effectNames = pConfig->getOption<std::vector<std::string>>("effects", {});
-                    overlayState.disabledEffects = pConfig->getOption<std::vector<std::string>>("disabledEffects", {});
-                }
-                getAvailableEffects(pConfig.get(), overlayState.currentConfigEffects,
-                                    overlayState.defaultConfigEffects, overlayState.effectPaths);
-                overlayState.configPath = pConfig->getConfigFilePath();
-                overlayState.configName = std::filesystem::path(overlayState.configPath).filename().string();
-                overlayState.effectsEnabled = presentEffect;
-
-                // Ensure all selected effects are in the registry (for dynamically added effects)
-                const auto& allSelectedEffects = pLogicalDevice->imguiOverlay->getSelectedEffects();
-                for (const auto& effectName : allSelectedEffects)
-                {
-                    if (!effectRegistry.hasEffect(effectName))
-                    {
-                        // Find path from effectPaths map
-                        auto pathIt = overlayState.effectPaths.find(effectName);
-                        std::string effectPath = (pathIt != overlayState.effectPaths.end()) ? pathIt->second : "";
-                        effectRegistry.ensureEffect(effectName, effectPath);
-                    }
-                }
-
-                // Get parameters from registry (single source of truth)
-                // Registry has all parameters for all effects (including disabled)
-                overlayState.parameters = effectRegistry.getAllParameters();
-
-                pLogicalDevice->imguiOverlay->updateState(overlayState);
-            }
-
-            VkCommandBuffer overlayCmd = pLogicalDevice->imguiOverlay
-                ? pLogicalDevice->imguiOverlay->recordFrame(index, pLogicalSwapchain->imageViews[index],
-                      pLogicalSwapchain->imageExtent.width, pLogicalSwapchain->imageExtent.height)
-                : VK_NULL_HANDLE;
-
-            if (overlayCmd != VK_NULL_HANDLE)
-            {
-                VkPipelineStageFlags overlayWaitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-                VkSubmitInfo overlaySubmit = {};
-                overlaySubmit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-                overlaySubmit.waitSemaphoreCount = 1;
-                overlaySubmit.pWaitSemaphores = &(pLogicalSwapchain->semaphores[index]);
-                overlaySubmit.pWaitDstStageMask = &overlayWaitStage;
-                overlaySubmit.commandBufferCount = 1;
-                overlaySubmit.pCommandBuffers = &overlayCmd;
-                overlaySubmit.signalSemaphoreCount = 1;
-                overlaySubmit.pSignalSemaphores = &(pLogicalSwapchain->overlaySemaphores[index]);
-
-                vr = pLogicalDevice->vkd.QueueSubmit(pLogicalDevice->queue, 1, &overlaySubmit, VK_NULL_HANDLE);
-                if (vr != VK_SUCCESS)
-                    return vr;
-
-                finalSemaphore = pLogicalSwapchain->overlaySemaphores[index];
-            }
+            VkSemaphore finalSemaphore;
+            vr = submitOverlayFrame(pLogicalDevice, pLogicalSwapchain, index, finalSemaphore);
+            if (vr != VK_SUCCESS)
+                return vr;
 
             presentSemaphores.push_back(finalSemaphore);
         }
