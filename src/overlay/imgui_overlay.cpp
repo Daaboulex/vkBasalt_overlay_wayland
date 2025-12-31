@@ -525,6 +525,12 @@ namespace vkBasalt
                 renderSettingsView(keyboard);
                 ImGui::EndTabItem();
             }
+            if (ImGui::BeginTabItem("Diagnostics"))
+            {
+                currentTab = 3;
+                renderDiagnosticsView();
+                ImGui::EndTabItem();
+            }
             ImGui::EndTabBar();
         }
 

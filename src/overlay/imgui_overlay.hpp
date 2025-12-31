@@ -131,6 +131,7 @@ namespace vkBasalt
         void renderShaderManagerView();
         void renderShaderTestSection();  // Shader test UI (part of shader manager)
         void renderMainView(const KeyboardState& keyboard);
+        void renderDiagnosticsView();
 
         LogicalDevice* pLogicalDevice;
         OverlayPersistentState* pPersistentState;
@@ -148,7 +149,7 @@ namespace vkBasalt
         int insertPosition = -1;  // Position to insert effects (-1 = append to end)
         char addEffectsSearch[64] = "";  // Search filter for add effects view
         bool inConfigManageMode = false;
-        int currentTab = 0;  // 0=Effects, 1=Shaders, 2=Settings
+        int currentTab = 0;  // 0=Effects, 1=Shaders, 2=Settings, 3=Diagnostics
         std::vector<std::string> configList;
 
         // Shader Manager state
