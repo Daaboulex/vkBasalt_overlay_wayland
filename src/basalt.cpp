@@ -1008,7 +1008,7 @@ namespace vkBasalt
         else
         {
             // First run OR empty effects - create effects from registry
-            createEffectsForSwapchain(pLogicalSwapchain, pLogicalDevice, pConfig.get(), selectedEffects, false);
+            createEffectsForSwapchain(pLogicalSwapchain, pLogicalDevice, pConfig.get(), selectedEffects, true);
         }
 
         DepthState depth = getDepthState(pLogicalDevice);

@@ -556,6 +556,10 @@ namespace vkBasalt
             selectedEffects = configEffects;
         }
 
+        // Ensure effects exist in registry before setting enabled states
+        for (const auto& effectName : configEffects)
+            ensureEffect(effectName);
+
         // Set enabled states (disabled if in disabledEffects list)
         for (const auto& effectName : configEffects)
         {
