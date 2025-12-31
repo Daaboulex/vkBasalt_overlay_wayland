@@ -11,6 +11,98 @@
 
 namespace vkBasalt
 {
+    namespace
+    {
+        // Render a single preprocessor definition input, returns true if value changed
+        void renderPreprocessorDef(PreprocessorDefinition& def, EffectRegistry* registry, const std::string& effectName)
+        {
+            char valueBuf[64];
+            strncpy(valueBuf, def.value.c_str(), sizeof(valueBuf) - 1);
+            valueBuf[sizeof(valueBuf) - 1] = '\0';
+
+            ImGui::SetNextItemWidth(80);
+            if (ImGui::InputText(def.name.c_str(), valueBuf, sizeof(valueBuf)))
+                registry->setPreprocessorDefValue(effectName, def.name, valueBuf);
+
+            if (def.value != def.defaultValue)
+            {
+                ImGui::SameLine();
+                ImGui::TextDisabled("(modified)");
+            }
+
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
+                registry->setPreprocessorDefValue(effectName, def.name, def.defaultValue);
+
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Default: %s\nDouble-click to reset", def.defaultValue.c_str());
+        }
+
+        // Render a single parameter widget, returns true if value changed
+        bool renderParameter(EffectParameter& param)
+        {
+            bool changed = false;
+
+            switch (param.type)
+            {
+            case ParamType::Float:
+                if (ImGui::SliderFloat(param.label.c_str(), &param.valueFloat, param.minFloat, param.maxFloat))
+                {
+                    if (param.step > 0.0f)
+                        param.valueFloat = std::round(param.valueFloat / param.step) * param.step;
+                    changed = true;
+                }
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
+                {
+                    param.valueFloat = param.defaultFloat;
+                    changed = true;
+                    ImGui::ClearActiveID();
+                }
+                break;
+
+            case ParamType::Int:
+                if (!param.items.empty())
+                {
+                    std::string itemsStr;
+                    for (const auto& item : param.items)
+                        itemsStr += item + '\0';
+                    itemsStr += '\0';
+                    if (ImGui::Combo(param.label.c_str(), &param.valueInt, itemsStr.c_str()))
+                        changed = true;
+                }
+                else
+                {
+                    if (ImGui::SliderInt(param.label.c_str(), &param.valueInt, param.minInt, param.maxInt))
+                    {
+                        if (param.step > 0.0f)
+                        {
+                            int step = static_cast<int>(param.step);
+                            if (step > 0)
+                                param.valueInt = (param.valueInt / step) * step;
+                        }
+                        changed = true;
+                    }
+                }
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
+                {
+                    param.valueInt = param.defaultInt;
+                    changed = true;
+                    ImGui::ClearActiveID();
+                }
+                break;
+
+            case ParamType::Bool:
+                if (ImGui::Checkbox(param.label.c_str(), &param.valueBool))
+                    changed = true;
+                break;
+            }
+
+            if (!param.tooltip.empty() && ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", param.tooltip.c_str());
+
+            return changed;
+        }
+    } // anonymous namespace
+
     void ImGuiOverlay::renderMainView(const KeyboardState& keyboard)
     {
         // Normal mode - show config and effect controls
@@ -209,148 +301,57 @@ namespace vkBasalt
 
             ImGui::PopID();
 
-            if (treeOpen)
+            if (!treeOpen)
+                continue;
+
+            // Show error for failed effects
+            if (effectFailed)
             {
-                // Show error for failed effects instead of parameters
-                if (effectFailed)
-                {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
-                    ImGui::TextWrapped("Error: %s", effectError.c_str());
-                    ImGui::PopStyleColor();
-                    ImGui::TreePop();
-                    continue;
-                }
-
-                // Find and show parameters for this effect
-                int paramIndex = 0;
-                for (auto& param : editableParams)
-                {
-                    if (param.effectName != effectName)
-                        continue;
-
-                    ImGui::PushID(paramIndex);
-                    bool changed = false;
-                    switch (param.type)
-                    {
-                    case ParamType::Float:
-                        if (ImGui::SliderFloat(param.label.c_str(), &param.valueFloat, param.minFloat, param.maxFloat))
-                        {
-                            // Snap to step if specified
-                            if (param.step > 0.0f)
-                                param.valueFloat = std::round(param.valueFloat / param.step) * param.step;
-                            changed = true;
-                        }
-                        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
-                        {
-                            param.valueFloat = param.defaultFloat;
-                            changed = true;
-                            ImGui::ClearActiveID();
-                        }
-                        if (!param.tooltip.empty() && ImGui::IsItemHovered())
-                            ImGui::SetTooltip("%s", param.tooltip.c_str());
-                        break;
-                    case ParamType::Int:
-                        // Check for combo box (ui_type="combo" or has items)
-                        if (!param.items.empty())
-                        {
-                            // Build items string for Combo (null-separated, double-null terminated)
-                            std::string itemsStr;
-                            for (const auto& item : param.items)
-                                itemsStr += item + '\0';
-                            itemsStr += '\0';
-                            if (ImGui::Combo(param.label.c_str(), &param.valueInt, itemsStr.c_str()))
-                                changed = true;
-                        }
-                        else
-                        {
-                            if (ImGui::SliderInt(param.label.c_str(), &param.valueInt, param.minInt, param.maxInt))
-                            {
-                                // Snap to step if specified
-                                if (param.step > 0.0f)
-                                {
-                                    int step = (int)param.step;
-                                    if (step > 0)
-                                        param.valueInt = (param.valueInt / step) * step;
-                                }
-                                changed = true;
-                            }
-                        }
-                        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
-                        {
-                            param.valueInt = param.defaultInt;
-                            changed = true;
-                            ImGui::ClearActiveID();
-                        }
-                        if (!param.tooltip.empty() && ImGui::IsItemHovered())
-                            ImGui::SetTooltip("%s", param.tooltip.c_str());
-                        break;
-                    case ParamType::Bool:
-                        if (ImGui::Checkbox(param.label.c_str(), &param.valueBool))
-                            changed = true;
-                        if (!param.tooltip.empty() && ImGui::IsItemHovered())
-                            ImGui::SetTooltip("%s", param.tooltip.c_str());
-                        break;
-                    }
-                    if (changed)
-                    {
-                        paramsDirty = true;
-                        changedThisFrame = true;
-                        lastChangeTime = std::chrono::steady_clock::now();
-                    }
-                    ImGui::PopID();
-                    paramIndex++;
-                }
-
-                // Show preprocessor definitions (ReShade effects only)
-                if (pEffectRegistry)
-                {
-                    auto& defs = pEffectRegistry->getPreprocessorDefs(effectName);
-                    if (!defs.empty())
-                    {
-                        ImGui::Separator();
-                        ImGui::TextDisabled("Preprocessor:");
-                        if (ImGui::IsItemHovered())
-                            ImGui::SetTooltip("Compile-time macros. Changes require pressing %s to recompile.", settingsReloadKey);
-
-                        for (size_t defIdx = 0; defIdx < defs.size(); defIdx++)
-                        {
-                            auto& def = defs[defIdx];
-                            ImGui::PushID(static_cast<int>(defIdx + 1000));  // Offset to avoid collision with params
-
-                            char valueBuf[64];
-                            strncpy(valueBuf, def.value.c_str(), sizeof(valueBuf) - 1);
-                            valueBuf[sizeof(valueBuf) - 1] = '\0';
-
-                            ImGui::SetNextItemWidth(80);
-                            if (ImGui::InputText(def.name.c_str(), valueBuf, sizeof(valueBuf)))
-                            {
-                                pEffectRegistry->setPreprocessorDefValue(effectName, def.name, valueBuf);
-                                // Note: preprocessor changes need recompile, not just parameter update
-                            }
-
-                            // Show hint if value differs from default
-                            if (def.value != def.defaultValue)
-                            {
-                                ImGui::SameLine();
-                                ImGui::TextDisabled("(modified)");
-                            }
-
-                            // Double-click to reset to default
-                            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
-                            {
-                                pEffectRegistry->setPreprocessorDefValue(effectName, def.name, def.defaultValue);
-                            }
-
-                            if (ImGui::IsItemHovered())
-                                ImGui::SetTooltip("Default: %s\nDouble-click to reset", def.defaultValue.c_str());
-
-                            ImGui::PopID();
-                        }
-                    }
-                }
-
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+                ImGui::TextWrapped("Error: %s", effectError.c_str());
+                ImGui::PopStyleColor();
                 ImGui::TreePop();
+                continue;
             }
+
+            // Show preprocessor definitions first (ReShade effects only)
+            if (pEffectRegistry)
+            {
+                auto& defs = pEffectRegistry->getPreprocessorDefs(effectName);
+                if (!defs.empty())
+                {
+                    ImGui::TextDisabled("Preprocessor:");
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Compile-time macros. Changes require pressing %s to recompile.", settingsReloadKey);
+
+                    for (size_t defIdx = 0; defIdx < defs.size(); defIdx++)
+                    {
+                        ImGui::PushID(static_cast<int>(defIdx + 1000));
+                        renderPreprocessorDef(defs[defIdx], pEffectRegistry, effectName);
+                        ImGui::PopID();
+                    }
+                    ImGui::Separator();
+                }
+            }
+
+            // Show parameters for this effect
+            int paramIndex = 0;
+            for (auto& param : editableParams)
+            {
+                if (param.effectName != effectName)
+                    continue;
+
+                ImGui::PushID(paramIndex++);
+                if (renderParameter(param))
+                {
+                    paramsDirty = true;
+                    changedThisFrame = true;
+                    lastChangeTime = std::chrono::steady_clock::now();
+                }
+                ImGui::PopID();
+            }
+
+            ImGui::TreePop();
         }
 
         // Handle drag end and reorder
