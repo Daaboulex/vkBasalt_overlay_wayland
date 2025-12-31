@@ -16,29 +16,13 @@ Feature showcase: https://www.youtube.com/watch?v=_KJTToAynr0
 
 ## Features
 
-### In-Game Overlay
-- Press `End` (configurable) to toggle the overlay GUI
-- Configure all effects without leaving your game
-- Changes apply in real-time
-
-### Effect Management
-- **Add/Remove Effects:** Choose from built-in effects and ReShade shaders
-- **Reorder Effects:** Drag effects to change rendering order
-- **Enable/Disable:** Toggle individual effects on/off without removing them
-- **Parameter Editing:** Adjust effect parameters with sliders, checkboxes, and dropdowns
-- **Auto-Apply:** Enable automatic application of changes (200ms debounce)
-
-### Config Management
-- **Save Configs:** Save your effect configurations with custom names
-- **Load Configs:** Switch between saved configurations instantly
-- **Set Default:** Choose which config loads on game startup
-
-### Settings
-- Configure ReShade texture and shader paths
-- Set key bindings for toggle, reload, and overlay
-- Adjust maximum number of effects
-- Enable/disable effects on launch
-- Toggle depth capture (experimental)
+- **In-Game Overlay** - Press `End` to configure effects without leaving your game
+- **Dockable Windows** - Drag tabs out to create separate floating windows
+- **Effect Management** - Add, remove, reorder, and configure effects in real-time
+- **Config Management** - Save and load named effect configurations
+- **Shader Manager** - Manage ReShade shader paths and test shader compatibility
+- **Diagnostics** - FPS, frame time graphs, GPU usage, and memory stats (AMD)
+- **Up to 200 Effects** - Large effect chains with VRAM usage estimates
 
 ### Built-in Effects
 - **CAS** - Contrast Adaptive Sharpening
@@ -103,11 +87,8 @@ Configuration is stored in `~/.config/vkBasalt-overlay/`. All required config fi
 The main settings are stored in `~/.config/vkBasalt-overlay/vkBasalt.conf`:
 
 ```ini
-# Paths for ReShade shaders
-reshadeTexturePath = ~/.config/vkBasalt-overlay/reshade/Textures
-reshadeIncludePath = ~/.config/vkBasalt-overlay/reshade/Shaders
-
-# Maximum effects (requires restart)
+# Maximum effects (requires restart, 1-200)
+# Higher values use more VRAM (~8 bytes × width × height per slot)
 maxEffects = 10
 
 # Key bindings
@@ -121,11 +102,14 @@ depthCapture = false
 
 # Overlay options
 overlayBlockInput = false
+autoApplyDelay = 200  # ms delay before auto-applying changes
 ```
 
-### Per-Game Configs
+ReShade shader and texture paths are managed through the Shader Manager tab in the overlay.
 
-Save game-specific configs through the overlay GUI. They are stored in `~/.config/vkBasalt-overlay/configs/`.
+### Saved Configs
+
+Save named configurations through the overlay GUI. They are stored in `~/.config/vkBasalt-overlay/configs/`. You can set any saved config as the default.
 
 ## ReShade Shaders Setup
 
