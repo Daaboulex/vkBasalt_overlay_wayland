@@ -1,5 +1,6 @@
 #include "imgui_overlay.hpp"
 #include "config_serializer.hpp"
+#include "logger.hpp"
 
 #include <cstring>
 
@@ -20,6 +21,7 @@ namespace vkBasalt
             newSettings.enableOnLaunch = settingsEnableOnLaunch;
             newSettings.depthCapture = settingsDepthCapture;
             newSettings.autoApplyDelay = settingsAutoApplyDelay;
+            newSettings.showDebugWindow = settingsShowDebugWindow;
             ConfigSerializer::saveSettings(newSettings);
             settingsSaved = true;
         };
@@ -132,6 +134,18 @@ namespace vkBasalt
             saveSettings();
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Enable depth buffer capture for effects that use depth.\nMay impact performance. Most effects don't need this.\nChanges require restarting the application.");
+
+        ImGui::Spacing();
+        ImGui::Text("Debug");
+        ImGui::Separator();
+
+        if (ImGui::Checkbox("Show Debug Window", &settingsShowDebugWindow))
+        {
+            Logger::setHistoryEnabled(settingsShowDebugWindow);
+            saveSettings();
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Show debug window with effect registry data and log output.");
 
         ImGui::EndChild();
     }

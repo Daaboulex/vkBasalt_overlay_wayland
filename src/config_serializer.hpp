@@ -5,11 +5,12 @@
 #include <vector>
 #include <map>
 
-#include "effect_config.hpp"
+#include "effects/effect_config.hpp"
 
 namespace vkBasalt
 {
-    struct EffectParam
+    // Serialized parameter format for config files
+    struct ConfigParam
     {
         std::string effectName;
         std::string paramName;
@@ -27,6 +28,7 @@ namespace vkBasalt
         bool enableOnLaunch = true;
         bool depthCapture = false;
         int autoApplyDelay = 200;  // ms delay before auto-applying changes
+        bool showDebugWindow = false;  // Show debug window with raw effect registry data
     };
 
     // Shader Manager configuration (from shader_manager.conf)
@@ -50,7 +52,7 @@ namespace vkBasalt
             const std::string& configName,
             const std::vector<std::string>& effects,
             const std::vector<std::string>& disabledEffects,
-            const std::vector<EffectParam>& params,
+            const std::vector<ConfigParam>& params,
             const std::map<std::string, std::string>& effectPaths = {},
             const std::vector<PreprocessorDefinition>& preprocessorDefs = {});
 

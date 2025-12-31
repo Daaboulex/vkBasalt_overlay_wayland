@@ -10,7 +10,7 @@
 
 #include "vulkan_include.hpp"
 
-#include "effect.hpp"
+#include "../effect.hpp"
 #include "config.hpp"
 
 #include "logical_device.hpp"

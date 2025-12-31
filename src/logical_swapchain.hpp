@@ -7,7 +7,7 @@
 #include <vector>
 #include <memory>
 
-#include "effect.hpp"
+#include "effects/effect.hpp"
 
 #include "vulkan_include.hpp"
 

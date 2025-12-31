@@ -64,10 +64,18 @@ namespace vkBasalt
 
     void Logger::emitMsg(LogLevel level, const std::string& message)
     {
+        std::lock_guard<std::mutex> lock(m_mutex);
+
+        // Store in history only if enabled (to save memory when debug window is off)
+        if (m_historyEnabled)
+        {
+            m_history.push_back({level, message});
+            if (m_history.size() > MAX_HISTORY_SIZE)
+                m_history.erase(m_history.begin());
+        }
+
         if (level >= m_minLevel)
         {
-            std::lock_guard<std::mutex> lock(m_mutex);
-
             static std::array<const char*, 5> s_prefixes = {
                 {"vkBasalt trace: ", "vkBasalt debug: ", "vkBasalt info:  ", "vkBasalt warn:  ", "vkBasalt err:   "}};
 
@@ -81,6 +89,41 @@ namespace vkBasalt
                 *m_outStream << prefix << line << std::endl;
             }
         }
+    }
+
+    std::vector<LogEntry> Logger::getHistory()
+    {
+        std::lock_guard<std::mutex> lock(s_instance.m_mutex);
+        return s_instance.m_history;
+    }
+
+    void Logger::clearHistory()
+    {
+        std::lock_guard<std::mutex> lock(s_instance.m_mutex);
+        s_instance.m_history.clear();
+    }
+
+    void Logger::setHistoryEnabled(bool enabled)
+    {
+        std::lock_guard<std::mutex> lock(s_instance.m_mutex);
+        s_instance.m_historyEnabled = enabled;
+        if (!enabled)
+            s_instance.m_history.clear();  // Free memory when disabled
+    }
+
+    bool Logger::isHistoryEnabled()
+    {
+        std::lock_guard<std::mutex> lock(s_instance.m_mutex);
+        return s_instance.m_historyEnabled;
+    }
+
+    const char* Logger::levelName(LogLevel level)
+    {
+        static std::array<const char*, 5> names = {{"TRACE", "DEBUG", "INFO", "WARN", "ERROR"}};
+        uint32_t idx = static_cast<uint32_t>(level);
+        if (idx < names.size())
+            return names[idx];
+        return "UNKNOWN";
     }
 
     LogLevel Logger::getMinLogLevel()

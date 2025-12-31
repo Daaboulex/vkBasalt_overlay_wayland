@@ -1,6 +1,8 @@
 #include "imgui_overlay.hpp"
-#include "effect_registry.hpp"
+#include "effects/effect_registry.hpp"
 #include "config_serializer.hpp"
+#include "params/field_editor.hpp"
+#include "logger.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -37,70 +39,6 @@ namespace vkBasalt
                 ImGui::SetTooltip("Default: %s\nDouble-click to reset", def.defaultValue.c_str());
         }
 
-        // Render a single parameter widget, returns true if value changed
-        bool renderParameter(EffectParameter& param)
-        {
-            bool changed = false;
-
-            switch (param.type)
-            {
-            case ParamType::Float:
-                if (ImGui::SliderFloat(param.label.c_str(), &param.valueFloat, param.minFloat, param.maxFloat))
-                {
-                    if (param.step > 0.0f)
-                        param.valueFloat = std::round(param.valueFloat / param.step) * param.step;
-                    changed = true;
-                }
-                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
-                {
-                    param.valueFloat = param.defaultFloat;
-                    changed = true;
-                    ImGui::ClearActiveID();
-                }
-                break;
-
-            case ParamType::Int:
-                if (!param.items.empty())
-                {
-                    std::string itemsStr;
-                    for (const auto& item : param.items)
-                        itemsStr += item + '\0';
-                    itemsStr += '\0';
-                    if (ImGui::Combo(param.label.c_str(), &param.valueInt, itemsStr.c_str()))
-                        changed = true;
-                }
-                else
-                {
-                    if (ImGui::SliderInt(param.label.c_str(), &param.valueInt, param.minInt, param.maxInt))
-                    {
-                        if (param.step > 0.0f)
-                        {
-                            int step = static_cast<int>(param.step);
-                            if (step > 0)
-                                param.valueInt = (param.valueInt / step) * step;
-                        }
-                        changed = true;
-                    }
-                }
-                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
-                {
-                    param.valueInt = param.defaultInt;
-                    changed = true;
-                    ImGui::ClearActiveID();
-                }
-                break;
-
-            case ParamType::Bool:
-                if (ImGui::Checkbox(param.label.c_str(), &param.valueBool))
-                    changed = true;
-                break;
-            }
-
-            if (!param.tooltip.empty() && ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s", param.tooltip.c_str());
-
-            return changed;
-        }
     } // anonymous namespace
 
     void ImGuiOverlay::renderMainView(const KeyboardState& keyboard)
@@ -156,6 +94,8 @@ namespace vkBasalt
             settingsEnableOnLaunch = currentSettings.enableOnLaunch;
             settingsDepthCapture = currentSettings.depthCapture;
             settingsAutoApplyDelay = currentSettings.autoApplyDelay;
+            settingsShowDebugWindow = currentSettings.showDebugWindow;
+            Logger::setHistoryEnabled(settingsShowDebugWindow);
             settingsInitialized = true;
         }
 
@@ -273,22 +213,11 @@ namespace vkBasalt
                 // Reset to defaults
                 if (ImGui::MenuItem("Reset to Defaults"))
                 {
-                    for (auto& param : editableParams)
+                    for (auto* param : pEffectRegistry->getParametersForEffect(effectName))
                     {
-                        if (param.effectName != effectName)
-                            continue;
-                        switch (param.type)
-                        {
-                        case ParamType::Float:
-                            param.valueFloat = param.defaultFloat;
-                            break;
-                        case ParamType::Int:
-                            param.valueInt = param.defaultInt;
-                            break;
-                        case ParamType::Bool:
-                            param.valueBool = param.defaultBool;
-                            break;
-                        }
+                        FieldEditor* editor = FieldEditorFactory::instance().getEditor(param->getType());
+                        if (editor)
+                            editor->resetToDefault(*param);
                     }
                     changedThisFrame = true;
                     paramsDirty = true;
@@ -372,14 +301,11 @@ namespace vkBasalt
             }
 
             // Show parameters for this effect
-            int paramIndex = 0;
-            for (auto& param : editableParams)
+            auto effectParams = pEffectRegistry->getParametersForEffect(effectName);
+            for (size_t paramIdx = 0; paramIdx < effectParams.size(); paramIdx++)
             {
-                if (param.effectName != effectName)
-                    continue;
-
-                ImGui::PushID(paramIndex++);
-                if (renderParameter(param))
+                ImGui::PushID(static_cast<int>(paramIdx));
+                if (renderFieldEditor(*effectParams[paramIdx]))
                 {
                     paramsDirty = true;
                     changedThisFrame = true;

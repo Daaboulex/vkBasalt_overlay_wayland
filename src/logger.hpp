@@ -8,6 +8,7 @@
 #include <string>
 #include <memory>
 #include <functional>
+#include <vector>
 
 namespace vkBasalt
 {
@@ -20,6 +21,13 @@ namespace vkBasalt
         Warn  = 3,
         Error = 4,
         None  = 5,
+    };
+
+    // Log entry for history
+    struct LogEntry
+    {
+        LogLevel level;
+        std::string message;
     };
 
     class Logger
@@ -41,14 +49,31 @@ namespace vkBasalt
             return s_instance.m_minLevel;
         }
 
+        // Get log history (thread-safe copy)
+        static std::vector<LogEntry> getHistory();
+
+        // Clear log history
+        static void clearHistory();
+
+        // Enable/disable history storage (disabled by default to save memory)
+        static void setHistoryEnabled(bool enabled);
+        static bool isHistoryEnabled();
+
+        // Get level name string
+        static const char* levelName(LogLevel level);
+
     private:
         static Logger s_instance;
+        static constexpr size_t MAX_HISTORY_SIZE = 1000;
 
         const LogLevel m_minLevel;
 
         std::mutex m_mutex;
 
         std::unique_ptr<std::ostream, std::function<void(std::ostream*)>> m_outStream;
+
+        std::vector<LogEntry> m_history;
+        bool m_historyEnabled = false;  // Disabled by default to save memory
 
         void emitMsg(LogLevel level, const std::string& message);
 

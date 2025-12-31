@@ -10,7 +10,7 @@
 
 #include "vulkan_include.hpp"
 
-#include "effect_simple.hpp"
+#include "../effect_simple.hpp"
 #include "config.hpp"
 
 namespace vkBasalt
