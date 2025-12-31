@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
 
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"
@@ -109,10 +110,23 @@ namespace vkBasalt
     {
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
-        ImGui::GetIO().IniFilename = nullptr;
+        ImGuiIO& io = ImGui::GetIO();
+        io.IniFilename = nullptr;
+        io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;  // Enable docking
 
         std::string iniPath = ConfigSerializer::getBaseConfigDir() + "/imgui.ini";
-        ImGui::LoadIniSettingsFromDisk(iniPath.c_str());
+
+        // Check if ini file exists and has content before loading
+        std::ifstream iniFile(iniPath);
+        if (iniFile.good())
+        {
+            iniFile.seekg(0, std::ios::end);
+            if (iniFile.tellg() > 0)
+            {
+                ImGui::LoadIniSettingsFromDisk(iniPath.c_str());
+                dockLayoutInitialized = true;  // Don't override saved layout
+            }
+        }
 
         ImGui::StyleColorsDark();
 
@@ -490,50 +504,69 @@ namespace vkBasalt
         ImGui_ImplVulkan_NewFrame();
         ImGui::NewFrame();
 
-        // vkBasalt info window
-        ImGui::Begin("vkBasalt Controls");
+        // Create background dockspace (allows windows to dock with each other)
+        ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->WorkPos);
+        ImGui::SetNextWindowSize(viewport->WorkSize);
+        ImGui::SetNextWindowViewport(viewport->ID);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 
-        // Tab bar for main navigation
-        if (ImGui::BeginTabBar("MainTabs"))
+        ImGuiWindowFlags dockspaceWindowFlags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
+            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground;
+
+        ImGui::Begin("DockSpaceWindow", nullptr, dockspaceWindowFlags);
+        ImGui::PopStyleVar(3);
+
+        ImGuiID dockspace_id = ImGui::GetID("VkBasaltDockSpace");
+        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+
+        // Set up default dock layout on first run - floating tabbed window
+        if (!dockLayoutInitialized)
         {
-            if (ImGui::BeginTabItem("Effects"))
-            {
-                // Reset to main view when switching back to Effects tab
-                if (currentTab != 0)
-                {
-                    inSelectionMode = false;
-                    inConfigManageMode = false;
-                }
-                currentTab = 0;
-                if (inSelectionMode)
-                    renderAddEffectsView();
-                else if (inConfigManageMode)
-                    renderConfigManagerView();
-                else
-                    renderMainView(keyboard);
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Shaders"))
-            {
-                currentTab = 1;
-                renderShaderManagerView();
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Settings"))
-            {
-                currentTab = 2;
-                renderSettingsView(keyboard);
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Diagnostics"))
-            {
-                currentTab = 3;
-                renderDiagnosticsView();
-                ImGui::EndTabItem();
-            }
-            ImGui::EndTabBar();
+            dockLayoutInitialized = true;
+
+            // Create a floating dock node for our windows
+            ImGuiID floatingNode = ImGui::DockBuilderAddNode(0, ImGuiDockNodeFlags_None);
+            ImGui::DockBuilderSetNodePos(floatingNode, ImVec2(50, 50));
+            ImGui::DockBuilderSetNodeSize(floatingNode, ImVec2(400, 500));
+
+            // Dock all windows into this floating node (they become tabs)
+            // Last one docked becomes the active tab
+            ImGui::DockBuilderDockWindow("Diagnostics", floatingNode);
+            ImGui::DockBuilderDockWindow("Settings", floatingNode);
+            ImGui::DockBuilderDockWindow("Shaders", floatingNode);
+            ImGui::DockBuilderDockWindow("Effects", floatingNode);
+
+            ImGui::DockBuilderFinish(floatingNode);
         }
 
+        ImGui::End();  // DockSpaceWindow
+
+        // Each panel is a separate dockable window (can be dragged out as tabs)
+        if (ImGui::Begin("Effects"))
+        {
+            if (inSelectionMode)
+                renderAddEffectsView();
+            else if (inConfigManageMode)
+                renderConfigManagerView();
+            else
+                renderMainView(keyboard);
+        }
+        ImGui::End();
+
+        if (ImGui::Begin("Shaders"))
+            renderShaderManagerView();
+        ImGui::End();
+
+        if (ImGui::Begin("Settings"))
+            renderSettingsView(keyboard);
+        ImGui::End();
+
+        if (ImGui::Begin("Diagnostics"))
+            renderDiagnosticsView();
         ImGui::End();
 
         ImGui::Render();

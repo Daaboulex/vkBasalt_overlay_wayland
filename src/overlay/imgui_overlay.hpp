@@ -191,6 +191,7 @@ namespace vkBasalt
         bool visible = false;
         bool initialized = false;
         bool backendInitialized = false;
+        bool dockLayoutInitialized = false;  // True after default dock layout is set up
         char saveConfigName[64] = "";
         std::string pendingConfigPath;
     };
