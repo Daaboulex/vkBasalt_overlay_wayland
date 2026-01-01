@@ -46,6 +46,13 @@ Try downloading shaders from these sources
 - https://github.com/HelelSingh/CRT-Guest-ReShade
 - https://github.com/kevinlekiller/reshade-steam-proton
 
+### Planned features
+
+- Effect injection in-between render passes, to apply effects without destroying game UI/HUD
+- Native wayland support (for `PROTON_ENABLE_WAYLAND=1` and just native linux games under wayland)
+- Per-game profiles instead of just have one global default config
+- Fixing input grabbing to prevent click-throughs when the overlay is visible
+
 ## Installation
 
 **Warning!** Make sur you uninstall the original vkBasalt if you want to use this fork, they both use the same env variables and will cause some collisions.
