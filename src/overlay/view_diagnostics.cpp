@@ -13,8 +13,8 @@
 namespace vkBasalt
 {
     // Build version - increment this each build
-    static constexpr int BUILD_NUMBER = 9;
-    static constexpr const char* BUILD_DATE = "2026-01-01";
+    static constexpr int BUILD_NUMBER = 10;
+    static constexpr const char* BUILD_DATE = "2026-01-02";
     namespace
     {
         // Ring buffer for storing history

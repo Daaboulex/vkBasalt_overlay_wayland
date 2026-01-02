@@ -591,7 +591,9 @@ namespace vkBasalt
         overlaySubmit.signalSemaphoreCount = 1;
         overlaySubmit.pSignalSemaphores = &pSwapchain->overlaySemaphores[index];
 
-        VkResult vr = pLogicalDevice->vkd.QueueSubmit(pLogicalDevice->queue, 1, &overlaySubmit, VK_NULL_HANDLE);
+        // Use fence to track command buffer completion (prevents reuse while in flight)
+        VkFence overlayFence = pLogicalDevice->imguiOverlay->getCommandBufferFence(index);
+        VkResult vr = pLogicalDevice->vkd.QueueSubmit(pLogicalDevice->queue, 1, &overlaySubmit, overlayFence);
         if (vr == VK_SUCCESS)
             outSemaphore = pSwapchain->overlaySemaphores[index];
 

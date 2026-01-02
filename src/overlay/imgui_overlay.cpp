@@ -89,8 +89,10 @@ namespace vkBasalt
         CHECK_FUNC(QueueSubmit);
         CHECK_FUNC(QueueWaitIdle);
         CHECK_FUNC(ResetCommandPool);
+        CHECK_FUNC(ResetFences);
         CHECK_FUNC(UnmapMemory);
         CHECK_FUNC(UpdateDescriptorSets);
+        CHECK_FUNC(WaitForFences);
 
         #undef CHECK_FUNC
 
@@ -159,6 +161,11 @@ namespace vkBasalt
             ImGui_ImplVulkan_Shutdown();
         ImGui::DestroyContext();
 
+        for (auto fence : commandBufferFences)
+        {
+            if (fence != VK_NULL_HANDLE)
+                pLogicalDevice->vkd.DestroyFence(pLogicalDevice->device, fence, nullptr);
+        }
         if (commandPool != VK_NULL_HANDLE)
             pLogicalDevice->vkd.DestroyCommandPool(pLogicalDevice->device, commandPool, nullptr);
         if (renderPass != VK_NULL_HANDLE)
@@ -413,6 +420,14 @@ namespace vkBasalt
         allocInfo.commandBufferCount = imageCount;
         pLogicalDevice->vkd.AllocateCommandBuffers(pLogicalDevice->device, &allocInfo, commandBuffers.data());
 
+        // Create fences for command buffer synchronization (signaled initially so first frame doesn't wait)
+        commandBufferFences.resize(imageCount);
+        VkFenceCreateInfo fenceInfo = {};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+        for (uint32_t i = 0; i < imageCount; i++)
+            pLogicalDevice->vkd.CreateFence(pLogicalDevice->device, &fenceInfo, nullptr, &commandBufferFences[i]);
+
         Logger::debug("ImGui Vulkan backend initialized");
     }
 
@@ -424,6 +439,11 @@ namespace vkBasalt
         // Store current resolution for VRAM estimates in settings
         currentWidth = width;
         currentHeight = height;
+
+        // Wait for previous use of this command buffer to complete
+        VkFence fence = commandBufferFences[imageIndex];
+        pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, 1, &fence, VK_TRUE, UINT64_MAX);
+        pLogicalDevice->vkd.ResetFences(pLogicalDevice->device, 1, &fence);
 
         VkCommandBuffer cmd = commandBuffers[imageIndex];
 

@@ -77,5 +77,7 @@
     FORVKFUNC(QueueSubmit) \
     FORVKFUNC(QueueWaitIdle) \
     FORVKFUNC(ResetCommandPool) \
+    FORVKFUNC(ResetFences) \
     FORVKFUNC(UnmapMemory) \
-    FORVKFUNC(UpdateDescriptorSets)
+    FORVKFUNC(UpdateDescriptorSets) \
+    FORVKFUNC(WaitForFences)
