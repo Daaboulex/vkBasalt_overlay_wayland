@@ -91,6 +91,12 @@ namespace vkBasalt
 
         VkCommandBuffer recordFrame(uint32_t imageIndex, VkImageView imageView, uint32_t width, uint32_t height);
 
+        // Get fence for command buffer synchronization (used by basalt.cpp submit)
+        VkFence getCommandBufferFence(uint32_t imageIndex) const
+        {
+            return (imageIndex < commandBufferFences.size()) ? commandBufferFences[imageIndex] : VK_NULL_HANDLE;
+        }
+
     private:
         void initVulkanBackend(VkFormat swapchainFormat, uint32_t imageCount);
         void saveToPersistentState();
@@ -113,6 +119,7 @@ namespace vkBasalt
         VkRenderPass renderPass = VK_NULL_HANDLE;
         VkCommandPool commandPool = VK_NULL_HANDLE;
         std::vector<VkCommandBuffer> commandBuffers;
+        std::vector<VkFence> commandBufferFences;  // Fences to track command buffer completion
         VkFormat swapchainFormat = VK_FORMAT_UNDEFINED;
         uint32_t imageCount = 0;
         OverlayState state;
