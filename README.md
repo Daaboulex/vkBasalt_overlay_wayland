@@ -3,6 +3,7 @@ This is a fork of [vkBasalt](https://github.com/DadSchoorse/vkBasalt) with an ex
 
 If you want to request features, feel free to do so, it's still pretty incomplete, and kind of buggy, it may or may not crash or freeze some games. Adding one of those CRT-Guest shaders to a game that already caps-out your GPU to 100% WILL freeze your game and you WILL need to switch to a different TTY to kill the process. Just a heads-up.
 
+**Important:** I have recently changed the env var to `ENABLE_VKBASALT_OVERLAY=1` so there are no conflicts with upstream. You may need to re-configure your games with this new env var.
 ---
 
 # vkBasalt Overlay
@@ -57,7 +58,7 @@ Try downloading shaders from these sources
 
 ## Installation
 
-**Warning!** Make sur you uninstall the original vkBasalt if you want to use this fork, they both use the same env variables and will cause some collisions.
+In theory, both `vkBasalt` and `vkBasalt_overlay` can be installed at the same time and should not conflict, as they both use different env vars.
 
 **AUR**
 ```
