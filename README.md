@@ -46,7 +46,7 @@ Try downloading shaders from these sources
 - https://github.com/HelelSingh/CRT-Guest-ReShade
 - https://github.com/kevinlekiller/reshade-steam-proton
 
-### Planned features
+### Feature wishlist
 
 - Effect injection without affecting game UI/HUD
 - Native wayland support (for `PROTON_ENABLE_WAYLAND=1` and just native linux games under wayland)
