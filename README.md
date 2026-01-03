@@ -3,7 +3,6 @@ This is a fork of [vkBasalt](https://github.com/DadSchoorse/vkBasalt) with an ex
 
 If you want to request features, feel free to do so, it's still pretty incomplete, and kind of buggy, it may or may not crash or freeze some games. Adding one of those CRT-Guest shaders to a game that already caps-out your GPU to 100% WILL freeze your game and you WILL need to switch to a different TTY to kill the process. Just a heads-up.
 
-**Important:** I have recently changed the env var to `ENABLE_VKBASALT_OVERLAY=1` so there are no conflicts with upstream. You may need to re-configure your games with this new env var.
 ---
 
 # vkBasalt Overlay
@@ -58,7 +57,7 @@ Try downloading shaders from these sources
 
 ## Installation
 
-In theory, both `vkBasalt` and `vkBasalt_overlay` can be installed at the same time and should not conflict, as they both use different env vars.
+**Warning!** You must uninstall the original vkBasalt before installing this fork. Both use the same `ENABLE_VKBASALT` environment variable and cannot coexist (see [why](#why-cant-this-fork-coexist-with-original-vkbasalt)).
 
 **AUR**
 ```
@@ -77,23 +76,24 @@ sudo ninja -C build-release install
 
 ### Test with vkgears
 ```bash
-ENABLE_VKBASALT_OVERLAY=1 vkgears
+ENABLE_VKBASALT=1 vkgears
 ```
 
 ### Steam
 Add to launch options:
 ```
-ENABLE_VKBASALT_OVERLAY=1 %command%
+ENABLE_VKBASALT=1 %command%
 ```
 
 ### Lutris
 1. Right-click game → Configure
 2. System options → Environment variables
-3. Add `ENABLE_VKBASALT_OVERLAY` = `1`
+3. Add `ENABLE_VKBASALT` = `1`
 
-### Coexistence with original vkBasalt
-This fork uses different names to coexist with the original vkBasalt:
-- Environment variable: `ENABLE_VKBASALT_OVERLAY` (vs `ENABLE_VKBASALT`)
+### Why can't this fork coexist with original vkBasalt?
+This fork **cannot** be installed alongside the original vkBasalt because both must use the same `ENABLE_VKBASALT` environment variable. Gamescope and other Vulkan compositors [filter known layer environment variables](https://github.com/Boux/vkBasalt_overlay/issues/5#issuecomment-3706694598) to prevent layers from loading twice (on both the compositor and nested apps). Using a different env var name would break this filtering, causing the overlay to render twice when using gamescope.
+
+The library and layer names are still different to avoid file conflicts:
 - Library: `libvkbasalt-overlay.so` (vs `libvkbasalt.so`)
 - Layer JSON: `vkBasalt-overlay.json` (vs `vkBasalt.json`)
 
