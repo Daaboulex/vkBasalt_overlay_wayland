@@ -39,11 +39,12 @@ namespace vkBasalt
     static void pointerLeave(void* /*data*/, wl_pointer* /*pointer*/,
                              uint32_t /*serial*/, wl_surface* /*surface*/)
     {
-        // Release all buttons on leave — Wayland's implicit grab can cause
-        // leave/enter cycles that swallow release events
-        leftButton = false;
-        rightButton = false;
-        middleButton = false;
+        // Do NOT reset button state on leave. Wayland's implicit grab
+        // guarantees button release events are always delivered to the
+        // surface that received the press. Resetting here breaks drag
+        // operations: KDE/KWin can send brief leave/enter sequences
+        // during window activation, which would clear button state
+        // mid-drag and prevent sliders/window moves from working.
     }
 
     static void pointerMotion(void* /*data*/, wl_pointer* /*pointer*/,

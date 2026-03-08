@@ -10,6 +10,7 @@
 #include "wayland_pointer_constraints.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <fstream>
 
@@ -158,6 +159,10 @@ namespace vkBasalt
 
         pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
 
+        // Clean up Wayland resources before destroying the event queue
+        if (isWayland())
+            cleanupPointerConstraints();
+
         std::string iniPath = ConfigSerializer::getBaseConfigDir() + "/imgui.ini";
         ImGui::SaveIniSettingsToDisk(iniPath.c_str());
 
@@ -189,16 +194,6 @@ namespace vkBasalt
     {
         visible = !visible;
         setInputBlocked(visible);
-
-        // Confine/release pointer on Wayland when overlay toggles
-        if (isWayland())
-        {
-            if (visible)
-                confinePointer();
-            else
-                releasePointer();
-        }
-
         saveToPersistentState();
     }
 
@@ -505,9 +500,16 @@ namespace vkBasalt
 
         VkFramebuffer framebuffer = framebuffers[imageIndex];
 
-        // Set display size and mouse input BEFORE NewFrame
+        // Set display size and frame timing BEFORE NewFrame
         ImGuiIO& io = ImGui::GetIO();
         io.DisplaySize = ImVec2((float)width, (float)height);
+
+        // DeltaTime for ImGui's internal timing (drag thresholds, animations)
+        static auto lastFrameTime = std::chrono::steady_clock::now();
+        auto now = std::chrono::steady_clock::now();
+        float dt = std::chrono::duration<float>(now - lastFrameTime).count();
+        lastFrameTime = now;
+        io.DeltaTime = (dt > 0.0f && dt < 1.0f) ? dt : 1.0f / 60.0f;
 
         // Mouse input for interactivity
         MouseState mouse = getMouseState();
