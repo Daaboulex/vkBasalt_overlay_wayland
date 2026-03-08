@@ -75,6 +75,22 @@ x11_dep = dependency('x11')
 xi_dep = dependency('xi')
 wayland_client_dep = dependency('wayland-client')
 xkbcommon_dep = dependency('xkbcommon')
+wayland_protocols_dep = dependency('wayland-protocols')
+wayland_scanner = find_program('wayland-scanner')
+
+# Generate pointer-constraints-unstable-v1 protocol code
+wl_protocols_dir = wayland_protocols_dep.get_variable('pkgdatadir')
+pointer_constraints_xml = join_paths(wl_protocols_dir, 'unstable', 'pointer-constraints', 'pointer-constraints-unstable-v1.xml')
+
+pointer_constraints_client_h = custom_target('pointer-constraints-client-header',
+    input: pointer_constraints_xml,
+    output: 'pointer-constraints-unstable-v1-client-protocol.h',
+    command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'])
+
+pointer_constraints_code = custom_target('pointer-constraints-code',
+    input: pointer_constraints_xml,
+    output: 'pointer-constraints-unstable-v1-protocol.c',
+    command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'])
 
 conf_paths = configuration_data()
 conf_paths.set_quoted('SYSCONFDIR', join_paths(get_option('prefix'), get_option('sysconfdir')))
@@ -102,6 +118,11 @@ mouse_input_wayland_lib = static_library('mouse_input_wayland',
     'mouse_input_wayland.cpp',
     link_with: [wayland_input_common_lib],
     dependencies: [wayland_client_dep])
+wayland_pointer_constraints_lib = static_library('wayland_pointer_constraints',
+    'wayland_pointer_constraints.cpp', pointer_constraints_code,
+    pointer_constraints_client_h,
+    link_with: [wayland_input_common_lib],
+    dependencies: [wayland_client_dep])
 
 imgui_inc = include_directories('imgui')
 overlay_inc = include_directories('overlay')
@@ -112,7 +133,8 @@ effects_params_inc = include_directories('effects/params')
 shared_library(meson.project_name().to_lower(),
     vkBasalt_src, overlay_src, imgui_src, shader_include,
     link_with: [keyboard_input_x11_lib, mouse_input_lib, input_blocker_lib,
-                wayland_input_common_lib, keyboard_input_wayland_lib, mouse_input_wayland_lib],
+                wayland_input_common_lib, keyboard_input_wayland_lib, mouse_input_wayland_lib,
+                wayland_pointer_constraints_lib],
     include_directories : [vkBasalt_include_path, imgui_inc, overlay_inc, effects_inc, effects_builtin_inc, effects_params_inc],
     cpp_args : ['-DIMGUI_IMPL_VULKAN_NO_PROTOTYPES'],
     dependencies : [x11_dep, xi_dep, wayland_client_dep, xkbcommon_dep, reshade_dep],

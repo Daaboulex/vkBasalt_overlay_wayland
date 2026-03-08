@@ -29,6 +29,7 @@
               ninja
               pkg-config
               glslang
+              wayland-scanner
             ];
 
             buildInputs = with pkgs; [
@@ -38,6 +39,7 @@
               libx11
               libxi
               wayland
+              wayland-protocols
               libxkbcommon
             ];
 

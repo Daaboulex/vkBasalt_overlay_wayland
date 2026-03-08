@@ -6,6 +6,8 @@
 #include "keyboard_input.hpp"
 #include "input_blocker.hpp"
 #include "config_serializer.hpp"
+#include "wayland_display.hpp"
+#include "wayland_pointer_constraints.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -187,6 +189,16 @@ namespace vkBasalt
     {
         visible = !visible;
         setInputBlocked(visible);
+
+        // Confine/release pointer on Wayland when overlay toggles
+        if (isWayland())
+        {
+            if (visible)
+                confinePointer();
+            else
+                releasePointer();
+        }
+
         saveToPersistentState();
     }
 
