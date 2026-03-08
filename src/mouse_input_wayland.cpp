@@ -108,7 +108,7 @@ namespace vkBasalt
             return;
 
         discreteScrollReceived = true;
-        scrollAccumulator += (float)discrete; // Positive = up
+        scrollAccumulator -= (float)discrete; // Wayland: positive = scroll down, ImGui: positive = scroll up
     }
 
     static void pointerAxisValue120(void* /*data*/, wl_pointer* /*pointer*/,
@@ -120,7 +120,7 @@ namespace vkBasalt
             return;
 
         discreteScrollReceived = true;
-        scrollAccumulator += (float)value120 / 120.0f;
+        scrollAccumulator -= (float)value120 / 120.0f;
     }
 
     static void pointerAxisRelativeDirection(void* /*data*/, wl_pointer* /*pointer*/,

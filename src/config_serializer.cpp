@@ -1,4 +1,5 @@
 #include "config_serializer.hpp"
+#include "config_paths.hpp"
 #include "logger.hpp"
 
 #include <fstream>
@@ -8,6 +9,7 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <algorithm>
+#include <array>
 
 namespace vkBasalt
 {
@@ -221,7 +223,31 @@ namespace vkBasalt
     VkBasaltSettings ConfigSerializer::loadSettings()
     {
         VkBasaltSettings settings;
-        std::string configPath = getBaseConfigDir() + "/vkBasalt.conf";
+
+        // Check user config first, then fall back to system paths (same order as Config)
+        std::string userConfig = getBaseConfigDir() + "/vkBasalt.conf";
+
+        const std::array<std::string, 3> configPaths = {
+            userConfig,
+            std::string(SYSCONFDIR) + "/vkBasalt-overlay/vkBasalt.conf",
+            std::string(SYSCONFDIR) + "/vkBasalt-overlay.conf",
+        };
+
+        std::string configPath;
+        for (const auto& path : configPaths)
+        {
+            std::ifstream test(path);
+            if (test.is_open())
+            {
+                configPath = path;
+                break;
+            }
+        }
+
+        if (configPath.empty())
+            return settings;
+
+        Logger::info("SettingsManager loading from: " + configPath);
 
         std::ifstream file(configPath);
         if (!file.is_open())
