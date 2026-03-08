@@ -174,6 +174,20 @@ namespace vkBasalt
         uint32_t currentHeight = 1080;
         char saveConfigName[64] = "";
         std::string pendingConfigPath;
+
+        // Per-app profile system
+        std::string activeGameName;       // Detected executable name
+        std::string activeProfileName;    // Active profile ("default", "performance", etc.)
+        std::string activeProfilePath;    // Full path to active profile file
+        bool profileDirty = false;        // True when changes need saving
+
+        void autoSaveProfile();           // Save current state to active profile
+        void collectSaveData(            // Shared helper for save operations
+            std::vector<std::string>& effects,
+            std::vector<std::string>& disabledEffects,
+            std::vector<ConfigParam>& params,
+            std::map<std::string, std::string>& effectPaths,
+            std::vector<PreprocessorDefinition>& allDefs);
     };
 
 } // namespace vkBasalt

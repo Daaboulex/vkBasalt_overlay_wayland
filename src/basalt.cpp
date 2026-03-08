@@ -204,16 +204,18 @@ namespace vkBasalt
         Logger::info("Applying parameters from overlay - effects will read from EffectRegistry");
     }
 
-    // Initialize configs: base (vkBasalt.conf) + current (from env/default_config)
+    // Detected game info (set once at init, used by overlay for profiles)
+    static std::string detectedGameName;
+    static std::string activeProfileName;
+    static std::string activeProfilePath;
+
+    // Initialize configs: base (vkBasalt.conf) + current (from game profile / env / default)
     void initConfigs()
     {
         if (pBaseConfig != nullptr)
             return;  // Already initialized
 
-        // Ensure config directory exists for later saves (configs/, shader_manager.conf, etc.)
-        // Don't auto-create vkBasalt.conf — settings have in-memory defaults via VkBasaltSettings,
-        // and creating a settings-only file would shadow system configs that contain effects,
-        // reshade paths, and parameters needed for first-run experience.
+        // Ensure config directory exists for later saves
         {
             std::string baseDir = ConfigSerializer::getBaseConfigDir();
             if (!baseDir.empty())
@@ -226,17 +228,45 @@ namespace vkBasalt
         // Load base config (vkBasalt.conf) - used for paths, effect definitions
         pBaseConfig = std::make_shared<Config>();
 
-        // Determine current config path
+        // Detect the game executable
+        detectedGameName = ConfigSerializer::detectGameName();
+
+        // Determine current config path (priority order):
+        // 1. VKBASALT_CONFIG_FILE env var (explicit override)
+        // 2. Per-game profile (auto-created if needed)
+        // 3. Legacy default_config file
+        // 4. Base vkBasalt.conf
         std::string currentConfigPath;
 
-        // 1. Check env var
         const char* envConfig = std::getenv("VKBASALT_CONFIG_FILE");
         if (envConfig && *envConfig)
         {
             currentConfigPath = envConfig;
+            Logger::info("config from env: " + currentConfigPath);
         }
-        // 2. Check default_config file
-        else
+        else if (!detectedGameName.empty())
+        {
+            // Auto-create profile for this game if needed, then load it
+            activeProfileName = ConfigSerializer::getActiveProfile(detectedGameName);
+            activeProfilePath = ConfigSerializer::getProfilePath(detectedGameName, activeProfileName);
+
+            // Ensure the profile file exists
+            struct stat st;
+            if (stat(activeProfilePath.c_str(), &st) != 0)
+            {
+                // Profile doesn't exist yet — create it
+                activeProfilePath = ConfigSerializer::ensureGameProfile(detectedGameName);
+            }
+
+            if (!activeProfilePath.empty())
+            {
+                currentConfigPath = activeProfilePath;
+                Logger::info("game: " + detectedGameName + " | profile: " + activeProfileName);
+            }
+        }
+
+        // Fallback: legacy default_config
+        if (currentConfigPath.empty())
         {
             std::string defaultName = ConfigSerializer::getDefaultConfig();
             if (!defaultName.empty())
@@ -255,12 +285,12 @@ namespace vkBasalt
             }
             else
             {
-                pConfig = pBaseConfig;  // Fall back to base
+                pConfig = pBaseConfig;
             }
         }
         else
         {
-            pConfig = pBaseConfig;  // No current config, use base
+            pConfig = pBaseConfig;
         }
 
         // Initialize effect registry with current config
@@ -1070,6 +1100,11 @@ namespace vkBasalt
                 pLogicalDevice->overlayPersistentState.get());
             // Set the effect registry pointer (single source of truth for enabled states)
             pLogicalDevice->imguiOverlay->setEffectRegistry(&effectRegistry);
+
+            // Set game/profile info for auto-save
+            pLogicalDevice->imguiOverlay->activeGameName = detectedGameName;
+            pLogicalDevice->imguiOverlay->activeProfileName = activeProfileName;
+            pLogicalDevice->imguiOverlay->activeProfilePath = activeProfilePath;
 
             // Initialize input blocking (grabs all input when overlay is visible)
             static bool inputBlockerInited = false;

@@ -157,6 +157,10 @@ namespace vkBasalt
     {
         if (!initialized) return;
 
+        // Auto-save profile on shutdown (before GPU cleanup)
+        if (profileDirty && !activeProfilePath.empty())
+            autoSaveProfile();
+
         pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
 
         // Clean up Wayland resources before destroying the event queue
@@ -251,50 +255,39 @@ namespace vkBasalt
         return pEffectRegistry ? pEffectRegistry->getSelectedEffects() : empty;
     }
 
-    void ImGuiOverlay::saveCurrentConfig()
+    void ImGuiOverlay::collectSaveData(
+        std::vector<std::string>& effects,
+        std::vector<std::string>& disabledEffects,
+        std::vector<ConfigParam>& params,
+        std::map<std::string, std::string>& effectPaths,
+        std::vector<PreprocessorDefinition>& allDefs)
     {
         if (!pEffectRegistry)
             return;
 
-        const auto& selectedEffects = pEffectRegistry->getSelectedEffects();
+        effects = pEffectRegistry->getSelectedEffects();
 
-        // Collect parameters that differ from defaults using polymorphic interface
-        std::vector<ConfigParam> params;
-        for (const auto& effectName : selectedEffects)
+        for (const auto& effectName : effects)
         {
             for (auto* p : pEffectRegistry->getParametersForEffect(effectName))
             {
                 if (!p->hasChanged())
                     continue;
 
-                // Use polymorphic serialize method - may return multiple values (e.g., Float2 returns .x and .y)
                 auto serialized = p->serialize();
                 for (const auto& [suffix, value] : serialized)
                 {
                     ConfigParam cp;
                     cp.effectName = p->effectName;
-                    // For multi-component params, suffix contains ".x", ".y", etc.
-                    // For single-component params, suffix is empty
                     cp.paramName = suffix.empty() ? p->name : suffix;
                     cp.value = value;
                     params.push_back(cp);
                 }
             }
-        }
 
-        // Collect disabled effects (from registry)
-        std::vector<std::string> disabledEffects;
-        for (const auto& effect : selectedEffects)
-        {
-            if (!pEffectRegistry->isEffectEnabled(effect))
-                disabledEffects.push_back(effect);
-        }
+            if (!pEffectRegistry->isEffectEnabled(effectName))
+                disabledEffects.push_back(effectName);
 
-        // Collect effect paths/types for serialization
-        std::map<std::string, std::string> effectPaths;
-        std::vector<PreprocessorDefinition> allDefs;
-        for (const auto& effectName : selectedEffects)
-        {
             if (pEffectRegistry->isEffectBuiltIn(effectName))
             {
                 std::string effectType = pEffectRegistry->getEffectType(effectName);
@@ -312,8 +305,39 @@ namespace vkBasalt
                     allDefs.push_back(def);
             }
         }
+    }
 
-        ConfigSerializer::saveConfig(saveConfigName, selectedEffects, disabledEffects, params, effectPaths, allDefs);
+    void ImGuiOverlay::saveCurrentConfig()
+    {
+        if (!pEffectRegistry)
+            return;
+
+        std::vector<std::string> effects, disabledEffects;
+        std::vector<ConfigParam> params;
+        std::map<std::string, std::string> effectPaths;
+        std::vector<PreprocessorDefinition> allDefs;
+        collectSaveData(effects, disabledEffects, params, effectPaths, allDefs);
+
+        ConfigSerializer::saveConfig(saveConfigName, effects, disabledEffects, params, effectPaths, allDefs);
+        profileDirty = false;
+    }
+
+    void ImGuiOverlay::autoSaveProfile()
+    {
+        if (!pEffectRegistry || activeProfilePath.empty())
+            return;
+
+        std::vector<std::string> effects, disabledEffects;
+        std::vector<ConfigParam> params;
+        std::map<std::string, std::string> effectPaths;
+        std::vector<PreprocessorDefinition> allDefs;
+        collectSaveData(effects, disabledEffects, params, effectPaths, allDefs);
+
+        if (ConfigSerializer::saveToPath(activeProfilePath, effects, disabledEffects, params, effectPaths, allDefs))
+        {
+            profileDirty = false;
+            Logger::debug("Auto-saved profile: " + activeProfilePath);
+        }
     }
 
     void ImGuiOverlay::setSelectedEffects(const std::vector<std::string>& effects,
@@ -614,8 +638,13 @@ namespace vkBasalt
             {
                 applyRequested = true;
                 paramsDirty = false;
+                profileDirty = true;  // Mark for auto-save to profile
             }
         }
+
+        // Auto-save profile when changes are applied
+        if (profileDirty && !paramsDirty && !activeProfilePath.empty())
+            autoSaveProfile();
 
         // Focus Effects window on first frame of the session
         static bool firstFrame = true;

@@ -551,4 +551,310 @@ namespace vkBasalt
         return true;
     }
 
+    // --- Per-app profile system ---
+
+    std::string ConfigSerializer::getProfilePath(const std::string& gameName,
+                                                  const std::string& profileName)
+    {
+        std::string configsDir = getConfigsDir();
+        if (configsDir.empty() || gameName.empty())
+            return "";
+
+        if (profileName.empty() || profileName == "default")
+            return configsDir + "/" + gameName + ".conf";
+
+        return configsDir + "/" + gameName + "@" + profileName + ".conf";
+    }
+
+    std::string ConfigSerializer::ensureGameProfile(const std::string& gameName)
+    {
+        if (gameName.empty())
+            return "";
+
+        std::string configsDir = getConfigsDir();
+        if (configsDir.empty())
+            return "";
+
+        mkdir(configsDir.c_str(), 0755);
+
+        std::string profilePath = getProfilePath(gameName);
+
+        struct stat st;
+        if (stat(profilePath.c_str(), &st) == 0)
+        {
+            Logger::info("Found existing profile for " + gameName);
+            return profilePath;
+        }
+
+        // Create default profile with empty effects
+        std::ofstream file(profilePath);
+        if (!file.is_open())
+        {
+            Logger::err("Could not create profile for " + gameName + ": " + profilePath);
+            return "";
+        }
+
+        file << "# vkBasalt profile for " << gameName << "\n";
+        file << "# Auto-created on first launch\n\n";
+        file << "effects = \n";
+
+        file.close();
+        Logger::info("Created default profile for " + gameName + ": " + profilePath);
+
+        // Also set as active profile
+        setActiveProfile(gameName, "default");
+
+        return profilePath;
+    }
+
+    std::vector<std::string> ConfigSerializer::listProfilesForGame(const std::string& gameName)
+    {
+        std::vector<std::string> profiles;
+        if (gameName.empty())
+            return profiles;
+
+        std::string configsDir = getConfigsDir();
+        if (configsDir.empty())
+            return profiles;
+
+        // Check for default profile: <gameName>.conf
+        struct stat st;
+        std::string defaultPath = configsDir + "/" + gameName + ".conf";
+        if (stat(defaultPath.c_str(), &st) == 0)
+            profiles.push_back("default");
+
+        // Check for named profiles: <gameName>@<name>.conf
+        std::string prefix = gameName + "@";
+        DIR* d = opendir(configsDir.c_str());
+        if (!d)
+            return profiles;
+
+        struct dirent* entry;
+        while ((entry = readdir(d)) != nullptr)
+        {
+            std::string name = entry->d_name;
+            if (name.size() <= 5)
+                continue;
+            if (name.substr(name.size() - 5) != ".conf")
+                continue;
+            if (name.substr(0, prefix.size()) != prefix)
+                continue;
+
+            // Extract profile name: <gameName>@<profileName>.conf
+            std::string profileName = name.substr(prefix.size(), name.size() - prefix.size() - 5);
+            if (!profileName.empty())
+                profiles.push_back(profileName);
+        }
+        closedir(d);
+
+        std::sort(profiles.begin() + (profiles.empty() ? 0 : 1), profiles.end());
+        return profiles;
+    }
+
+    std::string ConfigSerializer::getActiveProfile(const std::string& gameName)
+    {
+        if (gameName.empty())
+            return "default";
+
+        std::string activePath = getConfigsDir() + "/.active_profiles";
+        std::ifstream file(activePath);
+        if (!file.is_open())
+            return "default";
+
+        std::string line;
+        while (std::getline(file, line))
+        {
+            size_t eq = line.find('=');
+            if (eq == std::string::npos)
+                continue;
+            std::string key = line.substr(0, eq);
+            if (key == gameName)
+                return line.substr(eq + 1);
+        }
+
+        return "default";
+    }
+
+    void ConfigSerializer::setActiveProfile(const std::string& gameName,
+                                             const std::string& profileName)
+    {
+        if (gameName.empty())
+            return;
+
+        std::string activePath = getConfigsDir() + "/.active_profiles";
+
+        // Read existing entries
+        std::map<std::string, std::string> entries;
+        {
+            std::ifstream file(activePath);
+            if (file.is_open())
+            {
+                std::string line;
+                while (std::getline(file, line))
+                {
+                    size_t eq = line.find('=');
+                    if (eq != std::string::npos)
+                        entries[line.substr(0, eq)] = line.substr(eq + 1);
+                }
+            }
+        }
+
+        entries[gameName] = profileName;
+
+        // Write back
+        std::ofstream file(activePath);
+        if (!file.is_open())
+            return;
+
+        for (const auto& [key, value] : entries)
+            file << key << "=" << value << "\n";
+    }
+
+    bool ConfigSerializer::createProfile(const std::string& gameName,
+                                          const std::string& profileName,
+                                          const std::string& copyFromProfile)
+    {
+        if (gameName.empty() || profileName.empty() || profileName == "default")
+            return false;
+
+        std::string newPath = getProfilePath(gameName, profileName);
+        if (newPath.empty())
+            return false;
+
+        // Check if already exists
+        struct stat st;
+        if (stat(newPath.c_str(), &st) == 0)
+            return false;  // Already exists
+
+        // Copy from source profile or create empty
+        if (!copyFromProfile.empty())
+        {
+            std::string srcPath = getProfilePath(gameName, copyFromProfile);
+            std::ifstream src(srcPath, std::ios::binary);
+            if (src.is_open())
+            {
+                std::ofstream dst(newPath, std::ios::binary);
+                dst << src.rdbuf();
+                Logger::info("Created profile " + profileName + " for " + gameName + " (copied from " + copyFromProfile + ")");
+                return true;
+            }
+        }
+
+        // Create empty profile
+        std::ofstream file(newPath);
+        if (!file.is_open())
+            return false;
+
+        file << "# vkBasalt profile '" << profileName << "' for " << gameName << "\n\n";
+        file << "effects = \n";
+        file.close();
+
+        Logger::info("Created profile " + profileName + " for " + gameName);
+        return true;
+    }
+
+    bool ConfigSerializer::deleteProfile(const std::string& gameName,
+                                          const std::string& profileName)
+    {
+        // Prevent deleting default profile
+        if (profileName.empty() || profileName == "default")
+            return false;
+
+        std::string path = getProfilePath(gameName, profileName);
+        if (path.empty())
+            return false;
+
+        if (std::remove(path.c_str()) == 0)
+        {
+            Logger::info("Deleted profile " + profileName + " for " + gameName);
+
+            // If this was the active profile, switch back to default
+            if (getActiveProfile(gameName) == profileName)
+                setActiveProfile(gameName, "default");
+
+            return true;
+        }
+
+        return false;
+    }
+
+    bool ConfigSerializer::saveToPath(
+        const std::string& filePath,
+        const std::vector<std::string>& effects,
+        const std::vector<std::string>& disabledEffects,
+        const std::vector<ConfigParam>& params,
+        const std::map<std::string, std::string>& effectPaths,
+        const std::vector<PreprocessorDefinition>& preprocessorDefs)
+    {
+        std::ofstream file(filePath);
+        if (!file.is_open())
+        {
+            Logger::err("Could not open for writing: " + filePath);
+            return false;
+        }
+
+        // Group params by effect
+        std::map<std::string, std::vector<const ConfigParam*>> paramsByEffect;
+        for (const auto& param : params)
+            paramsByEffect[param.effectName].push_back(&param);
+
+        // Group preprocessor defs by effect
+        std::map<std::string, std::vector<const PreprocessorDefinition*>> defsByEffect;
+        for (const auto& def : preprocessorDefs)
+            defsByEffect[def.effectName].push_back(&def);
+
+        // Write params grouped by effect
+        for (const auto& [effectName, effectParams] : paramsByEffect)
+        {
+            file << "# " << effectName << "\n";
+            auto pathIt = effectPaths.find(effectName);
+            if (pathIt != effectPaths.end() && !pathIt->second.empty())
+                file << effectName << " = " << pathIt->second << "\n";
+            for (const auto* param : effectParams)
+                file << param->effectName << "." << param->paramName << " = " << param->value << "\n";
+            auto defsIt = defsByEffect.find(effectName);
+            if (defsIt != defsByEffect.end())
+            {
+                for (const auto* def : defsIt->second)
+                    file << def->effectName << "@" << def->name << " = " << def->value << "\n";
+            }
+            file << "\n";
+        }
+
+        // Write preprocessor defs for effects that have defs but no params
+        for (const auto& [effectName, effectDefs] : defsByEffect)
+        {
+            if (paramsByEffect.find(effectName) != paramsByEffect.end())
+                continue;
+            file << "# " << effectName << "\n";
+            auto pathIt = effectPaths.find(effectName);
+            if (pathIt != effectPaths.end() && !pathIt->second.empty())
+                file << effectName << " = " << pathIt->second << "\n";
+            for (const auto* def : effectDefs)
+                file << def->effectName << "@" << def->name << " = " << def->value << "\n";
+            file << "\n";
+        }
+
+        // Write paths for effects that have no params or defs
+        for (const auto& [effectName, path] : effectPaths)
+        {
+            if (!path.empty() &&
+                paramsByEffect.find(effectName) == paramsByEffect.end() &&
+                defsByEffect.find(effectName) == defsByEffect.end())
+            {
+                file << "# " << effectName << "\n";
+                file << effectName << " = " << path << "\n\n";
+            }
+        }
+
+        // Write effects list
+        file << "effects = " << joinEffects(effects) << "\n";
+
+        if (!disabledEffects.empty())
+            file << "disabledEffects = " << joinEffects(disabledEffects) << "\n";
+
+        file.close();
+        return true;
+    }
+
 } // namespace vkBasalt

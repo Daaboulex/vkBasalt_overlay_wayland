@@ -91,6 +91,44 @@ namespace vkBasalt
         // Check if a per-game config exists and return the game name if so.
         // Returns empty string if no per-game config was found.
         static std::string autoDetectConfig();
+
+        // --- Per-app profile system ---
+
+        // Get the full path for a game profile.
+        // profileName "default" or "" → configs/<gameName>.conf
+        // profileName "foo"           → configs/<gameName>@foo.conf
+        static std::string getProfilePath(const std::string& gameName,
+                                          const std::string& profileName = "");
+
+        // Ensure the default profile for a game exists (creates with empty
+        // effects list if missing). Returns the profile path.
+        static std::string ensureGameProfile(const std::string& gameName);
+
+        // List all profile names for a game ("default", "performance", etc.)
+        static std::vector<std::string> listProfilesForGame(const std::string& gameName);
+
+        // Get/set the active profile name for a game (persisted in .active_profiles)
+        static std::string getActiveProfile(const std::string& gameName);
+        static void setActiveProfile(const std::string& gameName,
+                                     const std::string& profileName);
+
+        // Create a new named profile for a game (copies from source or empty)
+        static bool createProfile(const std::string& gameName,
+                                  const std::string& profileName,
+                                  const std::string& copyFromProfile = "");
+
+        // Delete a named profile (cannot delete "default")
+        static bool deleteProfile(const std::string& gameName,
+                                  const std::string& profileName);
+
+        // Save directly to a profile path (bypasses config name lookup)
+        static bool saveToPath(
+            const std::string& filePath,
+            const std::vector<std::string>& effects,
+            const std::vector<std::string>& disabledEffects,
+            const std::vector<ConfigParam>& params,
+            const std::map<std::string, std::string>& effectPaths = {},
+            const std::vector<PreprocessorDefinition>& preprocessorDefs = {});
     };
 
 } // namespace vkBasalt

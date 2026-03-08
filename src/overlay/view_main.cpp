@@ -50,36 +50,138 @@ namespace vkBasalt
         // Get a mutable copy of selected effects for this frame
         std::vector<std::string> selectedEffects = pEffectRegistry->getSelectedEffects();
 
-        // Normal mode - show config and effect controls
+        // Normal mode - show profile and effect controls
 
-        // Config section with title
-        ImGui::Text("Config:");
-        ImGui::SameLine();
-
-        // Initialize config name once - only pre-fill for user configs from configs folder
-        static bool nameInitialized = false;
-        bool isUserConfig = state.configPath.find("/configs/") != std::string::npos;
-        if (!nameInitialized && isUserConfig && !state.configName.empty())
+        // Profile section — auto-detected game with profile selector
+        if (!activeGameName.empty())
         {
-            std::string name = state.configName;
-            if (name.ends_with(".conf"))
-                name = name.substr(0, name.size() - 5);
-            strncpy(saveConfigName, name.c_str(), sizeof(saveConfigName) - 1);
+            ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "%s", activeGameName.c_str());
+            ImGui::SameLine();
+            ImGui::TextDisabled("|");
+            ImGui::SameLine();
+
+            // Profile dropdown
+            static std::vector<std::string> profileList;
+            static bool profileListStale = true;
+            if (profileListStale)
+            {
+                profileList = ConfigSerializer::listProfilesForGame(activeGameName);
+                profileListStale = false;
+            }
+
+            ImGui::Text("Profile:");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(120);
+            if (ImGui::BeginCombo("##profile", activeProfileName.c_str()))
+            {
+                for (const auto& profile : profileList)
+                {
+                    bool selected = (profile == activeProfileName);
+                    if (ImGui::Selectable(profile.c_str(), selected))
+                    {
+                        if (profile != activeProfileName)
+                        {
+                            // Save current profile before switching
+                            if (profileDirty)
+                                autoSaveProfile();
+
+                            // Switch to new profile
+                            activeProfileName = profile;
+                            activeProfilePath = ConfigSerializer::getProfilePath(activeGameName, profile);
+                            ConfigSerializer::setActiveProfile(activeGameName, profile);
+                            pendingConfigPath = activeProfilePath;
+                            applyRequested = true;
+                            profileListStale = true;
+                        }
+                    }
+                    if (selected)
+                        ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+
+            ImGui::SameLine();
+            if (ImGui::Button("+##newprofile"))
+                ImGui::OpenPopup("NewProfilePopup");
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Create new profile");
+
+            // Only allow deleting non-default profiles
+            if (activeProfileName != "default")
+            {
+                ImGui::SameLine();
+                if (ImGui::Button("-##delprofile"))
+                    ImGui::OpenPopup("DeleteProfilePopup");
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Delete this profile");
+            }
+
+            // New profile popup
+            if (ImGui::BeginPopup("NewProfilePopup"))
+            {
+                static char newProfileName[64] = "";
+                ImGui::Text("New profile name:");
+                ImGui::SetNextItemWidth(150);
+                ImGui::InputText("##newprofname", newProfileName, sizeof(newProfileName));
+                ImGui::SameLine();
+                ImGui::BeginDisabled(newProfileName[0] == '\0');
+                if (ImGui::Button("Create"))
+                {
+                    if (ConfigSerializer::createProfile(activeGameName, newProfileName, activeProfileName))
+                    {
+                        // Save current state before switching, then switch
+                        if (profileDirty)
+                            autoSaveProfile();
+
+                        activeProfileName = newProfileName;
+                        activeProfilePath = ConfigSerializer::getProfilePath(activeGameName, newProfileName);
+                        ConfigSerializer::setActiveProfile(activeGameName, newProfileName);
+                        profileListStale = true;
+                        newProfileName[0] = '\0';
+                        ImGui::CloseCurrentPopup();
+                    }
+                }
+                ImGui::EndDisabled();
+                ImGui::EndPopup();
+            }
+
+            // Delete profile confirmation
+            if (ImGui::BeginPopup("DeleteProfilePopup"))
+            {
+                ImGui::Text("Delete profile '%s'?", activeProfileName.c_str());
+                if (ImGui::Button("Yes, delete"))
+                {
+                    ConfigSerializer::deleteProfile(activeGameName, activeProfileName);
+                    activeProfileName = "default";
+                    activeProfilePath = ConfigSerializer::getProfilePath(activeGameName, "default");
+                    ConfigSerializer::setActiveProfile(activeGameName, "default");
+                    pendingConfigPath = activeProfilePath;
+                    applyRequested = true;
+                    profileListStale = true;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Cancel"))
+                    ImGui::CloseCurrentPopup();
+                ImGui::EndPopup();
+            }
         }
-        nameInitialized = true;
-
-        ImGui::SetNextItemWidth(120);
-        ImGui::InputText("##configname", saveConfigName, sizeof(saveConfigName));
-
-        ImGui::SameLine();
-        ImGui::BeginDisabled(saveConfigName[0] == '\0');
-        if (ImGui::Button("Save"))
-            saveCurrentConfig();
-        ImGui::EndDisabled();
-
-        ImGui::SameLine();
-        if (ImGui::Button("..."))
-            inConfigManageMode = true;
+        else
+        {
+            // Fallback: legacy config UI for unknown executables
+            ImGui::Text("Config:");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(120);
+            ImGui::InputText("##configname", saveConfigName, sizeof(saveConfigName));
+            ImGui::SameLine();
+            ImGui::BeginDisabled(saveConfigName[0] == '\0');
+            if (ImGui::Button("Save"))
+                saveCurrentConfig();
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            if (ImGui::Button("..."))
+                inConfigManageMode = true;
+        }
         ImGui::Separator();
 
         bool effectsOn = state.effectsEnabled;
@@ -338,6 +440,7 @@ namespace vkBasalt
         {
             applyRequested = true;
             paramsDirty = false;
+            profileDirty = true;  // Mark for auto-save to profile
         }
         // Note: Auto-apply is handled globally in imgui_overlay.cpp
     }
