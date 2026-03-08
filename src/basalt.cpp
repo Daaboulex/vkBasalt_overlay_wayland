@@ -12,6 +12,7 @@
 #include <cstring>
 #include <filesystem>
 #include <algorithm>
+#include <sys/stat.h>
 
 #include "util.hpp"
 #include "keyboard_input.hpp"
@@ -207,8 +208,15 @@ namespace vkBasalt
         if (pBaseConfig != nullptr)
             return;  // Already initialized
 
-        // Ensure vkBasalt.conf exists with defaults before reading
-        ConfigSerializer::ensureConfigExists();
+        // Ensure config directory exists for later saves (configs/, shader_manager.conf, etc.)
+        // Don't auto-create vkBasalt.conf — settings have in-memory defaults via VkBasaltSettings,
+        // and creating a settings-only file would shadow system configs that contain effects,
+        // reshade paths, and parameters needed for first-run experience.
+        {
+            std::string baseDir = ConfigSerializer::getBaseConfigDir();
+            if (!baseDir.empty())
+                mkdir(baseDir.c_str(), 0755);
+        }
 
         // Initialize settings manager (single source of truth for settings)
         settingsManager.initialize();
