@@ -17,7 +17,9 @@
 
 namespace vkBasalt
 {
-    // (dummy removed — loader now returns nullptr for unknown functions per Vulkan spec)
+    // No-op dummy for Vulkan functions ImGui requests but vkBasalt doesn't intercept.
+    // ImGui's LoadFunctions treats nullptr returns as failures, so we need a valid pointer.
+    static void VKAPI_CALL dummyVulkanFunc() {}
 
     // Function loader using vkBasalt's dispatch tables
     static PFN_vkVoidFunction imguiVulkanLoaderDummy(const char* function_name, void* user_data)
@@ -102,9 +104,10 @@ namespace vkBasalt
         CHECK_IFUNC(GetPhysicalDeviceQueueFamilyProperties);
         #undef CHECK_IFUNC
 
-        // Return nullptr for unknown functions — Vulkan spec requires loaders to return
-        // NULL for unsupported functions, and ImGui checks for NULL before calling.
-        return nullptr;
+        // Return a no-op dummy for unknown functions. ImGui's LoadFunctions treats
+        // nullptr as a load failure, so we must return a valid function pointer.
+        // These functions are never actually called by ImGui in our usage.
+        return (PFN_vkVoidFunction)dummyVulkanFunc;
     }
 
     ImGuiOverlay::ImGuiOverlay(LogicalDevice* device, VkFormat swapchainFormat, uint32_t imageCount, OverlayPersistentState* persistentState)
