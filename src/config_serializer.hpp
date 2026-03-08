@@ -84,6 +84,13 @@ namespace vkBasalt
 
         // Ensure vkBasalt.conf exists with defaults (call early at startup)
         static void ensureConfigExists();
+
+        // Detect the game executable name from /proc/self/exe
+        static std::string detectGameName();
+
+        // Check if a per-game config exists and return the game name if so.
+        // Returns empty string if no per-game config was found.
+        static std::string autoDetectConfig();
     };
 
 } // namespace vkBasalt

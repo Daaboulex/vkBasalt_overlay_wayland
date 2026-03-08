@@ -10,6 +10,8 @@
 #include <dirent.h>
 #include <algorithm>
 #include <array>
+#include <unistd.h>
+#include <climits>
 
 namespace vkBasalt
 {
@@ -366,6 +368,43 @@ namespace vkBasalt
         VkBasaltSettings defaults;
         saveSettings(defaults);
         Logger::info("Created default vkBasalt.conf");
+    }
+
+    std::string ConfigSerializer::detectGameName()
+    {
+        char buf[PATH_MAX];
+        ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+        if (len <= 0)
+            return "";
+
+        buf[len] = '\0';
+        std::string exePath(buf);
+
+        // Extract basename
+        size_t lastSlash = exePath.rfind('/');
+        if (lastSlash == std::string::npos)
+            return exePath;
+
+        return exePath.substr(lastSlash + 1);
+    }
+
+    std::string ConfigSerializer::autoDetectConfig()
+    {
+        std::string gameName = detectGameName();
+        if (gameName.empty())
+            return "";
+
+        std::string configsDir = getConfigsDir();
+        if (configsDir.empty())
+            return "";
+
+        std::string configPath = configsDir + "/" + gameName + ".conf";
+        struct stat st;
+        if (stat(configPath.c_str(), &st) != 0)
+            return "";
+
+        Logger::info("Auto-loaded config for: " + gameName);
+        return gameName;
     }
 
     // Case-insensitive string comparison helper

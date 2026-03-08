@@ -1,4 +1,5 @@
 #include "imgui_overlay.hpp"
+#include "config_serializer.hpp"
 #include "logger.hpp"
 
 #include <fstream>
@@ -88,6 +89,8 @@ namespace vkBasalt
         static RingBuffer<float, 300> gttUsageHistory;    // Shared memory for iGPUs
         static std::chrono::steady_clock::time_point lastFrameTime;
         static std::string drmCardPath;
+        static std::string detectedGameName;
+        static std::string autoDetectedConfig;
 
         // Find the DRM card path for GPU stats.
         // TODO: This returns the first AMD card with gpu_busy_percent, which may not
@@ -215,6 +218,8 @@ namespace vkBasalt
         if (!initialized)
         {
             drmCardPath = findDrmCard();
+            detectedGameName = ConfigSerializer::detectGameName();
+            autoDetectedConfig = ConfigSerializer::autoDetectConfig();
             lastFrameTime = std::chrono::steady_clock::now();
             initialized = true;
             if (!drmCardPath.empty())
@@ -330,6 +335,24 @@ namespace vkBasalt
             ImGui::Spacing();
             ImGui::TextDisabled("GPU stats not available");
             ImGui::TextDisabled("(No sysfs interface found)");
+        }
+
+        // Game info
+        ImGui::Spacing();
+        ImGui::Spacing();
+        ImGui::Text("Game");
+        ImGui::Separator();
+        if (!detectedGameName.empty())
+        {
+            ImGui::Text("Executable: %s", detectedGameName.c_str());
+            if (!autoDetectedConfig.empty())
+                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Config: %s.conf (auto-detected)", autoDetectedConfig.c_str());
+            else
+                ImGui::TextDisabled("No per-game config found");
+        }
+        else
+        {
+            ImGui::TextDisabled("Could not detect game executable");
         }
 
         // Build info at bottom
