@@ -65,7 +65,7 @@
         });
 
       overlays.default = final: prev: {
-        vkbasalt-overlay = self.packages.${final.system}.vkbasalt-overlay;
+        vkbasalt-overlay = self.packages.${final.stdenv.hostPlatform.system}.vkbasalt-overlay;
       };
     };
 }
