@@ -1107,9 +1107,7 @@ namespace vkBasalt
             pLogicalDevice->imguiOverlay->setEffectRegistry(&effectRegistry);
 
             // Set game/profile info for auto-save
-            pLogicalDevice->imguiOverlay->activeGameName = detectedGameName;
-            pLogicalDevice->imguiOverlay->activeProfileName = activeProfileName;
-            pLogicalDevice->imguiOverlay->activeProfilePath = activeProfilePath;
+            pLogicalDevice->imguiOverlay->setGameProfile(detectedGameName, activeProfileName, activeProfilePath);
 
             // Initialize input blocking (grabs all input when overlay is visible)
             static bool inputBlockerInited = false;

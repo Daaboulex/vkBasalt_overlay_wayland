@@ -68,6 +68,14 @@ namespace vkBasalt
         // Set the effect registry (single source of truth for enabled states)
         void setEffectRegistry(EffectRegistry* registry) { pEffectRegistry = registry; }
 
+        // Set game/profile info for auto-save (called from basalt.cpp after detection)
+        void setGameProfile(const std::string& gameName, const std::string& profileName, const std::string& profilePath)
+        {
+            activeGameName = gameName;
+            activeProfileName = profileName;
+            activeProfilePath = profilePath;
+        }
+
         // Trigger debounced reload (for config switch)
         void markDirty() { paramsDirty = true; lastChangeTime = std::chrono::steady_clock::now(); }
 
