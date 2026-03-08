@@ -16,6 +16,12 @@
 #include "util.hpp"
 #include "keyboard_input.hpp"
 #include "input_blocker.hpp"
+#include "wayland_display.hpp"
+
+// Wayland surface interception for input capture
+#define VK_USE_PLATFORM_WAYLAND_KHR
+#include <wayland-client.h>
+#include "vulkan/vulkan_wayland.h"
 
 #include "logical_device.hpp"
 #include "logical_swapchain.hpp"
@@ -428,6 +434,18 @@ namespace vkBasalt
             const auto* def = BuiltInEffects::instance().getDef(effectType);
             if (def)
             {
+                // Sync registry parameter values to pConfig overrides so built-in
+                // effects (which read from pConfig) see the latest UI-modified values.
+                for (auto* param : effectRegistry.getParametersForEffect(effectStrings[i]))
+                {
+                    auto serialized = param->serialize();
+                    for (const auto& [suffix, value] : serialized)
+                    {
+                        std::string key = suffix.empty() ? param->name : (param->name + suffix);
+                        pConfig->setOverride(key, value);
+                    }
+                }
+
                 // Wrap built-in effect creation in try-catch to handle failures gracefully
                 try
                 {
@@ -1368,6 +1386,33 @@ namespace vkBasalt
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////
+    // Wayland surface interception — capture wl_display for input
+
+    VKAPI_ATTR VkResult VKAPI_CALL vkBasalt_CreateWaylandSurfaceKHR(
+        VkInstance                              instance,
+        const VkWaylandSurfaceCreateInfoKHR*    pCreateInfo,
+        const VkAllocationCallbacks*            pAllocator,
+        VkSurfaceKHR*                           pSurface)
+    {
+        scoped_lock l(globalLock);
+
+        Logger::trace("vkCreateWaylandSurfaceKHR");
+
+        // Capture the wl_display for Wayland input
+        if (pCreateInfo && pCreateInfo->display)
+            setWaylandDisplay(pCreateInfo->display);
+
+        // Forward to the real implementation via the next layer
+        auto nextFunc = (PFN_vkCreateWaylandSurfaceKHR)
+            instanceDispatchMap[GetKey(instance)].GetInstanceProcAddr(
+                instanceMap[GetKey(instance)], "vkCreateWaylandSurfaceKHR");
+        if (!nextFunc)
+            return VK_ERROR_EXTENSION_NOT_PRESENT;
+
+        return nextFunc(instance, pCreateInfo, pAllocator, pSurface);
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////
     // Enumeration function
 
     VkResult VKAPI_CALL vkBasalt_EnumerateInstanceLayerProperties(uint32_t* pPropertyCount, VkLayerProperties* pProperties)
@@ -1460,6 +1505,7 @@ extern "C"
     GETPROCADDR(EnumerateInstanceExtensionProperties); \
     GETPROCADDR(CreateInstance); \
     GETPROCADDR(DestroyInstance); \
+    GETPROCADDR(CreateWaylandSurfaceKHR); \
 \
     /* device chain functions we intercept*/ \
     if (!std::strcmp(pName, "vkGetDeviceProcAddr")) \

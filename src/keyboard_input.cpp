@@ -1,8 +1,8 @@
 #include "keyboard_input.hpp"
 
 #include "logger.hpp"
+#include "wayland_display.hpp"
 
-// TODO build without X11
 #ifndef VKBASALT_X11
 #define VKBASALT_X11 1
 #endif
@@ -11,10 +11,16 @@
 #include "keyboard_input_x11.hpp"
 #endif
 
+#include "keyboard_input_wayland.hpp"
+
 namespace vkBasalt
 {
     uint32_t convertToKeySym(std::string key)
     {
+        // XKB keysym names are compatible with X11 names
+        // so both backends produce the same keysym values
+        if (isWayland())
+            return convertToKeySymWayland(key);
 #if VKBASALT_X11
         return convertToKeySymX11(key);
 #endif
@@ -23,6 +29,8 @@ namespace vkBasalt
 
     bool isKeyPressed(uint32_t ks)
     {
+        if (isWayland())
+            return isKeyPressedWayland(ks);
 #if VKBASALT_X11
         return isKeyPressedX11(ks);
 #endif
@@ -31,6 +39,8 @@ namespace vkBasalt
 
     KeyboardState getKeyboardState()
     {
+        if (isWayland())
+            return getKeyboardStateWayland();
 #if VKBASALT_X11
         return getKeyboardStateX11();
 #endif

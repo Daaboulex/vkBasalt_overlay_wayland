@@ -1,13 +1,22 @@
 #include "input_blocker.hpp"
-#include "keyboard_input_x11.hpp"
+#include "wayland_display.hpp"
 #include "logger.hpp"
 
+#ifndef VKBASALT_X11
+#define VKBASALT_X11 1
+#endif
+
+#if VKBASALT_X11
+#include "keyboard_input_x11.hpp"
 #include <X11/Xlib.h>
+#endif
 
 namespace vkBasalt
 {
-    static bool blockingEnabled = false;  // From config
+    static bool blockingEnabled = false;
     static bool blocked = false;
+
+#if VKBASALT_X11
     static bool grabbed = false;
 
     static void grabInput()
@@ -15,14 +24,12 @@ namespace vkBasalt
         if (grabbed)
             return;
 
-        // Use the same display as keyboard input so grabbed events are processed
         Display* display = (Display*)getKeyboardDisplay();
         if (!display)
             return;
 
         Window root = DefaultRootWindow(display);
 
-        // Grab both keyboard and mouse
         int kbResult = XGrabKeyboard(display, root, False, GrabModeAsync, GrabModeAsync, CurrentTime);
         int ptrResult = XGrabPointer(display, root, False,
                                      ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
@@ -61,17 +68,28 @@ namespace vkBasalt
         grabbed = false;
         Logger::debug("Input released from overlay");
     }
+#endif
 
     void initInputBlocker(bool enabled)
     {
         blockingEnabled = enabled;
 
-        // If disabling, make sure to ungrab any active grab
+        if (isWayland())
+        {
+            // Wayland doesn't support global input grabs
+            // Input events are delivered to our private event queue
+            // and consumed by the overlay when visible
+            Logger::debug(std::string("Input blocking ") + (enabled ? "enabled (Wayland: event consumption mode)" : "disabled"));
+            return;
+        }
+
+#if VKBASALT_X11
         if (!enabled && grabbed)
         {
             ungrabInput();
             blocked = false;
         }
+#endif
 
         Logger::debug(std::string("Input blocking ") + (enabled ? "enabled" : "disabled"));
     }
@@ -86,10 +104,20 @@ namespace vkBasalt
 
         blocked = shouldBlock;
 
+        if (isWayland())
+        {
+            // On Wayland, blocking means the overlay consumes events
+            // from our private queue — the game's own queue is separate
+            Logger::debug(std::string("Wayland input blocking: ") + (blocked ? "consuming" : "passing"));
+            return;
+        }
+
+#if VKBASALT_X11
         if (blocked)
             grabInput();
         else
             ungrabInput();
+#endif
     }
 
     bool isInputBlocked()

@@ -1,5 +1,8 @@
 #include "mouse_input.hpp"
 
+#include "wayland_display.hpp"
+#include "mouse_input_wayland.hpp"
+
 #include <X11/Xlib.h>
 #include <X11/extensions/XInput2.h>
 #include <cstdlib>
@@ -10,7 +13,7 @@ namespace vkBasalt
     static int xiOpcode = 0;
     static float scrollAccumulator = 0.0f;
 
-    MouseState getMouseState()
+    static MouseState getMouseStateX11()
     {
         MouseState state;
 
@@ -77,6 +80,13 @@ namespace vkBasalt
         state.scrollDelta = scrollAccumulator;
         scrollAccumulator = 0.0f;
         return state;
+    }
+
+    MouseState getMouseState()
+    {
+        if (isWayland())
+            return getMouseStateWayland();
+        return getMouseStateX11();
     }
 
 } // namespace vkBasalt
