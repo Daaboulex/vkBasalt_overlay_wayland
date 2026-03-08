@@ -43,6 +43,7 @@
 
             mesonFlags = [
               "-Dappend_libdir_vkbasalt=false"
+              "--sysconfdir=/etc"
             ];
 
             # Fix the layer JSON to use an absolute library path so the Vulkan

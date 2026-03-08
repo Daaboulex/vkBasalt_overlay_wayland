@@ -1,4 +1,5 @@
 #include "config_serializer.hpp"
+#include "config_paths.hpp"
 #include "logger.hpp"
 
 #include <fstream>
@@ -332,12 +333,22 @@ namespace vkBasalt
 
         std::string configPath = baseDir + "/vkBasalt.conf";
 
-        // Check if file exists
+        // Check if user config already exists
         struct stat st;
         if (stat(configPath.c_str(), &st) == 0)
-            return;  // File exists
+            return;  // User config exists
 
-        // Create with defaults
+        // Check system config paths — don't shadow them with an empty user config
+        // (system configs may contain reshade paths, default effects, etc.)
+        if (stat((std::string(SYSCONFDIR) + "/vkBasalt-overlay.conf").c_str(), &st) == 0 ||
+            stat((std::string(SYSCONFDIR) + "/vkBasalt-overlay/vkBasalt.conf").c_str(), &st) == 0 ||
+            stat((std::string(DATADIR) + "/vkBasalt-overlay/vkBasalt.conf").c_str(), &st) == 0)
+        {
+            Logger::info("System config found, skipping user config creation");
+            return;
+        }
+
+        // No config anywhere — create user defaults
         VkBasaltSettings defaults;
         saveSettings(defaults);
         Logger::info("Created default vkBasalt.conf");
