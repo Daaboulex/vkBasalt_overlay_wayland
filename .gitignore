@@ -7,3 +7,8 @@ build*/
 imgui.ini
 build-debug.sh
 .cache/
+
+# Nix
+result
+result-*
+flake.lock
