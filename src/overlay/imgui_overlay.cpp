@@ -382,7 +382,12 @@ namespace vkBasalt
         poolInfo.poolSizeCount = 1;
         poolInfo.pPoolSizes = poolSizes;
 
-        pLogicalDevice->vkd.CreateDescriptorPool(pLogicalDevice->device, &poolInfo, nullptr, &descriptorPool);
+        VkResult vr = pLogicalDevice->vkd.CreateDescriptorPool(pLogicalDevice->device, &poolInfo, nullptr, &descriptorPool);
+        if (vr != VK_SUCCESS)
+        {
+            Logger::err("Failed to create ImGui descriptor pool: " + std::to_string(vr));
+            return;
+        }
 
         // Create render pass for ImGui
         VkAttachmentDescription attachment = {};
@@ -421,7 +426,12 @@ namespace vkBasalt
         renderPassInfo.dependencyCount = 1;
         renderPassInfo.pDependencies = &dependency;
 
-        pLogicalDevice->vkd.CreateRenderPass(pLogicalDevice->device, &renderPassInfo, nullptr, &renderPass);
+        vr = pLogicalDevice->vkd.CreateRenderPass(pLogicalDevice->device, &renderPassInfo, nullptr, &renderPass);
+        if (vr != VK_SUCCESS)
+        {
+            Logger::err("Failed to create ImGui render pass: " + std::to_string(vr));
+            return;
+        }
 
         // Initialize ImGui Vulkan backend
         ImGui_ImplVulkan_InitInfo initInfo = {};
@@ -447,7 +457,12 @@ namespace vkBasalt
         poolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
         poolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         poolCreateInfo.queueFamilyIndex = pLogicalDevice->queueFamilyIndex;
-        pLogicalDevice->vkd.CreateCommandPool(pLogicalDevice->device, &poolCreateInfo, nullptr, &commandPool);
+        vr = pLogicalDevice->vkd.CreateCommandPool(pLogicalDevice->device, &poolCreateInfo, nullptr, &commandPool);
+        if (vr != VK_SUCCESS)
+        {
+            Logger::err("Failed to create ImGui command pool: " + std::to_string(vr));
+            return;
+        }
 
         // Allocate command buffers
         commandBuffers.resize(imageCount);
@@ -456,7 +471,12 @@ namespace vkBasalt
         allocInfo.commandPool = commandPool;
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         allocInfo.commandBufferCount = imageCount;
-        pLogicalDevice->vkd.AllocateCommandBuffers(pLogicalDevice->device, &allocInfo, commandBuffers.data());
+        vr = pLogicalDevice->vkd.AllocateCommandBuffers(pLogicalDevice->device, &allocInfo, commandBuffers.data());
+        if (vr != VK_SUCCESS)
+        {
+            Logger::err("Failed to allocate ImGui command buffers: " + std::to_string(vr));
+            return;
+        }
 
         // Create fences for command buffer synchronization (signaled initially so first frame doesn't wait)
         commandBufferFences.resize(imageCount);
@@ -464,7 +484,11 @@ namespace vkBasalt
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
         for (uint32_t i = 0; i < imageCount; i++)
-            pLogicalDevice->vkd.CreateFence(pLogicalDevice->device, &fenceInfo, nullptr, &commandBufferFences[i]);
+        {
+            vr = pLogicalDevice->vkd.CreateFence(pLogicalDevice->device, &fenceInfo, nullptr, &commandBufferFences[i]);
+            if (vr != VK_SUCCESS)
+                Logger::err("Failed to create ImGui fence " + std::to_string(i) + ": " + std::to_string(vr));
+        }
 
         Logger::debug("ImGui Vulkan backend initialized");
     }
@@ -478,9 +502,19 @@ namespace vkBasalt
         currentWidth = width;
         currentHeight = height;
 
-        // Wait for previous use of this command buffer to complete
+        // Wait for previous use of this command buffer to complete (1 second timeout)
         VkFence fence = commandBufferFences[imageIndex];
-        pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, 1, &fence, VK_TRUE, UINT64_MAX);
+        VkResult fenceResult = pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, 1, &fence, VK_TRUE, 1000000000ULL);
+        if (fenceResult == VK_TIMEOUT)
+        {
+            Logger::warn("ImGui fence wait timed out for image " + std::to_string(imageIndex));
+            return VK_NULL_HANDLE;
+        }
+        if (fenceResult != VK_SUCCESS)
+        {
+            Logger::err("ImGui fence wait failed: " + std::to_string(fenceResult));
+            return VK_NULL_HANDLE;
+        }
         pLogicalDevice->vkd.ResetFences(pLogicalDevice->device, 1, &fence);
 
         VkCommandBuffer cmd = commandBuffers[imageIndex];
@@ -489,7 +523,12 @@ namespace vkBasalt
         VkCommandBufferBeginInfo beginInfo = {};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        pLogicalDevice->vkd.BeginCommandBuffer(cmd, &beginInfo);
+        VkResult vr = pLogicalDevice->vkd.BeginCommandBuffer(cmd, &beginInfo);
+        if (vr != VK_SUCCESS)
+        {
+            Logger::err("Failed to begin ImGui command buffer: " + std::to_string(vr));
+            return VK_NULL_HANDLE;
+        }
 
         // Ensure framebuffer exists for this image index.
         // Recreate if the image view or dimensions changed (swapchain recreation).
@@ -516,7 +555,13 @@ namespace vkBasalt
             fbInfo.width = width;
             fbInfo.height = height;
             fbInfo.layers = 1;
-            pLogicalDevice->vkd.CreateFramebuffer(pLogicalDevice->device, &fbInfo, nullptr, &framebuffers[imageIndex]);
+            vr = pLogicalDevice->vkd.CreateFramebuffer(pLogicalDevice->device, &fbInfo, nullptr, &framebuffers[imageIndex]);
+            if (vr != VK_SUCCESS)
+            {
+                Logger::err("Failed to create ImGui framebuffer: " + std::to_string(vr));
+                pLogicalDevice->vkd.EndCommandBuffer(cmd);
+                return VK_NULL_HANDLE;
+            }
             framebufferImageViews[imageIndex] = imageView;
             framebufferWidth = width;
             framebufferHeight = height;

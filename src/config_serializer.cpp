@@ -88,80 +88,10 @@ namespace vkBasalt
         mkdir(configsDir.c_str(), 0755);
 
         std::string filePath = configsDir + "/" + configName + ".conf";
-        std::ofstream file(filePath);
-        if (!file.is_open())
-        {
-            Logger::err("Could not open config file for writing: " + filePath);
-            return false;
-        }
-
-        // Group params by effect
-        std::map<std::string, std::vector<const ConfigParam*>> paramsByEffect;
-        for (const auto& param : params)
-            paramsByEffect[param.effectName].push_back(&param);
-
-        // Group preprocessor defs by effect
-        std::map<std::string, std::vector<const PreprocessorDefinition*>> defsByEffect;
-        for (const auto& def : preprocessorDefs)
-            defsByEffect[def.effectName].push_back(&def);
-
-        // Write params grouped by effect (always prefix with effectName.paramName)
-        // Also write effect path before params for each effect
-        for (const auto& [effectName, effectParams] : paramsByEffect)
-        {
-            file << "# " << effectName << "\n";
-            // Write effect path if available (for ReShade effects)
-            auto pathIt = effectPaths.find(effectName);
-            if (pathIt != effectPaths.end() && !pathIt->second.empty())
-                file << effectName << " = " << pathIt->second << "\n";
-            for (const auto* param : effectParams)
-                file << param->effectName << "." << param->paramName << " = " << param->value << "\n";
-            // Write preprocessor definitions for this effect (format: effectName@MACRO = value)
-            auto defsIt = defsByEffect.find(effectName);
-            if (defsIt != defsByEffect.end())
-            {
-                for (const auto* def : defsIt->second)
-                    file << def->effectName << "@" << def->name << " = " << def->value << "\n";
-            }
-            file << "\n";
-        }
-
-        // Write preprocessor defs for effects that have defs but no params
-        for (const auto& [effectName, effectDefs] : defsByEffect)
-        {
-            if (paramsByEffect.find(effectName) != paramsByEffect.end())
-                continue;  // Already written with params
-            file << "# " << effectName << "\n";
-            auto pathIt = effectPaths.find(effectName);
-            if (pathIt != effectPaths.end() && !pathIt->second.empty())
-                file << effectName << " = " << pathIt->second << "\n";
-            for (const auto* def : effectDefs)
-                file << def->effectName << "@" << def->name << " = " << def->value << "\n";
-            file << "\n";
-        }
-
-        // Write paths for effects that have no params or defs but do have paths
-        for (const auto& [effectName, path] : effectPaths)
-        {
-            if (!path.empty() &&
-                paramsByEffect.find(effectName) == paramsByEffect.end() &&
-                defsByEffect.find(effectName) == defsByEffect.end())
-            {
-                file << "# " << effectName << "\n";
-                file << effectName << " = " << path << "\n\n";
-            }
-        }
-
-        // Write effects list (all effects, enabled + disabled)
-        file << "effects = " << joinEffects(effects) << "\n";
-
-        // Write disabled effects if any
-        if (!disabledEffects.empty())
-            file << "disabledEffects = " << joinEffects(disabledEffects) << "\n";
-
-        file.close();
-        Logger::info("Saved config to: " + filePath);
-        return true;
+        bool result = saveToPath(filePath, effects, disabledEffects, params, effectPaths, preprocessorDefs);
+        if (result)
+            Logger::info("Saved config to: " + filePath);
+        return result;
     }
 
     bool ConfigSerializer::deleteConfig(const std::string& configName)
@@ -701,13 +631,18 @@ namespace vkBasalt
 
         entries[gameName] = profileName;
 
-        // Write back
-        std::ofstream file(activePath);
+        // Write back atomically
+        std::string tmpPath = activePath + ".tmp";
+        std::ofstream file(tmpPath);
         if (!file.is_open())
             return;
 
         for (const auto& [key, value] : entries)
             file << key << "=" << value << "\n";
+
+        file.close();
+        if (!file.fail())
+            std::rename(tmpPath.c_str(), activePath.c_str());
     }
 
     bool ConfigSerializer::createProfile(const std::string& gameName,
@@ -786,10 +721,12 @@ namespace vkBasalt
         const std::map<std::string, std::string>& effectPaths,
         const std::vector<PreprocessorDefinition>& preprocessorDefs)
     {
-        std::ofstream file(filePath);
+        // Atomic write: write to temp file then rename to prevent corruption
+        std::string tmpPath = filePath + ".tmp";
+        std::ofstream file(tmpPath);
         if (!file.is_open())
         {
-            Logger::err("Could not open for writing: " + filePath);
+            Logger::err("Could not open for writing: " + tmpPath);
             return false;
         }
 
@@ -854,6 +791,22 @@ namespace vkBasalt
             file << "disabledEffects = " << joinEffects(disabledEffects) << "\n";
 
         file.close();
+
+        if (file.fail())
+        {
+            Logger::err("Failed to write config to: " + tmpPath);
+            std::remove(tmpPath.c_str());
+            return false;
+        }
+
+        // Atomic rename — if this fails, the original file is untouched
+        if (std::rename(tmpPath.c_str(), filePath.c_str()) != 0)
+        {
+            Logger::err("Failed to rename temp config to: " + filePath);
+            std::remove(tmpPath.c_str());
+            return false;
+        }
+
         return true;
     }
 

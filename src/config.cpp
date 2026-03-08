@@ -10,13 +10,16 @@ namespace vkBasalt
     Config::Config()
     {
         // Find vkBasalt.conf in standard locations (vkBasalt-overlay fork)
+        const char* homeEnv = std::getenv("HOME");
+        std::string homePath = homeEnv ? homeEnv : "/tmp";
+
         const char* tmpHomeEnv     = std::getenv("XDG_DATA_HOME");
         std::string userConfigFile = tmpHomeEnv ? std::string(tmpHomeEnv) + "/vkBasalt-overlay/vkBasalt.conf"
-                                                : std::string(std::getenv("HOME")) + "/.local/share/vkBasalt-overlay/vkBasalt.conf";
+                                                : homePath + "/.local/share/vkBasalt-overlay/vkBasalt.conf";
 
         const char* tmpConfigEnv      = std::getenv("XDG_CONFIG_HOME");
         std::string userXdgConfigFile = tmpConfigEnv ? std::string(tmpConfigEnv) + "/vkBasalt-overlay/vkBasalt.conf"
-                                                     : std::string(std::getenv("HOME")) + "/.config/vkBasalt-overlay/vkBasalt.conf";
+                                                     : homePath + "/.config/vkBasalt-overlay/vkBasalt.conf";
 
         const std::array<std::string, 5> configPaths = {
             userXdgConfigFile,
@@ -99,9 +102,19 @@ namespace vkBasalt
             return;
         }
 
+        // Read into temporary map first, then swap — avoids data loss if read fails partway
         Logger::info("reloading config: " + configFilePath);
+        auto oldOptions = std::move(options);
         options.clear();
         readConfigFile(file);
+
+        if (options.empty() && !oldOptions.empty())
+        {
+            Logger::warn("config reload produced empty options, restoring previous");
+            options = std::move(oldOptions);
+            return;
+        }
+
         updateLastModifiedTime();
     }
 

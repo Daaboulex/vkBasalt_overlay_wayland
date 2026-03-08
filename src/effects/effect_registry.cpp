@@ -473,47 +473,53 @@ namespace vkBasalt
 
     void EffectRegistry::ensureEffect(const std::string& instanceName, const std::string& effectType)
     {
-        {
-            std::lock_guard<std::mutex> lock(mutex);
-            if (findEffect(instanceName))
-                return;
-        }
-
         // If effectType not provided, assume instanceName is the effect type
         std::string type = effectType.empty() ? instanceName : effectType;
 
-        if (isBuiltInEffect(type))
+        // Do path lookup outside mutex (filesystem I/O can be slow)
+        std::string path;
+        bool isBuiltIn = isBuiltInEffect(type);
+        if (!isBuiltIn)
         {
+            path = findEffectPath(type, pConfig);
+            if (path.empty() || !std::filesystem::exists(path))
+            {
+                Logger::warn("EffectRegistry::ensureEffect: could not find effect file for: " + type);
+                return;
+            }
+        }
+
+        // Lock for the check-and-mutate as a single critical section
+        std::lock_guard<std::mutex> lock(mutex);
+        if (findEffect(instanceName))
+            return;
+
+        if (isBuiltIn)
             initBuiltInEffect(instanceName, type);
-            return;
-        }
-
-        // Use effectType to find the shader file
-        std::string path = findEffectPath(type, pConfig);
-        if (path.empty() || !std::filesystem::exists(path))
-        {
-            Logger::warn("EffectRegistry::ensureEffect: could not find effect file for: " + type);
-            return;
-        }
-
-        initReshadeEffect(instanceName, path);
+        else
+            initReshadeEffect(instanceName, path);
     }
 
-    // Static empty vector for returning when effect not found
-    static std::vector<PreprocessorDefinition> emptyDefs;
-
+    // Per-instance empty vector for returning when effect not found (avoids shared mutable static)
     std::vector<PreprocessorDefinition>& EffectRegistry::getPreprocessorDefs(const std::string& effectName)
     {
         std::lock_guard<std::mutex> lock(mutex);
         EffectConfig* effect = findEffect(effectName);
-        return effect ? effect->preprocessorDefs : emptyDefs;
+        if (effect)
+            return effect->preprocessorDefs;
+        static thread_local std::vector<PreprocessorDefinition> emptyDefs;
+        emptyDefs.clear();
+        return emptyDefs;
     }
 
     const std::vector<PreprocessorDefinition>& EffectRegistry::getPreprocessorDefs(const std::string& effectName) const
     {
         std::lock_guard<std::mutex> lock(mutex);
         const EffectConfig* effect = findEffect(effectName);
-        return effect ? effect->preprocessorDefs : emptyDefs;
+        if (effect)
+            return effect->preprocessorDefs;
+        static thread_local const std::vector<PreprocessorDefinition> emptyDefs;
+        return emptyDefs;
     }
 
     void EffectRegistry::setPreprocessorDefValue(const std::string& effectName, const std::string& macroName, const std::string& value)

@@ -870,7 +870,10 @@ namespace vkBasalt
         }
 
         if (!pLogicalDevice->queue)
-            Logger::err("Did not find a graphics queue!");
+        {
+            Logger::err("Did not find a graphics queue! vkBasalt requires a graphics-capable queue.");
+            // Still register the device so destruction works, but effects won't function
+        }
 
         deviceMap[GetKey(*pDevice)] = pLogicalDevice;
 
@@ -1003,7 +1006,9 @@ namespace vkBasalt
             viewInfo.subresourceRange.levelCount = 1;
             viewInfo.subresourceRange.baseArrayLayer = 0;
             viewInfo.subresourceRange.layerCount = 1;
-            pLogicalDevice->vkd.CreateImageView(pLogicalDevice->device, &viewInfo, nullptr, &pLogicalSwapchain->imageViews[i]);
+            VkResult viewResult = pLogicalDevice->vkd.CreateImageView(pLogicalDevice->device, &viewInfo, nullptr, &pLogicalSwapchain->imageViews[i]);
+            if (viewResult != VK_SUCCESS)
+                Logger::err("Failed to create swapchain image view " + std::to_string(i) + ": " + std::to_string(viewResult));
         }
 
         // Initialize registry from config on first run (before calculating effect slots)
@@ -1123,6 +1128,11 @@ namespace vkBasalt
     VKAPI_ATTR VkResult VKAPI_CALL vkBasalt_QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo)
     {
         scoped_lock l(globalLock);
+
+        // Guard: if no device for this queue, pass through
+        auto devIt = deviceMap.find(GetKey(queue));
+        if (devIt == deviceMap.end() || !devIt->second || !devIt->second->queue)
+            return devIt != deviceMap.end() ? devIt->second->vkd.QueuePresentKHR(queue, pPresentInfo) : VK_ERROR_DEVICE_LOST;
 
         // Keybindings - read from settingsManager (can be updated when settings are saved)
         static uint32_t keySymbol = convertToKeySym(settingsManager.getToggleKey());
