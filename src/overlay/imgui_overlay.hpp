@@ -120,8 +120,12 @@ namespace vkBasalt
         VkCommandPool commandPool = VK_NULL_HANDLE;
         std::vector<VkCommandBuffer> commandBuffers;
         std::vector<VkFence> commandBufferFences;  // Fences to track command buffer completion
+        std::vector<VkFramebuffer> framebuffers;    // Pre-created per swapchain image
+        std::vector<VkImageView> framebufferImageViews;  // Track which image views framebuffers were created for
         VkFormat swapchainFormat = VK_FORMAT_UNDEFINED;
         uint32_t imageCount = 0;
+        uint32_t framebufferWidth = 0;   // Dimensions used to create framebuffers
+        uint32_t framebufferHeight = 0;
         OverlayState state;
         std::vector<std::pair<std::string, std::string>> pendingAddEffects;  // {instanceName, effectType} to add
         bool inSelectionMode = false;

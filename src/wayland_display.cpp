@@ -29,13 +29,14 @@ namespace vkBasalt
         if (waylandChecked >= 0)
             return waylandChecked == 1;
 
-        // Check environment before surface creation
+        // Check environment before surface creation — if WAYLAND_DISPLAY is set,
+        // we're on Wayland even if we haven't captured the display yet. The input
+        // backends will gracefully no-op until initWayland*() succeeds.
         const char* wlDisplay = getenv("WAYLAND_DISPLAY");
         if (wlDisplay && *wlDisplay)
         {
-            // Wayland is likely but we haven't captured the display yet
-            // Return false until vkCreateWaylandSurfaceKHR is called
-            return false;
+            waylandChecked = 1;
+            return true;
         }
 
         waylandChecked = 0;

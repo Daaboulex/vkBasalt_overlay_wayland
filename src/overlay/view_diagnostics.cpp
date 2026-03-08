@@ -89,7 +89,13 @@ namespace vkBasalt
         static std::chrono::steady_clock::time_point lastFrameTime;
         static std::string drmCardPath;
 
-        // Find the DRM card path for GPU stats
+        // Find the DRM card path for GPU stats.
+        // TODO: This returns the first AMD card with gpu_busy_percent, which may not
+        // match the Vulkan physical device actually rendering the game. To fix properly,
+        // compare VkPhysicalDeviceProperties.deviceID / vendorID against the PCI IDs at
+        // /sys/class/drm/cardN/device/{device,vendor}, or match the DRM render node from
+        // VK_EXT_pci_bus_info. For now, single-GPU systems work fine; multi-GPU systems
+        // may report stats from the wrong card.
         std::string findDrmCard()
         {
             try

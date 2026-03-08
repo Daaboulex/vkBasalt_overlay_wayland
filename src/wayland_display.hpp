@@ -10,6 +10,6 @@ namespace vkBasalt
     // Returns the captured wl_display, or nullptr if not on Wayland
     wl_display* getWaylandDisplay();
 
-    // Returns true if running under Wayland (WAYLAND_DISPLAY is set and display was captured)
+    // Returns true if running under Wayland (WAYLAND_DISPLAY env var is set)
     bool isWayland();
 } // namespace vkBasalt

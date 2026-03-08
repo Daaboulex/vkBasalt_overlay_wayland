@@ -17,8 +17,7 @@
 
 namespace vkBasalt
 {
-    // Dummy function for Vulkan functions not in vkBasalt's dispatch
-    static void dummyVulkanFunc() {}
+    // (dummy removed — loader now returns nullptr for unknown functions per Vulkan spec)
 
     // Function loader using vkBasalt's dispatch tables
     static PFN_vkVoidFunction imguiVulkanLoaderDummy(const char* function_name, void* user_data)
@@ -103,9 +102,9 @@ namespace vkBasalt
         CHECK_IFUNC(GetPhysicalDeviceQueueFamilyProperties);
         #undef CHECK_IFUNC
 
-        // Return dummy for all remaining functions - don't use GetInstanceProcAddr
-        // (GetInstanceProcAddr causes rendering issues)
-        return (PFN_vkVoidFunction)dummyVulkanFunc;
+        // Return nullptr for unknown functions — Vulkan spec requires loaders to return
+        // NULL for unsupported functions, and ImGui checks for NULL before calling.
+        return nullptr;
     }
 
     ImGuiOverlay::ImGuiOverlay(LogicalDevice* device, VkFormat swapchainFormat, uint32_t imageCount, OverlayPersistentState* persistentState)
@@ -161,6 +160,11 @@ namespace vkBasalt
             ImGui_ImplVulkan_Shutdown();
         ImGui::DestroyContext();
 
+        for (auto fb : framebuffers)
+        {
+            if (fb != VK_NULL_HANDLE)
+                pLogicalDevice->vkd.DestroyFramebuffer(pLogicalDevice->device, fb, nullptr);
+        }
         for (auto fence : commandBufferFences)
         {
             if (fence != VK_NULL_HANDLE)
@@ -453,17 +457,38 @@ namespace vkBasalt
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         pLogicalDevice->vkd.BeginCommandBuffer(cmd, &beginInfo);
 
-        // Create framebuffer for this image view
-        VkFramebuffer framebuffer;
-        VkFramebufferCreateInfo fbInfo = {};
-        fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        fbInfo.renderPass = renderPass;
-        fbInfo.attachmentCount = 1;
-        fbInfo.pAttachments = &imageView;
-        fbInfo.width = width;
-        fbInfo.height = height;
-        fbInfo.layers = 1;
-        pLogicalDevice->vkd.CreateFramebuffer(pLogicalDevice->device, &fbInfo, nullptr, &framebuffer);
+        // Ensure framebuffer exists for this image index.
+        // Recreate if the image view or dimensions changed (swapchain recreation).
+        if (framebuffers.size() <= imageIndex)
+        {
+            framebuffers.resize(imageIndex + 1, VK_NULL_HANDLE);
+            framebufferImageViews.resize(imageIndex + 1, VK_NULL_HANDLE);
+        }
+
+        bool needRecreate = (framebuffers[imageIndex] == VK_NULL_HANDLE) ||
+                            (framebufferImageViews[imageIndex] != imageView) ||
+                            (framebufferWidth != width) || (framebufferHeight != height);
+
+        if (needRecreate)
+        {
+            if (framebuffers[imageIndex] != VK_NULL_HANDLE)
+                pLogicalDevice->vkd.DestroyFramebuffer(pLogicalDevice->device, framebuffers[imageIndex], nullptr);
+
+            VkFramebufferCreateInfo fbInfo = {};
+            fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+            fbInfo.renderPass = renderPass;
+            fbInfo.attachmentCount = 1;
+            fbInfo.pAttachments = &imageView;
+            fbInfo.width = width;
+            fbInfo.height = height;
+            fbInfo.layers = 1;
+            pLogicalDevice->vkd.CreateFramebuffer(pLogicalDevice->device, &fbInfo, nullptr, &framebuffers[imageIndex]);
+            framebufferImageViews[imageIndex] = imageView;
+            framebufferWidth = width;
+            framebufferHeight = height;
+        }
+
+        VkFramebuffer framebuffer = framebuffers[imageIndex];
 
         // Set display size and mouse input BEFORE NewFrame
         ImGuiIO& io = ImGui::GetIO();
@@ -598,9 +623,6 @@ namespace vkBasalt
         pLogicalDevice->vkd.CmdEndRenderPass(cmd);
 
         pLogicalDevice->vkd.EndCommandBuffer(cmd);
-
-        // Destroy framebuffer (created per-frame)
-        pLogicalDevice->vkd.DestroyFramebuffer(pLogicalDevice->device, framebuffer, nullptr);
 
         return cmd;
     }

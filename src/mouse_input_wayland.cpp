@@ -1,4 +1,5 @@
 #include "mouse_input_wayland.hpp"
+#include "wayland_input_common.hpp"
 #include "wayland_display.hpp"
 #include "logger.hpp"
 
@@ -8,11 +9,7 @@
 
 namespace vkBasalt
 {
-    // Shared Wayland objects (reuse seat from keyboard init)
-    static wl_display* mouseDisplayWrapper = nullptr;
-    static wl_event_queue* mouseQueue = nullptr;
-    static wl_registry* mouseRegistry = nullptr;
-    static wl_seat* mouseSeat = nullptr;
+    // Mouse-specific state (seat/queue come from wayland_input_common)
     static wl_pointer* wlPointer = nullptr;
 
     // Mouse state
@@ -22,6 +19,10 @@ namespace vkBasalt
     static bool rightButton = false;
     static bool middleButton = false;
     static float scrollAccumulator = 0.0f;
+
+    // Per-frame flag: true when axis_discrete or axis_value120 fired for this
+    // pointer frame, so we skip the continuous axis event to avoid double-counting.
+    static bool discreteScrollReceived = false;
 
     static bool mouseInitialized = false;
 
@@ -71,18 +72,23 @@ namespace vkBasalt
     static void pointerAxis(void* /*data*/, wl_pointer* /*pointer*/,
                             uint32_t /*time*/, uint32_t axis, wl_fixed_t value)
     {
-        // WL_POINTER_AXIS_VERTICAL_SCROLL = 0
-        if (axis == 0)
-        {
-            // Negative value = scroll up, positive = scroll down
-            // Normalize: typical step is 10.0 fixed-point
-            float scroll = wl_fixed_to_double(value);
-            scrollAccumulator -= scroll / 10.0f;
-        }
+        // Only use continuous axis as fallback when discrete events are not sent.
+        // When both fire for the same pointer frame, discrete/value120 takes priority.
+        if (axis != 0)
+            return;
+        if (discreteScrollReceived)
+            return;
+
+        // Negative value = scroll up, positive = scroll down
+        // Normalize: typical step is 10.0 fixed-point
+        float scroll = wl_fixed_to_double(value);
+        scrollAccumulator -= scroll / 10.0f;
     }
 
     static void pointerFrame(void* /*data*/, wl_pointer* /*pointer*/)
     {
+        // Reset per-frame discrete flag at the end of each pointer frame
+        discreteScrollReceived = false;
     }
 
     static void pointerAxisSource(void* /*data*/, wl_pointer* /*pointer*/, uint32_t /*source*/)
@@ -97,14 +103,24 @@ namespace vkBasalt
     static void pointerAxisDiscrete(void* /*data*/, wl_pointer* /*pointer*/,
                                     uint32_t axis, int32_t discrete)
     {
-        // Discrete scroll events (wheel clicks) — more precise than axis
-        if (axis == 0)
-            scrollAccumulator += (float)discrete; // Positive = up
+        // Discrete scroll events (wheel clicks) — preferred over continuous axis
+        if (axis != 0)
+            return;
+
+        discreteScrollReceived = true;
+        scrollAccumulator += (float)discrete; // Positive = up
     }
 
     static void pointerAxisValue120(void* /*data*/, wl_pointer* /*pointer*/,
-                                    uint32_t /*axis*/, int32_t /*value120*/)
+                                    uint32_t axis, int32_t value120)
     {
+        // High-resolution scroll (wl_pointer v8+). 120 units = one wheel click.
+        // Preferred over both axis and axis_discrete when available.
+        if (axis != 0)
+            return;
+
+        discreteScrollReceived = true;
+        scrollAccumulator += (float)value120 / 120.0f;
     }
 
     static void pointerAxisRelativeDirection(void* /*data*/, wl_pointer* /*pointer*/,
@@ -126,46 +142,16 @@ namespace vkBasalt
         .axis_relative_direction = pointerAxisRelativeDirection,
     };
 
-    // Seat listener for mouse
-    static void mouseSeatCapabilities(void* /*data*/, wl_seat* seat, uint32_t caps)
+    // Called by shared seat listener when pointer capability is available
+    static void bindPointer(wl_seat* seat)
     {
-        if ((caps & WL_SEAT_CAPABILITY_POINTER) && !wlPointer)
-        {
-            wlPointer = wl_seat_get_pointer(seat);
-            wl_pointer_add_listener(wlPointer, &pointerListener, nullptr);
-            Logger::debug("Wayland: pointer bound from seat");
-        }
+        if (wlPointer)
+            return;
+
+        wlPointer = wl_seat_get_pointer(seat);
+        wl_pointer_add_listener(wlPointer, &pointerListener, nullptr);
+        Logger::debug("Wayland: pointer bound from shared seat");
     }
-
-    static void mouseSeatName(void* /*data*/, wl_seat* /*seat*/, const char* /*name*/)
-    {
-    }
-
-    static const wl_seat_listener mouseSeatListener = {
-        .capabilities = mouseSeatCapabilities,
-        .name = mouseSeatName,
-    };
-
-    // Registry listener for mouse
-    static void mouseRegistryGlobal(void* /*data*/, wl_registry* registry,
-                                    uint32_t name, const char* interface, uint32_t version)
-    {
-        if (std::strcmp(interface, wl_seat_interface.name) == 0 && !mouseSeat)
-        {
-            mouseSeat = (wl_seat*)wl_registry_bind(registry, name, &wl_seat_interface,
-                                                     version < 5 ? version : 5);
-            wl_seat_add_listener(mouseSeat, &mouseSeatListener, nullptr);
-        }
-    }
-
-    static void mouseRegistryGlobalRemove(void* /*data*/, wl_registry* /*registry*/, uint32_t /*name*/)
-    {
-    }
-
-    static const wl_registry_listener mouseRegistryListener = {
-        .global = mouseRegistryGlobal,
-        .global_remove = mouseRegistryGlobalRemove,
-    };
 
     bool initWaylandMouse()
     {
@@ -174,29 +160,12 @@ namespace vkBasalt
 
         mouseInitialized = true;
 
-        wl_display* display = getWaylandDisplay();
-        if (!display)
+        // Register our callback before initializing shared resources
+        setPointerBindCallback(bindPointer);
+
+        // Initialize shared seat/queue/registry (triggers seat capability callbacks)
+        if (!initWaylandInputCommon())
             return false;
-
-        mouseDisplayWrapper = (wl_display*)wl_proxy_create_wrapper(display);
-        if (!mouseDisplayWrapper)
-            return false;
-
-        mouseQueue = wl_display_create_queue(display);
-        if (!mouseQueue)
-        {
-            wl_proxy_wrapper_destroy(mouseDisplayWrapper);
-            mouseDisplayWrapper = nullptr;
-            return false;
-        }
-
-        wl_proxy_set_queue((wl_proxy*)mouseDisplayWrapper, mouseQueue);
-
-        mouseRegistry = wl_display_get_registry(mouseDisplayWrapper);
-        wl_registry_add_listener(mouseRegistry, &mouseRegistryListener, nullptr);
-
-        wl_display_roundtrip_queue(display, mouseQueue);
-        wl_display_roundtrip_queue(display, mouseQueue);
 
         if (wlPointer)
             Logger::info("Wayland mouse input initialized");
@@ -213,28 +182,11 @@ namespace vkBasalt
             wl_pointer_destroy(wlPointer);
             wlPointer = nullptr;
         }
-        if (mouseSeat)
-        {
-            wl_seat_destroy(mouseSeat);
-            mouseSeat = nullptr;
-        }
-        if (mouseRegistry)
-        {
-            wl_registry_destroy(mouseRegistry);
-            mouseRegistry = nullptr;
-        }
-        if (mouseQueue)
-        {
-            wl_event_queue_destroy(mouseQueue);
-            mouseQueue = nullptr;
-        }
-        if (mouseDisplayWrapper)
-        {
-            wl_proxy_wrapper_destroy(mouseDisplayWrapper);
-            mouseDisplayWrapper = nullptr;
-        }
 
         mouseInitialized = false;
+
+        // Clean up shared resources (idempotent)
+        cleanupWaylandInputCommon();
     }
 
     MouseState getMouseStateWayland()
@@ -244,10 +196,11 @@ namespace vkBasalt
         if (!initWaylandMouse())
             return state;
 
-        // Dispatch pending events on our private queue
+        // Dispatch pending events on our shared queue
         wl_display* display = getWaylandDisplay();
-        if (display)
-            wl_display_dispatch_queue_pending(display, mouseQueue);
+        wl_event_queue* q = getWaylandInputQueue();
+        if (display && q)
+            wl_display_dispatch_queue_pending(display, q);
 
         state.x = pointerX;
         state.y = pointerY;

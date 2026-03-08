@@ -1,4 +1,5 @@
 #include "keyboard_input_wayland.hpp"
+#include "wayland_input_common.hpp"
 #include "wayland_display.hpp"
 #include "logger.hpp"
 
@@ -13,11 +14,7 @@
 
 namespace vkBasalt
 {
-    // Wayland keyboard state
-    static wl_display* wlDisplayWrapper = nullptr;
-    static wl_event_queue* wlQueue = nullptr;
-    static wl_registry* wlRegistry = nullptr;
-    static wl_seat* wlSeat = nullptr;
+    // Keyboard-specific state (seat/queue come from wayland_input_common)
     static wl_keyboard* wlKeyboard = nullptr;
 
     // XKB state for key translation
@@ -198,47 +195,16 @@ namespace vkBasalt
         .repeat_info = keyboardRepeatInfo,
     };
 
-    // Seat listener — get keyboard when seat announces it
-    static void seatCapabilities(void* /*data*/, wl_seat* seat, uint32_t caps)
+    // Called by shared seat listener when keyboard capability is available
+    static void bindKeyboard(wl_seat* seat)
     {
-        if ((caps & WL_SEAT_CAPABILITY_KEYBOARD) && !wlKeyboard)
-        {
-            wlKeyboard = wl_seat_get_keyboard(seat);
-            wl_keyboard_add_listener(wlKeyboard, &keyboardListener, nullptr);
-            Logger::debug("Wayland: keyboard bound from seat");
-        }
+        if (wlKeyboard)
+            return;
+
+        wlKeyboard = wl_seat_get_keyboard(seat);
+        wl_keyboard_add_listener(wlKeyboard, &keyboardListener, nullptr);
+        Logger::debug("Wayland: keyboard bound from shared seat");
     }
-
-    static void seatName(void* /*data*/, wl_seat* /*seat*/, const char* /*name*/)
-    {
-    }
-
-    static const wl_seat_listener seatListener = {
-        .capabilities = seatCapabilities,
-        .name = seatName,
-    };
-
-    // Registry listener — find wl_seat
-    static void registryGlobal(void* /*data*/, wl_registry* registry,
-                               uint32_t name, const char* interface, uint32_t version)
-    {
-        if (std::strcmp(interface, wl_seat_interface.name) == 0 && !wlSeat)
-        {
-            wlSeat = (wl_seat*)wl_registry_bind(registry, name, &wl_seat_interface,
-                                                  version < 5 ? version : 5);
-            wl_seat_add_listener(wlSeat, &seatListener, nullptr);
-            Logger::debug("Wayland: seat bound");
-        }
-    }
-
-    static void registryGlobalRemove(void* /*data*/, wl_registry* /*registry*/, uint32_t /*name*/)
-    {
-    }
-
-    static const wl_registry_listener registryListener = {
-        .global = registryGlobal,
-        .global_remove = registryGlobalRemove,
-    };
 
     bool initWaylandKeyboard()
     {
@@ -246,10 +212,6 @@ namespace vkBasalt
             return wlKeyboard != nullptr;
 
         initialized = true;
-
-        wl_display* display = getWaylandDisplay();
-        if (!display)
-            return false;
 
         // Create XKB context
         xkbCtx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
@@ -259,34 +221,12 @@ namespace vkBasalt
             return false;
         }
 
-        // Create a display wrapper with its own event queue
-        // This is the MangoHud pattern — we get our own private event stream
-        wlDisplayWrapper = (wl_display*)wl_proxy_create_wrapper(display);
-        if (!wlDisplayWrapper)
-        {
-            Logger::err("Wayland: failed to create display wrapper");
+        // Register our callback before initializing shared resources
+        setKeyboardBindCallback(bindKeyboard);
+
+        // Initialize shared seat/queue/registry (triggers seat capability callbacks)
+        if (!initWaylandInputCommon())
             return false;
-        }
-
-        wlQueue = wl_display_create_queue(display);
-        if (!wlQueue)
-        {
-            Logger::err("Wayland: failed to create event queue");
-            wl_proxy_wrapper_destroy(wlDisplayWrapper);
-            wlDisplayWrapper = nullptr;
-            return false;
-        }
-
-        wl_proxy_set_queue((wl_proxy*)wlDisplayWrapper, wlQueue);
-
-        // Get registry on our private queue
-        wlRegistry = wl_display_get_registry(wlDisplayWrapper);
-        wl_registry_add_listener(wlRegistry, &registryListener, nullptr);
-
-        // Roundtrip to get globals (seat)
-        wl_display_roundtrip_queue(display, wlQueue);
-        // Second roundtrip to get seat capabilities (keyboard)
-        wl_display_roundtrip_queue(display, wlQueue);
 
         if (wlKeyboard)
             Logger::info("Wayland keyboard input initialized");
@@ -302,26 +242,6 @@ namespace vkBasalt
         {
             wl_keyboard_destroy(wlKeyboard);
             wlKeyboard = nullptr;
-        }
-        if (wlSeat)
-        {
-            wl_seat_destroy(wlSeat);
-            wlSeat = nullptr;
-        }
-        if (wlRegistry)
-        {
-            wl_registry_destroy(wlRegistry);
-            wlRegistry = nullptr;
-        }
-        if (wlQueue)
-        {
-            wl_event_queue_destroy(wlQueue);
-            wlQueue = nullptr;
-        }
-        if (wlDisplayWrapper)
-        {
-            wl_proxy_wrapper_destroy(wlDisplayWrapper);
-            wlDisplayWrapper = nullptr;
         }
         if (xkbState)
         {
@@ -342,6 +262,9 @@ namespace vkBasalt
         pressedKeys.clear();
         keyPressEvents.clear();
         initialized = false;
+
+        // Clean up shared resources (idempotent)
+        cleanupWaylandInputCommon();
     }
 
     uint32_t convertToKeySymWayland(std::string key)
@@ -364,10 +287,11 @@ namespace vkBasalt
         if (!initWaylandKeyboard())
             return false;
 
-        // Dispatch pending events on our private queue (non-blocking)
+        // Dispatch pending events on our shared queue (non-blocking)
         wl_display* display = getWaylandDisplay();
-        if (display)
-            wl_display_dispatch_queue_pending(display, wlQueue);
+        wl_event_queue* q = getWaylandInputQueue();
+        if (display && q)
+            wl_display_dispatch_queue_pending(display, q);
 
         // Check accumulated press events first — catches rapid taps where
         // press+release both arrive in the same dispatch cycle
@@ -398,10 +322,11 @@ namespace vkBasalt
         if (!initWaylandKeyboard())
             return state;
 
-        // Dispatch pending events on our private queue
+        // Dispatch pending events on our shared queue
         wl_display* display = getWaylandDisplay();
-        if (display)
-            wl_display_dispatch_queue_pending(display, wlQueue);
+        wl_event_queue* q = getWaylandInputQueue();
+        if (display && q)
+            wl_display_dispatch_queue_pending(display, q);
 
         state.typedChars = typedCharsAccumulator;
         state.lastKeyName = lastKeyNameAccumulator;

@@ -16,6 +16,8 @@
 
 #include "util.hpp"
 #include "keyboard_input.hpp"
+#include "keyboard_input_wayland.hpp"
+#include "mouse_input_wayland.hpp"
 #include "input_blocker.hpp"
 #include "wayland_display.hpp"
 
@@ -858,6 +860,10 @@ namespace vkBasalt
 
         // Destroy ImGui overlay before device (it uses device resources)
         pLogicalDevice->imguiOverlay.reset();
+
+        // Clean up Wayland input resources (no-op if not initialized)
+        cleanupWaylandKeyboard();
+        cleanupWaylandMouse();
 
         if (pLogicalDevice->commandPool != VK_NULL_HANDLE)
         {

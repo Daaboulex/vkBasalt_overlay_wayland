@@ -89,12 +89,18 @@ keyboard_input_x11_lib = static_library('keyboard_input_x11', 'keyboard_input_x1
 mouse_input_lib = static_library('mouse_input', 'mouse_input.cpp')
 input_blocker_lib = static_library('input_blocker', 'input_blocker.cpp')
 
-# Wayland input backends — also built as static libs to isolate wayland-client headers
+# Wayland input backends — built as static libs to isolate wayland-client headers.
+# wayland_input_common provides a shared seat/queue used by both keyboard and mouse.
+wayland_input_common_lib = static_library('wayland_input_common',
+    'wayland_input_common.cpp', 'wayland_display.cpp',
+    dependencies: [wayland_client_dep])
 keyboard_input_wayland_lib = static_library('keyboard_input_wayland',
-    'keyboard_input_wayland.cpp', 'wayland_display.cpp',
+    'keyboard_input_wayland.cpp',
+    link_with: [wayland_input_common_lib],
     dependencies: [wayland_client_dep, xkbcommon_dep])
 mouse_input_wayland_lib = static_library('mouse_input_wayland',
     'mouse_input_wayland.cpp',
+    link_with: [wayland_input_common_lib],
     dependencies: [wayland_client_dep])
 
 imgui_inc = include_directories('imgui')
@@ -106,7 +112,7 @@ effects_params_inc = include_directories('effects/params')
 shared_library(meson.project_name().to_lower(),
     vkBasalt_src, overlay_src, imgui_src, shader_include,
     link_with: [keyboard_input_x11_lib, mouse_input_lib, input_blocker_lib,
-                keyboard_input_wayland_lib, mouse_input_wayland_lib],
+                wayland_input_common_lib, keyboard_input_wayland_lib, mouse_input_wayland_lib],
     include_directories : [vkBasalt_include_path, imgui_inc, overlay_inc, effects_inc, effects_builtin_inc, effects_params_inc],
     cpp_args : ['-DIMGUI_IMPL_VULKAN_NO_PROTOTYPES'],
     dependencies : [x11_dep, xi_dep, wayland_client_dep, xkbcommon_dep, reshade_dep],

@@ -68,6 +68,9 @@ namespace vkBasalt
         return result;
     }
 
+    // TODO(issue-15): This function opens its own Display connection separate from
+    // kbDisplay used by getKeyboardStateX11(). Merging them would require careful
+    // handling since XQueryKeymap and XInput2 event polling share the same queue.
     bool isKeyPressedX11(uint32_t ks)
     {
         static int usesX11 = -1;
