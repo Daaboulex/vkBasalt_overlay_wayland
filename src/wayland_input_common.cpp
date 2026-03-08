@@ -19,11 +19,17 @@ namespace vkBasalt
     void setKeyboardBindCallback(KeyboardBindCallback cb)
     {
         keyboardBind = cb;
+        // If seat already bound, invoke callback immediately for late registration
+        if (seat && cb)
+            cb(seat);
     }
 
     void setPointerBindCallback(PointerBindCallback cb)
     {
         pointerBind = cb;
+        // If seat already bound, invoke callback immediately for late registration
+        if (seat && cb)
+            cb(seat);
     }
 
     // Single seat listener that handles both keyboard and pointer capabilities

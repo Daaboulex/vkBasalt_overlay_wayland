@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <set>
+#include <sstream>
 
 #include "reshade_parser.hpp"
 #include "config_serializer.hpp"
@@ -56,28 +57,53 @@ namespace vkBasalt
             return p;
         }
 
+        // Search a list of directories for an effect file by name
+        std::string searchDirsForEffect(const std::string& name,
+                                        const std::vector<std::string>& dirs)
+        {
+            for (const auto& dir : dirs)
+            {
+                std::string path = dir + "/" + name + ".fx";
+                if (std::filesystem::exists(path))
+                    return path;
+
+                path = dir + "/" + name;
+                if (std::filesystem::exists(path))
+                    return path;
+            }
+            return "";
+        }
+
         // Try to find effect file path
         std::string findEffectPath(const std::string& name, Config* pConfig)
         {
-            // First check if path is directly configured
+            // First check if path is directly configured (e.g. "Vibrance = /path/to/Vibrance.fx")
             std::string path = pConfig->getOption<std::string>(name, "");
             if (!path.empty() && std::filesystem::exists(path))
                 return path;
 
-            // Search in shader manager discovered paths
-            ShaderManagerConfig shaderMgrConfig = ConfigSerializer::loadShaderManagerConfig();
-            for (const auto& shaderPath : shaderMgrConfig.discoveredShaderPaths)
+            // Search in reshadeIncludePath from config (colon-separated list)
+            std::string includePath = pConfig->getOption<std::string>("reshadeIncludePath", "");
+            if (!includePath.empty())
             {
-                // Try with .fx extension
-                path = shaderPath + "/" + name + ".fx";
-                if (std::filesystem::exists(path))
-                    return path;
-
-                // Try without extension
-                path = shaderPath + "/" + name;
-                if (std::filesystem::exists(path))
+                std::vector<std::string> includeDirs;
+                std::stringstream ss(includePath);
+                std::string dir;
+                while (std::getline(ss, dir, ':'))
+                {
+                    if (!dir.empty())
+                        includeDirs.push_back(dir);
+                }
+                path = searchDirsForEffect(name, includeDirs);
+                if (!path.empty())
                     return path;
             }
+
+            // Search in shader manager discovered paths
+            ShaderManagerConfig shaderMgrConfig = ConfigSerializer::loadShaderManagerConfig();
+            path = searchDirsForEffect(name, shaderMgrConfig.discoveredShaderPaths);
+            if (!path.empty())
+                return path;
 
             return "";
         }
