@@ -12,6 +12,7 @@
 #include "logical_device.hpp"
 #include "keyboard_input.hpp"
 #include "effects/params/effect_param.hpp"
+#include "config_serializer.hpp"
 
 namespace vkBasalt
 {
