@@ -78,6 +78,11 @@ namespace vkBasalt
         return queue;
     }
 
+    wl_seat* getWaylandSeat()
+    {
+        return seat;
+    }
+
     bool initWaylandInputCommon()
     {
         if (commonInitialized)

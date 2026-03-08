@@ -55,25 +55,20 @@ namespace vkBasalt
         .global_remove = constraintsRegistryGlobalRemove,
     };
 
-    // Callback to capture the pointer from the shared seat
-    static void capturePointer(wl_seat* seat)
-    {
-        if (pointer)
-            return;
-        pointer = wl_seat_get_pointer(seat);
-        Logger::debug("Wayland: pointer captured for constraints");
-    }
-
     bool initPointerConstraints()
     {
         if (constraintsInitialized)
             return constraints != nullptr;
 
-        constraintsInitialized = true;
-
         wl_display* display = getWaylandDisplay();
         if (!display)
             return false;
+
+        // Ensure shared input is initialized first (creates the event queue)
+        if (!initWaylandInputCommon())
+            return false;
+
+        constraintsInitialized = true;
 
         // We need our own registry query on the shared queue to find the
         // pointer constraints global. The shared input common registry
@@ -132,18 +127,29 @@ namespace vkBasalt
         // because the mouse_input module's pointer is private.
         if (!pointer)
         {
-            // Trigger shared input init if not done yet
             if (!initWaylandInputCommon())
             {
                 Logger::debug("Wayland: cannot confine pointer — no seat available");
                 return;
             }
 
-            // Try to get pointer via the seat bind callback mechanism.
             // The pointer bind callback is already claimed by mouse_input,
             // so we get our own wl_pointer from the seat directly.
             // This is safe because wl_seat_get_pointer returns a new proxy
             // each time — we just won't add a listener (we don't need events).
+            wl_seat* seat = getWaylandSeat();
+            if (!seat)
+            {
+                Logger::debug("Wayland: cannot confine pointer — seat not available");
+                return;
+            }
+            pointer = wl_seat_get_pointer(seat);
+            if (!pointer)
+            {
+                Logger::debug("Wayland: cannot confine pointer — seat has no pointer capability");
+                return;
+            }
+            Logger::debug("Wayland: obtained pointer from seat for confinement");
         }
 
         confinedPointer = zwp_pointer_constraints_v1_confine_pointer(

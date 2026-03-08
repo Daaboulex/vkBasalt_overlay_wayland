@@ -29,4 +29,7 @@ namespace vkBasalt
     // Access the shared event queue (for dispatching events)
     wl_event_queue* getWaylandInputQueue();
 
+    // Access the shared seat (for pointer constraints, etc.)
+    wl_seat* getWaylandSeat();
+
 } // namespace vkBasalt
