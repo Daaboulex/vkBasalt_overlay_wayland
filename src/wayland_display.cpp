@@ -7,6 +7,7 @@
 namespace vkBasalt
 {
     static wl_display* waylandDisplay = nullptr;
+    static wl_surface* waylandSurface = nullptr;
     static int waylandChecked = -1; // -1 = unchecked, 0 = no, 1 = yes
 
     void setWaylandDisplay(wl_display* display)
@@ -22,6 +23,20 @@ namespace vkBasalt
     wl_display* getWaylandDisplay()
     {
         return waylandDisplay;
+    }
+
+    void setWaylandSurface(wl_surface* surface)
+    {
+        if (!surface)
+            return;
+
+        waylandSurface = surface;
+        Logger::info("captured Wayland surface from vkCreateWaylandSurfaceKHR");
+    }
+
+    wl_surface* getWaylandSurface()
+    {
+        return waylandSurface;
     }
 
     bool isWayland()

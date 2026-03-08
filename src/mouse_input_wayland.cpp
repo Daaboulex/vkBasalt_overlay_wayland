@@ -196,24 +196,14 @@ namespace vkBasalt
         if (!initWaylandMouse())
             return state;
 
-        // Read new events from the socket and dispatch those queued for us.
-        // dispatch_queue_pending alone only processes events already routed to
-        // our queue — if the game uses dispatch_pending (no socket read) in its
-        // render loop, our queue would starve.
+        // Dispatch events already queued for us. The game's own
+        // wl_display_dispatch() reads from the socket and routes events to
+        // private queues — using prepare_read_queue + read_events can race
+        // with the game's socket read (only one reader at a time).
         wl_display* display = getWaylandDisplay();
         wl_event_queue* q = getWaylandInputQueue();
         if (display && q)
-        {
-            // Non-blocking read: prepare, read if socket is ready, then dispatch
-            if (wl_display_prepare_read_queue(display, q) == 0)
-            {
-                wl_display_flush(display);
-                // Non-blocking: read_events returns immediately if no data
-                // (caller should poll, but we just try once per frame)
-                wl_display_read_events(display);
-            }
             wl_display_dispatch_queue_pending(display, q);
-        }
 
         state.x = pointerX;
         state.y = pointerY;

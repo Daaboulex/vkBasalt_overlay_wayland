@@ -1412,9 +1412,11 @@ namespace vkBasalt
 
         Logger::trace("vkCreateWaylandSurfaceKHR");
 
-        // Capture the wl_display for Wayland input
+        // Capture the wl_display and wl_surface for Wayland input
         if (pCreateInfo && pCreateInfo->display)
             setWaylandDisplay(pCreateInfo->display);
+        if (pCreateInfo && pCreateInfo->surface)
+            setWaylandSurface(pCreateInfo->surface);
 
         // Forward to the real implementation via the next layer
         auto nextFunc = (PFN_vkCreateWaylandSurfaceKHR)
