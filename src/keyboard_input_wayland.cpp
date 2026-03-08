@@ -287,11 +287,18 @@ namespace vkBasalt
         if (!initWaylandKeyboard())
             return false;
 
-        // Dispatch pending events on our shared queue (non-blocking)
+        // Read new events from the socket and dispatch those queued for us
         wl_display* display = getWaylandDisplay();
         wl_event_queue* q = getWaylandInputQueue();
         if (display && q)
+        {
+            if (wl_display_prepare_read_queue(display, q) == 0)
+            {
+                wl_display_flush(display);
+                wl_display_read_events(display);
+            }
             wl_display_dispatch_queue_pending(display, q);
+        }
 
         // Check accumulated press events first — catches rapid taps where
         // press+release both arrive in the same dispatch cycle
@@ -322,11 +329,18 @@ namespace vkBasalt
         if (!initWaylandKeyboard())
             return state;
 
-        // Dispatch pending events on our shared queue
+        // Read new events from the socket and dispatch those queued for us
         wl_display* display = getWaylandDisplay();
         wl_event_queue* q = getWaylandInputQueue();
         if (display && q)
+        {
+            if (wl_display_prepare_read_queue(display, q) == 0)
+            {
+                wl_display_flush(display);
+                wl_display_read_events(display);
+            }
             wl_display_dispatch_queue_pending(display, q);
+        }
 
         state.typedChars = typedCharsAccumulator;
         state.lastKeyName = lastKeyNameAccumulator;
