@@ -24,6 +24,11 @@ namespace vkBasalt
     // pointer frame, so we skip the continuous axis event to avoid double-counting.
     static bool discreteScrollReceived = false;
 
+    // Tracks whether pointer left the surface while a button was held.
+    // Used to detect lost button releases (compositor grabs during window
+    // move/resize consume the release on the game's event queue, not ours).
+    static bool leftSurfaceWithButton = false;
+
     static bool mouseInitialized = false;
 
     // Pointer listener callbacks
@@ -33,18 +38,32 @@ namespace vkBasalt
     {
         pointerX = wl_fixed_to_int(sx);
         pointerY = wl_fixed_to_int(sy);
+
+        // If the pointer left while a button was held and we never got a
+        // release, the compositor consumed it (e.g., interactive window
+        // move/resize via Alt+click or title bar drag). Clear stale state.
+        if (leftSurfaceWithButton)
+        {
+            leftButton = false;
+            rightButton = false;
+            middleButton = false;
+            leftSurfaceWithButton = false;
+            Logger::debug("Wayland: cleared stale button state on re-entry");
+        }
+
         Logger::debug("Wayland: pointer enter at " + std::to_string(pointerX) + "," + std::to_string(pointerY));
     }
 
     static void pointerLeave(void* /*data*/, wl_pointer* /*pointer*/,
                              uint32_t /*serial*/, wl_surface* /*surface*/)
     {
-        // Do NOT reset button state on leave. Wayland's implicit grab
-        // guarantees button release events are always delivered to the
-        // surface that received the press. Resetting here breaks drag
-        // operations: KDE/KWin can send brief leave/enter sequences
-        // during window activation, which would clear button state
-        // mid-drag and prevent sliders/window moves from working.
+        // Track whether any button was held when we lost focus.
+        // Wayland's implicit grab should deliver the release to us, but
+        // our overlay uses a separate event queue — the compositor binds
+        // the grab to the game's wl_pointer, not ours. Releases during
+        // compositor grabs (window move/resize) are permanently lost.
+        if (leftButton || rightButton || middleButton)
+            leftSurfaceWithButton = true;
     }
 
     static void pointerMotion(void* /*data*/, wl_pointer* /*pointer*/,
@@ -68,6 +87,10 @@ namespace vkBasalt
             case 0x111: rightButton = pressed; break;   // BTN_RIGHT
             case 0x112: middleButton = pressed; break;  // BTN_MIDDLE
         }
+
+        // Got a proper release — no need to clear on next enter
+        if (!pressed && !leftButton && !rightButton && !middleButton)
+            leftSurfaceWithButton = false;
     }
 
     static void pointerAxis(void* /*data*/, wl_pointer* /*pointer*/,
@@ -185,6 +208,7 @@ namespace vkBasalt
         }
 
         mouseInitialized = false;
+        leftSurfaceWithButton = false;
 
         // Clean up shared resources (idempotent)
         cleanupWaylandInputCommon();
