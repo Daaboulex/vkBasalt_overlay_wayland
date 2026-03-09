@@ -1129,8 +1129,10 @@ namespace vkBasalt
 
         // Guard: if no device for this queue, pass through
         auto devIt = deviceMap.find(GetKey(queue));
-        if (devIt == deviceMap.end() || !devIt->second || !devIt->second->queue)
-            return devIt != deviceMap.end() ? devIt->second->vkd.QueuePresentKHR(queue, pPresentInfo) : VK_ERROR_DEVICE_LOST;
+        if (devIt == deviceMap.end() || !devIt->second)
+            return VK_ERROR_DEVICE_LOST;
+        if (!devIt->second->queue)
+            return devIt->second->vkd.QueuePresentKHR(queue, pPresentInfo);
 
         // Keybindings - read from settingsManager (can be updated when settings are saved)
         static uint32_t keySymbol = convertToKeySym(settingsManager.getToggleKey());
@@ -1144,7 +1146,7 @@ namespace vkBasalt
         static bool overlayPressed = false;
 
         // Check if settings were saved (re-read from settingsManager which is already updated by UI)
-        LogicalDevice* pDeviceForSettings = deviceMap[GetKey(queue)].get();
+        LogicalDevice* pDeviceForSettings = devIt->second.get();
         if (pDeviceForSettings && pDeviceForSettings->imguiOverlay && pDeviceForSettings->imguiOverlay->hasSettingsSaved())
         {
             // settingsManager is already updated by the UI, just re-read the values

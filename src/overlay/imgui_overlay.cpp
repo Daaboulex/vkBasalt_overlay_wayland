@@ -502,9 +502,10 @@ namespace vkBasalt
         currentWidth = width;
         currentHeight = height;
 
-        // Wait for previous use of this command buffer to complete (1 second timeout)
+        // Wait for previous use of this command buffer to complete (100ms timeout)
+        // Short timeout avoids stalling the game's presentation if GPU is under heavy load
         VkFence fence = commandBufferFences[imageIndex];
-        VkResult fenceResult = pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, 1, &fence, VK_TRUE, 1000000000ULL);
+        VkResult fenceResult = pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, 1, &fence, VK_TRUE, 100000000ULL);
         if (fenceResult == VK_TIMEOUT)
         {
             Logger::warn("ImGui fence wait timed out for image " + std::to_string(imageIndex));
@@ -515,7 +516,12 @@ namespace vkBasalt
             Logger::err("ImGui fence wait failed: " + std::to_string(fenceResult));
             return VK_NULL_HANDLE;
         }
-        pLogicalDevice->vkd.ResetFences(pLogicalDevice->device, 1, &fence);
+        VkResult resetResult = pLogicalDevice->vkd.ResetFences(pLogicalDevice->device, 1, &fence);
+        if (resetResult != VK_SUCCESS)
+        {
+            Logger::err("Failed to reset ImGui fence: " + std::to_string(resetResult));
+            return VK_NULL_HANDLE;
+        }
 
         VkCommandBuffer cmd = commandBuffers[imageIndex];
 
@@ -713,7 +719,12 @@ namespace vkBasalt
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
         pLogicalDevice->vkd.CmdEndRenderPass(cmd);
 
-        pLogicalDevice->vkd.EndCommandBuffer(cmd);
+        vr = pLogicalDevice->vkd.EndCommandBuffer(cmd);
+        if (vr != VK_SUCCESS)
+        {
+            Logger::err("Failed to end ImGui command buffer: " + std::to_string(vr));
+            return VK_NULL_HANDLE;
+        }
 
         return cmd;
     }
