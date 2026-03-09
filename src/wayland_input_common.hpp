@@ -32,4 +32,10 @@ namespace vkBasalt
     // Access the shared seat (for pointer constraints, etc.)
     wl_seat* getWaylandSeat();
 
+    // Read and dispatch pending Wayland events (non-blocking).
+    // Actively reads from the socket to ensure events like button release
+    // are not stuck in the kernel buffer. Safe to call multiple times
+    // per frame — subsequent calls are cheap no-ops when no data is pending.
+    void dispatchWaylandInputEvents();
+
 } // namespace vkBasalt

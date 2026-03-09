@@ -287,14 +287,7 @@ namespace vkBasalt
         if (!initWaylandKeyboard())
             return false;
 
-        // Dispatch events already queued for us. The game's own
-        // wl_display_dispatch() reads from the socket and routes events to
-        // private queues — using prepare_read_queue + read_events can race
-        // with the game's socket read (only one reader at a time).
-        wl_display* display = getWaylandDisplay();
-        wl_event_queue* q = getWaylandInputQueue();
-        if (display && q)
-            wl_display_dispatch_queue_pending(display, q);
+        dispatchWaylandInputEvents();
 
         // Check accumulated press events first — catches rapid taps where
         // press+release both arrive in the same dispatch cycle
@@ -325,14 +318,7 @@ namespace vkBasalt
         if (!initWaylandKeyboard())
             return state;
 
-        // Dispatch events already queued for us. The game's own
-        // wl_display_dispatch() reads from the socket and routes events to
-        // private queues — using prepare_read_queue + read_events can race
-        // with the game's socket read (only one reader at a time).
-        wl_display* display = getWaylandDisplay();
-        wl_event_queue* q = getWaylandInputQueue();
-        if (display && q)
-            wl_display_dispatch_queue_pending(display, q);
+        dispatchWaylandInputEvents();
 
         state.typedChars = typedCharsAccumulator;
         state.lastKeyName = lastKeyNameAccumulator;

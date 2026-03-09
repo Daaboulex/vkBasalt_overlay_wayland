@@ -3,6 +3,7 @@
 #include "logger.hpp"
 
 #include <cstring>
+#include <poll.h>
 
 namespace vkBasalt
 {
@@ -122,6 +123,33 @@ namespace vkBasalt
             Logger::warn("Wayland: no seat found");
 
         return seat != nullptr;
+    }
+
+    void dispatchWaylandInputEvents()
+    {
+        if (!queue)
+            return;
+
+        wl_display* display = getWaylandDisplay();
+        if (!display)
+            return;
+
+        // Drain any already-queued events first (prepare_read requires empty queue)
+        while (wl_display_prepare_read_queue(display, queue) != 0)
+            wl_display_dispatch_queue_pending(display, queue);
+
+        // Non-blocking socket read — many games only call
+        // wl_display_dispatch_pending() in their render loop, which does
+        // NOT read from the socket.  Without this, button release and
+        // other events stay stuck in the kernel buffer.
+        wl_display_flush(display);
+        struct pollfd pfd = { wl_display_get_fd(display), POLLIN, 0 };
+        if (poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLIN))
+            wl_display_read_events(display);
+        else
+            wl_display_cancel_read(display);
+
+        wl_display_dispatch_queue_pending(display, queue);
     }
 
     void cleanupWaylandInputCommon()
