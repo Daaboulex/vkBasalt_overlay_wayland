@@ -63,7 +63,16 @@ namespace vkBasalt
         // the grab to the game's wl_pointer, not ours. Releases during
         // compositor grabs (window move/resize) are permanently lost.
         if (leftButton || rightButton || middleButton)
+        {
             leftSurfaceWithButton = true;
+            Logger::trace("Wayland: pointer leave with held button (L="
+                + std::to_string(leftButton) + " R=" + std::to_string(rightButton)
+                + " M=" + std::to_string(middleButton) + ") — will clear on re-entry");
+        }
+        else
+        {
+            Logger::trace("Wayland: pointer leave (no buttons held)");
+        }
     }
 
     static void pointerMotion(void* /*data*/, wl_pointer* /*pointer*/,
@@ -230,6 +239,17 @@ namespace vkBasalt
         state.middleButton = middleButton;
         state.scrollDelta = scrollAccumulator;
         scrollAccumulator = 0.0f;
+
+        // Trace-level per-frame state dump (use VKBASALT_LOG_LEVEL=trace)
+        if (state.leftButton || state.rightButton || state.middleButton || state.scrollDelta != 0.0f)
+        {
+            Logger::trace("mouse state: pos=(" + std::to_string(state.x) + "," + std::to_string(state.y)
+                + ") L=" + std::to_string(state.leftButton)
+                + " R=" + std::to_string(state.rightButton)
+                + " M=" + std::to_string(state.middleButton)
+                + " scroll=" + std::to_string(state.scrollDelta)
+                + " staleFlag=" + std::to_string(leftSurfaceWithButton));
+        }
 
         return state;
     }

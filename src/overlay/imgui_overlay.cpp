@@ -198,6 +198,19 @@ namespace vkBasalt
     {
         visible = !visible;
         setInputBlocked(visible);
+
+        // On Wayland, confine the pointer to the game surface while the overlay
+        // is visible. This prevents the cursor from leaving the surface during
+        // ImGui window drags, which would trigger compositor window-move grabs
+        // (KDE/KWin interprets the escaping cursor as a window drag request).
+        if (isWayland())
+        {
+            if (visible)
+                confinePointer();
+            else
+                releasePointer();
+        }
+
         saveToPersistentState();
     }
 
@@ -611,6 +624,17 @@ namespace vkBasalt
         // ImGui frame
         ImGui_ImplVulkan_NewFrame();
         ImGui::NewFrame();
+
+        // Trace: ImGui input state after NewFrame (use VKBASALT_LOG_LEVEL=trace)
+        if (io.MouseDown[0] || io.MouseDown[1] || io.MouseDown[2])
+        {
+            Logger::trace("ImGui input: mouse=(" + std::to_string((int)io.MousePos.x) + ","
+                + std::to_string((int)io.MousePos.y) + ") L=" + std::to_string(io.MouseDown[0])
+                + " R=" + std::to_string(io.MouseDown[1])
+                + " WantCapture=" + std::to_string(io.WantCaptureMouse)
+                + " ActiveId=" + std::to_string(ImGui::GetCurrentContext()->ActiveId != 0)
+                + " MovingWindow=" + std::to_string(ImGui::GetCurrentContext()->MovingWindow != nullptr));
+        }
 
         // Create background dockspace (allows windows to dock with each other)
         ImGuiViewport* viewport = ImGui::GetMainViewport();
