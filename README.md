@@ -41,7 +41,8 @@ Upstream vkBasalt requires editing config files and restarting. This fork adds:
 
 - **Wayland input blocking** — `wl_proxy_add_listener` interposition wraps game's pointer/keyboard listeners to suppress events when the overlay has focus
 - **X11 input blocking** — `XGrabPointer`/`XGrabKeyboard` when overlay is active
-- **Sticky button fix** — tracks button state across pointer leave/enter to handle lost releases during compositor grabs (window move/resize)
+- **Reliable Wayland mouse input** — time-based auto-release handles missing button releases from compositor grabs; motion-aware idle detection keeps buttons held during drags at any framerate
+- **Game pointer mirroring** — interpose layer mirrors button state from the game's pointer to the overlay, ensuring reliable press/release tracking via Wayland implicit grab
 - **Right-click context menus** on parameter sliders to reset to defaults
 - **Depth buffer ready flag** — `bufready_depth` uniform now correctly reports whether depth is available to shaders
 
@@ -209,6 +210,20 @@ When a game is detected, vkBasalt creates a config directory at `~/.config/vkBas
 ### Shader Manager
 
 ReShade shader and texture paths are managed through the Shader Manager tab in the overlay. Add parent directories and the manager will recursively discover `Shaders/` and `Textures/` subdirectories. Paths are stored in `~/.config/vkBasalt-overlay/shader_manager.conf`.
+
+## Anti-Cheat Safety
+
+vkBasalt is a **read-only visual filter** — it applies post-processing shaders to the final rendered image, similar to NVIDIA Freestyle, AMD Adrenalin filters, or monitor-level color adjustments. It does **not**:
+
+- Modify game memory or game files
+- Read game state (player positions, health, etc.)
+- Inject code into the game process
+- Provide any competitive advantage (no wallhacks, aimbots, ESP)
+- Intercept or modify network traffic
+
+**However**, some anti-cheat systems (EAC, BattlEye) may detect Vulkan layers. On Linux/Proton, Vulkan layers like vkBasalt generally work because anti-cheat on Linux has limited kernel-level access compared to Windows. Many players use vkBasalt with EAC games without issues. That said, **no guarantee can be made** — anti-cheat policies can change at any time. Use at your own discretion.
+
+**Recommendation**: If you're concerned, test with `overlayBlockInput = false` and only use common post-processing effects (sharpening, color correction, vibrance). Avoid depth-buffer effects in competitive games.
 
 ## Known Limitations
 

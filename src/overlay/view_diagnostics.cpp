@@ -540,8 +540,23 @@ namespace vkBasalt
             ImGui::TextDisabled("Could not detect game executable");
         }
 
-        // Build info at bottom
+        // Credits and build info
         ImGui::Spacing();
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        ImGui::Text("Credits");
+        ImGui::TextDisabled("Original vkBasalt by");
+        ImGui::SameLine();
+        ImGui::TextLinkOpenURL("@DadSchoorse", "https://github.com/DadSchoorse/vkBasalt");
+        ImGui::TextDisabled("Overlay fork by");
+        ImGui::SameLine();
+        ImGui::TextLinkOpenURL("@Boux", "https://github.com/Boux/vkBasalt_overlay");
+        ImGui::TextDisabled("Wayland fork by");
+        ImGui::SameLine();
+        ImGui::TextLinkOpenURL("@Daaboulex", "https://github.com/Daaboulex/vkBasalt_overlay_wayland");
+
         ImGui::Spacing();
         ImGui::TextDisabled("Build #%d (%s)", BUILD_NUMBER, BUILD_DATE);
         ImGui::TextDisabled("Report issues:");
