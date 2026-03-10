@@ -28,12 +28,16 @@ namespace vkBasalt
     // Frame counters for auto-release. On Wayland, compositors (KWin/tiling)
     // can intercept left-click drags as window moves, consuming the button
     // release so it never reaches our pointer. We auto-release after a few
-    // frames to synthesize the missing release. Normal releases arrive within
-    // 1-2 frames and clear the counter before auto-release triggers.
-    static int leftPressFrames = 0;
-    static int rightPressFrames = 0;
-    static int middlePressFrames = 0;
-    static constexpr int AUTO_RELEASE_FRAMES = 3;
+    // IDLE frames (no pointer motion) to synthesize the missing release.
+    // While the pointer is moving, the user is actively dragging — keep the
+    // button pressed. Only auto-release when motion stops (stuck button).
+    static int leftIdleFrames = 0;
+    static int rightIdleFrames = 0;
+    static int middleIdleFrames = 0;
+    static constexpr int AUTO_RELEASE_IDLE_FRAMES = 4;
+
+    // Track whether motion occurred since last getMouseStateWayland() poll
+    static bool motionSinceLastPoll = false;
 
     static bool mouseInitialized = false;
 
@@ -65,6 +69,7 @@ namespace vkBasalt
     {
         pointerX = wl_fixed_to_int(sx);
         pointerY = wl_fixed_to_int(sy);
+        motionSinceLastPoll = true;
     }
 
     static void pointerButton(void* /*data*/, wl_pointer* /*pointer*/,
@@ -79,15 +84,15 @@ namespace vkBasalt
         {
             case 0x110:
                 leftButton = pressed;
-                leftPressFrames = pressed ? 1 : 0;
+                leftIdleFrames = 0;
                 break;
             case 0x111:
                 rightButton = pressed;
-                rightPressFrames = pressed ? 1 : 0;
+                rightIdleFrames = 0;
                 break;
             case 0x112:
                 middleButton = pressed;
-                middlePressFrames = pressed ? 1 : 0;
+                middleIdleFrames = 0;
                 break;
         }
     }
@@ -222,15 +227,15 @@ namespace vkBasalt
         {
             case 0x110:
                 leftButton = pressed;
-                leftPressFrames = pressed ? 1 : 0;
+                leftIdleFrames = 0;
                 break;
             case 0x111:
                 rightButton = pressed;
-                rightPressFrames = pressed ? 1 : 0;
+                rightIdleFrames = 0;
                 break;
             case 0x112:
                 middleButton = pressed;
-                middlePressFrames = pressed ? 1 : 0;
+                middleIdleFrames = 0;
                 break;
         }
     }
@@ -244,23 +249,36 @@ namespace vkBasalt
 
         dispatchWaylandInputEvents();
 
-        // Auto-release buttons whose release was consumed by the compositor
-        // (e.g., KWin intercepting left-click drag as a window move).
-        // Normal releases arrive within 1-2 frames and reset the counter.
-        if (leftButton && ++leftPressFrames > AUTO_RELEASE_FRAMES)
+        // Auto-release buttons whose release was consumed by the compositor.
+        // Only count idle frames (no pointer motion). While the user is
+        // actively dragging (motion events arriving), keep the button held.
+        // When motion stops and no release arrives, synthesize the release.
+        if (motionSinceLastPoll)
         {
-            leftButton = false;
-            leftPressFrames = 0;
+            // Pointer moved — user is dragging, reset idle counters
+            leftIdleFrames = 0;
+            rightIdleFrames = 0;
+            middleIdleFrames = 0;
+            motionSinceLastPoll = false;
         }
-        if (rightButton && ++rightPressFrames > AUTO_RELEASE_FRAMES)
+        else
         {
-            rightButton = false;
-            rightPressFrames = 0;
-        }
-        if (middleButton && ++middlePressFrames > AUTO_RELEASE_FRAMES)
-        {
-            middleButton = false;
-            middlePressFrames = 0;
+            // No motion this frame — count idle time for held buttons
+            if (leftButton && ++leftIdleFrames > AUTO_RELEASE_IDLE_FRAMES)
+            {
+                leftButton = false;
+                leftIdleFrames = 0;
+            }
+            if (rightButton && ++rightIdleFrames > AUTO_RELEASE_IDLE_FRAMES)
+            {
+                rightButton = false;
+                rightIdleFrames = 0;
+            }
+            if (middleButton && ++middleIdleFrames > AUTO_RELEASE_IDLE_FRAMES)
+            {
+                middleButton = false;
+                middleIdleFrames = 0;
+            }
         }
 
         state.x = pointerX;
