@@ -221,9 +221,13 @@ vkBasalt is a **read-only visual filter** — it applies post-processing shaders
 - Provide any competitive advantage (no wallhacks, aimbots, ESP)
 - Intercept or modify network traffic
 
-**However**, some anti-cheat systems (EAC, BattlEye) may detect Vulkan layers. On Linux/Proton, Vulkan layers like vkBasalt generally work because anti-cheat on Linux has limited kernel-level access compared to Windows. Many players use vkBasalt with EAC games without issues. That said, **no guarantee can be made** — anti-cheat policies can change at any time. Use at your own discretion.
+**Anti-cheat compatibility varies by game and platform:**
 
-**Recommendation**: If you're concerned, test with `overlayBlockInput = false` and only use common post-processing effects (sharpening, color correction, vibrance). Avoid depth-buffer effects in competitive games.
+- **On Linux/Proton**, EAC and BattlEye have limited kernel-level access compared to Windows. Vulkan implicit layers like vkBasalt and MangoHud generally work because the anti-cheat cannot deeply inspect the Vulkan layer chain. No confirmed bans from vkBasalt have been reported.
+- **On Windows**, some games actively block ReShade and even NVIDIA Freestyle (e.g., Arc Raiders blocks both). vkBasalt falls in the same category as ReShade from an anti-cheat perspective — it is a third-party rendering layer, not a whitelisted vendor feature.
+- **Per-game policies**: Anti-cheat detection is configured per-game by the developer. A game that allows vkBasalt today could block it tomorrow. The original vkBasalt FAQ says: *"Will vkBasalt get me banned? Maybe. To my knowledge this hasn't happened yet but don't blame me if your frog dies."*
+
+**No guarantee can be made** — use at your own discretion. vkBasalt only applies visual post-processing and provides zero competitive advantage, but anti-cheat systems don't always distinguish between cosmetic and malicious modifications.
 
 ## Known Limitations
 
