@@ -1,7 +1,12 @@
-- rework input blocking logic (it's pretty janky)
-- native wayland support for GUI
-- manually edit param value
-- fix depth capture
-- save button feedback
-- double click to reset not working
-- right click on param for popup with fine-tunes and other options
+Completed:
+- [DONE] rework input blocking logic — Wayland: wl_proxy_add_listener interposition; X11: XGrab
+- [DONE] fix depth capture — DepthUniform now reports actual depth availability
+- [DONE] double click to reset not working — replaced with right-click context menu
+- [DONE] right click on param for popup with fine-tunes and other options
+
+Remaining:
+- native wayland support for GUI (currently renders via Vulkan layer, no wl_surface)
+- manually edit param value (type exact number into slider)
+- save button feedback (visual confirmation on save)
+- ReShade mouse/key uniforms (mousepoint, mousedelta, mousebutton, key — currently stubbed)
+- multi-GPU device matching for diagnostics (match DRM card to Vulkan physical device)

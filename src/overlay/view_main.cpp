@@ -33,11 +33,15 @@ namespace vkBasalt
                 ImGui::TextDisabled("(modified)");
             }
 
-            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
-                registry->setPreprocessorDefValue(effectName, def.name, def.defaultValue);
+            if (ImGui::BeginPopupContextItem("##preproc_reset"))
+            {
+                if (ImGui::MenuItem("Reset to default"))
+                    registry->setPreprocessorDefValue(effectName, def.name, def.defaultValue);
+                ImGui::EndPopup();
+            }
 
             if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Default: %s\nDouble-click to reset", def.defaultValue.c_str());
+                ImGui::SetTooltip("Default: %s\nRight-click to reset", def.defaultValue.c_str());
         }
 
     } // anonymous namespace

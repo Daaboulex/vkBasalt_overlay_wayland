@@ -1,5 +1,6 @@
 #include "keyboard_input_wayland.hpp"
 #include "wayland_input_common.hpp"
+#include "wayland_interpose.hpp"
 #include "wayland_display.hpp"
 #include "logger.hpp"
 
@@ -202,6 +203,9 @@ namespace vkBasalt
             return;
 
         wlKeyboard = wl_seat_get_keyboard(seat);
+        // Register as overlay proxy BEFORE add_listener so the interposition
+        // layer passes this through without wrapping
+        registerOverlayProxy((wl_proxy*)wlKeyboard);
         wl_keyboard_add_listener(wlKeyboard, &keyboardListener, nullptr);
         Logger::debug("Wayland: keyboard bound from shared seat");
     }
@@ -240,6 +244,7 @@ namespace vkBasalt
     {
         if (wlKeyboard)
         {
+            unregisterOverlayProxy((wl_proxy*)wlKeyboard);
             wl_keyboard_destroy(wlKeyboard);
             wlKeyboard = nullptr;
         }

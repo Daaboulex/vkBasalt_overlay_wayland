@@ -1,5 +1,6 @@
 #include "mouse_input_wayland.hpp"
 #include "wayland_input_common.hpp"
+#include "wayland_interpose.hpp"
 #include "wayland_display.hpp"
 #include "logger.hpp"
 
@@ -182,6 +183,9 @@ namespace vkBasalt
             return;
 
         wlPointer = wl_seat_get_pointer(seat);
+        // Register as overlay proxy BEFORE add_listener so the interposition
+        // layer passes this through without wrapping
+        registerOverlayProxy((wl_proxy*)wlPointer);
         wl_pointer_add_listener(wlPointer, &pointerListener, nullptr);
         Logger::debug("Wayland: pointer bound from shared seat");
     }
@@ -212,6 +216,7 @@ namespace vkBasalt
     {
         if (wlPointer)
         {
+            unregisterOverlayProxy((wl_proxy*)wlPointer);
             wl_pointer_destroy(wlPointer);
             wlPointer = nullptr;
         }

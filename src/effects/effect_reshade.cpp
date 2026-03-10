@@ -880,6 +880,15 @@ namespace vkBasalt
 
     void ReshadeEffect::useDepthImage(VkImageView depthImageView)
     {
+        // Update DepthUniforms so bufready_depth reports correctly
+        bool hasDepth = (depthImageView != VK_NULL_HANDLE);
+        for (auto& uniform : uniforms)
+        {
+            auto* depthUniform = dynamic_cast<DepthUniform*>(uniform.get());
+            if (depthUniform)
+                depthUniform->setDepthAvailable(hasDepth);
+        }
+
         std::vector<std::string> depthTextureNames;
 
         for (auto& texture : module.textures)

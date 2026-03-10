@@ -137,7 +137,11 @@ namespace vkBasalt
     public:
         DepthUniform(reshadefx::uniform_info uniformInfo);
         void virtual update(void* mapedBuffer) override;
+        void setDepthAvailable(bool available) { depthAvailable = available; }
         virtual ~DepthUniform();
+
+    private:
+        bool depthAvailable = false;
     };
 } // namespace vkBasalt
 

@@ -123,6 +123,14 @@ wayland_pointer_constraints_lib = static_library('wayland_pointer_constraints',
     pointer_constraints_client_h,
     link_with: [wayland_input_common_lib],
     dependencies: [wayland_client_dep])
+# Wayland event interposition — wraps game's pointer/keyboard listeners to
+# suppress events when overlay has input blocked. Needs default visibility
+# for the wl_proxy_add_listener symbol override.
+wayland_interpose_lib = static_library('wayland_interpose',
+    'wayland_interpose.cpp',
+    dependencies: [wayland_client_dep],
+    c_args: ['-fvisibility=default'],
+    cpp_args: ['-fvisibility=default'])
 
 imgui_inc = include_directories('imgui')
 overlay_inc = include_directories('overlay')
@@ -134,7 +142,7 @@ shared_library(meson.project_name().to_lower(),
     vkBasalt_src, overlay_src, imgui_src, shader_include,
     link_with: [keyboard_input_x11_lib, mouse_input_lib, input_blocker_lib,
                 wayland_input_common_lib, keyboard_input_wayland_lib, mouse_input_wayland_lib,
-                wayland_pointer_constraints_lib],
+                wayland_pointer_constraints_lib, wayland_interpose_lib],
     include_directories : [vkBasalt_include_path, imgui_inc, overlay_inc, effects_inc, effects_builtin_inc, effects_params_inc],
     cpp_args : ['-DIMGUI_IMPL_VULKAN_NO_PROTOTYPES'],
     dependencies : [x11_dep, xi_dep, wayland_client_dep, xkbcommon_dep, reshade_dep],

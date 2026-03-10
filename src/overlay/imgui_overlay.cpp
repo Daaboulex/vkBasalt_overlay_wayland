@@ -199,17 +199,11 @@ namespace vkBasalt
         visible = !visible;
         setInputBlocked(visible);
 
-        // On Wayland, confine the pointer to the game surface while the overlay
-        // is visible. This prevents the cursor from leaving the surface during
-        // ImGui window drags, which would trigger compositor window-move grabs
-        // (KDE/KWin interprets the escaping cursor as a window drag request).
-        if (isWayland())
-        {
-            if (visible)
-                confinePointer();
-            else
-                releasePointer();
-        }
+        // Pointer confinement was removed: the overlay renders inside the game's
+        // surface, so confining the pointer doesn't prevent the compositor from
+        // interpreting clicks as window-move grabs. With NoUndocking on the
+        // dockspace, tabs can't escape anyway, and users need the cursor free
+        // to interact with other windows while the overlay is open.
 
         saveToPersistentState();
     }

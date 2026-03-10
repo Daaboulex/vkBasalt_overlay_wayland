@@ -374,7 +374,7 @@ namespace vkBasalt
     }
     void DepthUniform::update(void* mapedBuffer)
     {
-        VkBool32 hasDepth = VK_FALSE; // TODO
+        VkBool32 hasDepth = depthAvailable ? VK_TRUE : VK_FALSE;
         std::memcpy((uint8_t*) mapedBuffer + offset, &(hasDepth), sizeof(VkBool32));
     }
     DepthUniform::~DepthUniform()

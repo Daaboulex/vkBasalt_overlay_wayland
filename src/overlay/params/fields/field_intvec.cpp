@@ -35,12 +35,15 @@ namespace vkBasalt
                 }
             }
 
-            // Double-click to reset
-            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
+            // Right-click context menu to reset
+            if (ImGui::BeginPopupContextItem("##reset"))
             {
-                resetToDefault(param);
-                changed = true;
-                ImGui::ClearActiveID();
+                if (ImGui::MenuItem("Reset to default"))
+                {
+                    resetToDefault(param);
+                    changed = true;
+                }
+                ImGui::EndPopup();
             }
 
             return changed;

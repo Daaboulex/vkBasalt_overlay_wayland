@@ -2,6 +2,8 @@
 #include "wayland_display.hpp"
 #include "logger.hpp"
 
+#include <atomic>
+
 #ifndef VKBASALT_X11
 #define VKBASALT_X11 1
 #endif
@@ -14,7 +16,9 @@
 namespace vkBasalt
 {
     static bool blockingEnabled = false;
-    static bool blocked = false;
+    // Atomic: written by overlay thread (setInputBlocked), read by game thread
+    // (isInputBlocked via Wayland interpose wrapper callbacks)
+    static std::atomic<bool> blocked{false};
 
 #if VKBASALT_X11
     static bool grabbed = false;
@@ -87,7 +91,7 @@ namespace vkBasalt
         if (!enabled && grabbed)
         {
             ungrabInput();
-            blocked = false;
+            blocked.store(false, std::memory_order_release);
         }
 #endif
 
@@ -99,16 +103,16 @@ namespace vkBasalt
         if (!blockingEnabled)
             return;
 
-        if (shouldBlock == blocked)
+        if (shouldBlock == blocked.load(std::memory_order_acquire))
             return;
 
-        blocked = shouldBlock;
+        blocked.store(shouldBlock, std::memory_order_release);
 
         if (isWayland())
         {
-            // On Wayland, blocking means the overlay consumes events
-            // from our private queue — the game's own queue is separate
-            Logger::debug(std::string("Wayland input blocking: ") + (blocked ? "consuming" : "passing"));
+            // On Wayland, interposed wl_proxy_add_listener wrapper callbacks
+            // check isInputBlocked() and suppress events to the game
+            Logger::debug(std::string("Wayland input blocking: ") + (shouldBlock ? "suppressing game events" : "forwarding game events"));
             return;
         }
 
@@ -122,6 +126,6 @@ namespace vkBasalt
 
     bool isInputBlocked()
     {
-        return blocked;
+        return blocked.load(std::memory_order_acquire);
     }
 }
