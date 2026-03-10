@@ -198,6 +198,16 @@ namespace vkBasalt
         cleanupWaylandInputCommon();
     }
 
+    void mirrorButtonState(uint32_t button, bool pressed)
+    {
+        switch (button)
+        {
+            case 0x110: leftButton = pressed; break;
+            case 0x111: rightButton = pressed; break;
+            case 0x112: middleButton = pressed; break;
+        }
+    }
+
     MouseState getMouseStateWayland()
     {
         MouseState state;

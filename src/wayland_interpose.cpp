@@ -12,7 +12,12 @@
 
 #include "wayland_interpose.hpp"
 #include "input_blocker.hpp"
+#include "wayland_display.hpp"
 #include "logger.hpp"
+
+// Forward-declare to avoid pulling in mouse_input_wayland.hpp (which
+// transitively includes mouse_input.hpp → X11 headers in some targets).
+namespace vkBasalt { void mirrorButtonState(uint32_t button, bool pressed); }
 
 #include <wayland-client.h>
 #include <dlfcn.h>
@@ -98,6 +103,11 @@ static void wp_motion(void* data, wl_pointer* p, uint32_t time, wl_fixed_t x, wl
 
 static void wp_button(void* data, wl_pointer* p, uint32_t serial, uint32_t time, uint32_t button, uint32_t state)
 {
+    // Always mirror button state to overlay — the game's pointer receives
+    // releases via Wayland's implicit grab that our overlay pointer never sees.
+    if (vkBasalt::isWayland())
+        vkBasalt::mirrorButtonState(button, state == WL_POINTER_BUTTON_STATE_PRESSED);
+
     if (vkBasalt::isInputBlocked())
         return;
     std::lock_guard<std::mutex> lock(gameDataMutex);
