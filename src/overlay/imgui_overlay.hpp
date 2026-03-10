@@ -178,7 +178,7 @@ namespace vkBasalt
         bool visible = false;
         bool initialized = false;
         bool backendInitialized = false;
-        bool dockLayoutInitialized = false;  // True after default dock layout is set up
+        bool resetLayoutRequested = false;  // When true, reset window position/size next frame
         uint32_t currentWidth = 1920;   // Current swapchain resolution for VRAM estimates
         uint32_t currentHeight = 1080;
         char saveConfigName[64] = "";

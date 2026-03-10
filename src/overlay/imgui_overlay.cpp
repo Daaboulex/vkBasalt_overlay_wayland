@@ -120,21 +120,14 @@ namespace vkBasalt
         ImGui::CreateContext();
         ImGuiIO& io = ImGui::GetIO();
         io.IniFilename = nullptr;
-        io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;  // Enable docking
 
         std::string iniPath = ConfigSerializer::getBaseConfigDir() + "/imgui.ini";
-
-        // Load ini file and check if it has docking data
         std::ifstream iniFile(iniPath);
         std::string iniContent((std::istreambuf_iterator<char>(iniFile)),
                                 std::istreambuf_iterator<char>());
 
         if (!iniContent.empty())
             ImGui::LoadIniSettingsFromDisk(iniPath.c_str());
-
-        // Only skip default layout if ini has actual docking data
-        if (iniContent.find("[Docking]") != std::string::npos)
-            dockLayoutInitialized = true;
 
         ImGui::StyleColorsDark();
 
@@ -629,72 +622,73 @@ namespace vkBasalt
                 + " MovingWindow=" + std::to_string(ImGui::GetCurrentContext()->MovingWindow != nullptr));
         }
 
-        // Create background dockspace (allows windows to dock with each other)
+        // Clamp overlay window to screen bounds so it can never go offscreen
         ImGuiViewport* viewport = ImGui::GetMainViewport();
-        ImGui::SetNextWindowPos(viewport->WorkPos);
-        ImGui::SetNextWindowSize(viewport->WorkSize);
-        ImGui::SetNextWindowViewport(viewport->ID);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+        ImVec2 screenMin = viewport->WorkPos;
+        ImVec2 screenMax = ImVec2(screenMin.x + viewport->WorkSize.x, screenMin.y + viewport->WorkSize.y);
 
-        ImGuiWindowFlags dockspaceWindowFlags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
-            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-            ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground;
-
-        ImGui::Begin("DockSpaceWindow", nullptr, dockspaceWindowFlags);
-        ImGui::PopStyleVar(3);
-
-        ImGuiID dockspace_id = ImGui::GetID("VkBasaltDockSpace");
-        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f),
-            ImGuiDockNodeFlags_PassthruCentralNode |
-            ImGuiDockNodeFlags_NoDockingSplit);  // Prevent docking to screen edges — only tab docking
-
-        // Set up default dock layout on first run - floating tabbed window
-        if (!dockLayoutInitialized)
+        // Set default size/position on first appearance
+        ImGui::SetNextWindowSizeConstraints(ImVec2(300, 200), ImVec2(screenMax.x - screenMin.x, screenMax.y - screenMin.y));
+        if (resetLayoutRequested)
         {
-            dockLayoutInitialized = true;
-
-            // Create a floating dock node for our windows
-            ImGuiID floatingNode = ImGui::DockBuilderAddNode(0, ImGuiDockNodeFlags_None);
-            ImGui::DockBuilderSetNodePos(floatingNode, ImVec2(50, 50));
-            ImGui::DockBuilderSetNodeSize(floatingNode, ImVec2(400, 500));
-
-            // Dock all windows into this floating node (they become tabs)
-            // Last one docked becomes the active tab
-            ImGui::DockBuilderDockWindow("Diagnostics", floatingNode);
-            ImGui::DockBuilderDockWindow("Settings", floatingNode);
-            ImGui::DockBuilderDockWindow("Shaders", floatingNode);
-            ImGui::DockBuilderDockWindow("Effects", floatingNode);
-
-            ImGui::DockBuilderFinish(floatingNode);
+            ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(400, 500), ImGuiCond_Always);
+            resetLayoutRequested = false;
+        }
+        else
+        {
+            ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(400, 500), ImGuiCond_FirstUseEver);
         }
 
-        ImGui::End();  // DockSpaceWindow
+        ImGui::Begin("vkBasalt Overlay", nullptr, ImGuiWindowFlags_NoCollapse);
 
-        // Each panel is a separate dockable window (can be dragged out as tabs)
-        if (ImGui::Begin("Effects"))
+        // Clamp position after the window is created (prevents dragging offscreen)
+        ImVec2 winPos = ImGui::GetWindowPos();
+        ImVec2 winSize = ImGui::GetWindowSize();
+        bool clamped = false;
+        if (winPos.x + winSize.x < screenMin.x + 50) { winPos.x = screenMin.x; clamped = true; }
+        if (winPos.y < screenMin.y)                   { winPos.y = screenMin.y; clamped = true; }
+        if (winPos.x > screenMax.x - 50)              { winPos.x = screenMax.x - 50; clamped = true; }
+        if (winPos.y > screenMax.y - 30)              { winPos.y = screenMax.y - 30; clamped = true; }
+        if (clamped)
+            ImGui::SetWindowPos(winPos);
+
+        if (ImGui::BeginTabBar("OverlayTabs"))
         {
-            if (inSelectionMode)
-                renderAddEffectsView();
-            else if (inConfigManageMode)
-                renderConfigManagerView();
-            else
-                renderMainView(keyboard);
+            if (ImGui::BeginTabItem("Effects"))
+            {
+                if (inSelectionMode)
+                    renderAddEffectsView();
+                else if (inConfigManageMode)
+                    renderConfigManagerView();
+                else
+                    renderMainView(keyboard);
+                ImGui::EndTabItem();
+            }
+
+            if (ImGui::BeginTabItem("Shaders"))
+            {
+                renderShaderManagerView();
+                ImGui::EndTabItem();
+            }
+
+            if (ImGui::BeginTabItem("Settings"))
+            {
+                renderSettingsView(keyboard);
+                ImGui::EndTabItem();
+            }
+
+            if (ImGui::BeginTabItem("Diagnostics"))
+            {
+                renderDiagnosticsView();
+                ImGui::EndTabItem();
+            }
+
+            ImGui::EndTabBar();
         }
-        ImGui::End();
 
-        if (ImGui::Begin("Shaders"))
-            renderShaderManagerView();
-        ImGui::End();
-
-        if (ImGui::Begin("Settings"))
-            renderSettingsView(keyboard);
-        ImGui::End();
-
-        if (ImGui::Begin("Diagnostics"))
-            renderDiagnosticsView();
-        ImGui::End();
+        ImGui::End();  // vkBasalt Overlay
 
         // Debug window (separate, controlled by setting)
         renderDebugWindow();

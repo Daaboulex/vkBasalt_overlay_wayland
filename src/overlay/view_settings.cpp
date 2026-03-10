@@ -7,7 +7,6 @@
 #include <functional>
 
 #include "imgui/imgui.h"
-#include "imgui/imgui_internal.h"
 
 namespace vkBasalt
 {
@@ -180,15 +179,13 @@ namespace vkBasalt
         ImGui::Text("Layout");
         ImGui::Separator();
 
-        if (ImGui::Button("Reset Window Layout"))
+        if (ImGui::Button("Reset Window Position"))
         {
-            // Clear all docking state so the default layout is recreated next frame
-            ImGui::ClearIniSettings();
-            dockLayoutInitialized = false;
+            resetLayoutRequested = true;
             Logger::info("Window layout reset to default");
         }
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Reset all window positions and docking to the default layout.");
+            ImGui::SetTooltip("Reset window position and size to defaults.");
 
         ImGui::EndChild();
     }
