@@ -8,14 +8,15 @@
 #include <numeric>
 #include <algorithm>
 #include <cmath>
+#include <dlfcn.h>
 
 #include "imgui/imgui.h"
 
 namespace vkBasalt
 {
     // Build version - increment this each build
-    static constexpr int BUILD_NUMBER = 13;
-    static constexpr const char* BUILD_DATE = "2026-03-09";
+    static constexpr int BUILD_NUMBER = 14;
+    static constexpr const char* BUILD_DATE = "2026-03-10";
     namespace
     {
         // Ring buffer for storing history
@@ -82,42 +83,202 @@ namespace vkBasalt
             size_t count = 0;
         };
 
-        // Static state for diagnostics
-        static RingBuffer<float, 300> frameTimeHistory;   // 300 samples (~5 seconds at 60fps)
-        static RingBuffer<float, 300> gpuUsageHistory;
-        static RingBuffer<float, 300> vramUsageHistory;
-        static RingBuffer<float, 300> gttUsageHistory;    // Shared memory for iGPUs
-        static std::chrono::steady_clock::time_point lastFrameTime;
-        static std::string drmCardPath;
-        static std::string detectedGameName;
-        static std::string autoDetectedConfig;
+        // ── GPU vendor detection ────────────────────────────────────────────
 
-        // Find the DRM card path for GPU stats.
-        // TODO: This returns the first AMD card with gpu_busy_percent, which may not
-        // match the Vulkan physical device actually rendering the game. To fix properly,
-        // compare VkPhysicalDeviceProperties.deviceID / vendorID against the PCI IDs at
-        // /sys/class/drm/cardN/device/{device,vendor}, or match the DRM render node from
-        // VK_EXT_pci_bus_info. For now, single-GPU systems work fine; multi-GPU systems
-        // may report stats from the wrong card.
-        std::string findDrmCard()
+        enum class GpuVendor { Unknown, AMD, Intel, NVIDIA };
+
+        struct GpuInfo
         {
+            GpuVendor vendor = GpuVendor::Unknown;
+            std::string drmCardPath;      // /sys/class/drm/cardN
+            std::string vendorName;       // Display name
+            bool hasGpuUsage = false;
+            bool hasVram = false;
+            bool hasGtt = false;
+        };
+
+        // ── NVIDIA NVML (runtime dlopen) ────────────────────────────────────
+
+        // NVML types (from nvml.h, but we don't require the header)
+        using nvmlReturn_t = unsigned int;
+        using nvmlDevice_t = void*;
+        struct nvmlUtilization_t { unsigned int gpu; unsigned int memory; };
+        struct nvmlMemory_t { unsigned long long total; unsigned long long free; unsigned long long used; };
+
+        static constexpr nvmlReturn_t NVML_SUCCESS = 0;
+
+        struct NvmlState
+        {
+            void* lib = nullptr;
+            nvmlDevice_t device = nullptr;
+            bool initialized = false;
+
+            // Function pointers
+            nvmlReturn_t (*Init)() = nullptr;
+            nvmlReturn_t (*Shutdown)() = nullptr;
+            nvmlReturn_t (*DeviceGetHandleByIndex)(unsigned int, nvmlDevice_t*) = nullptr;
+            nvmlReturn_t (*DeviceGetUtilizationRates)(nvmlDevice_t, nvmlUtilization_t*) = nullptr;
+            nvmlReturn_t (*DeviceGetMemoryInfo)(nvmlDevice_t, nvmlMemory_t*) = nullptr;
+            nvmlReturn_t (*DeviceGetCount)(unsigned int*) = nullptr;
+        };
+
+        static NvmlState nvml;
+
+        static bool initNvml()
+        {
+            if (nvml.initialized)
+                return nvml.lib != nullptr;
+            nvml.initialized = true;
+
+            nvml.lib = dlopen("libnvidia-ml.so.1", RTLD_LAZY);
+            if (!nvml.lib)
+                nvml.lib = dlopen("libnvidia-ml.so", RTLD_LAZY);
+            if (!nvml.lib)
+            {
+                Logger::debug("NVML not available: " + std::string(dlerror()));
+                return false;
+            }
+
+            nvml.Init = (decltype(nvml.Init))dlsym(nvml.lib, "nvmlInit_v2");
+            if (!nvml.Init)
+                nvml.Init = (decltype(nvml.Init))dlsym(nvml.lib, "nvmlInit");
+            nvml.Shutdown = (decltype(nvml.Shutdown))dlsym(nvml.lib, "nvmlShutdown");
+            nvml.DeviceGetHandleByIndex = (decltype(nvml.DeviceGetHandleByIndex))dlsym(nvml.lib, "nvmlDeviceGetHandleByIndex_v2");
+            if (!nvml.DeviceGetHandleByIndex)
+                nvml.DeviceGetHandleByIndex = (decltype(nvml.DeviceGetHandleByIndex))dlsym(nvml.lib, "nvmlDeviceGetHandleByIndex");
+            nvml.DeviceGetUtilizationRates = (decltype(nvml.DeviceGetUtilizationRates))dlsym(nvml.lib, "nvmlDeviceGetUtilizationRates");
+            nvml.DeviceGetMemoryInfo = (decltype(nvml.DeviceGetMemoryInfo))dlsym(nvml.lib, "nvmlDeviceGetMemoryInfo");
+            nvml.DeviceGetCount = (decltype(nvml.DeviceGetCount))dlsym(nvml.lib, "nvmlDeviceGetCount_v2");
+            if (!nvml.DeviceGetCount)
+                nvml.DeviceGetCount = (decltype(nvml.DeviceGetCount))dlsym(nvml.lib, "nvmlDeviceGetCount");
+
+            if (!nvml.Init || !nvml.DeviceGetHandleByIndex || !nvml.DeviceGetUtilizationRates || !nvml.DeviceGetMemoryInfo)
+            {
+                Logger::debug("NVML: missing required symbols");
+                dlclose(nvml.lib);
+                nvml.lib = nullptr;
+                return false;
+            }
+
+            if (nvml.Init() != NVML_SUCCESS)
+            {
+                Logger::debug("NVML: nvmlInit failed");
+                dlclose(nvml.lib);
+                nvml.lib = nullptr;
+                return false;
+            }
+
+            // Get first GPU handle (index 0)
+            if (nvml.DeviceGetHandleByIndex(0, &nvml.device) != NVML_SUCCESS)
+            {
+                Logger::debug("NVML: could not get device handle");
+                nvml.Shutdown();
+                dlclose(nvml.lib);
+                nvml.lib = nullptr;
+                return false;
+            }
+
+            Logger::info("NVML initialized for GPU diagnostics");
+            return true;
+        }
+
+        static void shutdownNvml()
+        {
+            if (nvml.lib)
+            {
+                if (nvml.Shutdown)
+                    nvml.Shutdown();
+                dlclose(nvml.lib);
+                nvml.lib = nullptr;
+            }
+        }
+
+        // ── GPU discovery ───────────────────────────────────────────────────
+
+        // Read PCI vendor ID from DRM card sysfs
+        static uint16_t readVendorId(const std::string& cardPath)
+        {
+            std::ifstream f(cardPath + "/device/vendor");
+            if (!f.is_open())
+                return 0;
+            uint16_t id = 0;
+            f >> std::hex >> id;
+            return id;
+        }
+
+        static GpuInfo findGpu()
+        {
+            GpuInfo info;
+
             try
             {
                 for (const auto& entry : std::filesystem::directory_iterator("/sys/class/drm"))
                 {
                     std::string name = entry.path().filename().string();
-                    if (name.find("card") == 0 && name.find("-") == std::string::npos)
+                    if (name.find("card") != 0 || name.find("-") != std::string::npos)
+                        continue;
+
+                    std::string cardPath = entry.path().string();
+                    uint16_t vendorId = readVendorId(cardPath);
+
+                    // 0x1002 = AMD, 0x8086 = Intel, 0x10de = NVIDIA
+                    if (vendorId == 0x1002)
                     {
-                        std::string devicePath = entry.path().string() + "/device";
-                        // Check if this card has GPU busy percentage
-                        if (std::filesystem::exists(devicePath + "/gpu_busy_percent"))
-                            return entry.path().string();
+                        // AMD: check for gpu_busy_percent
+                        if (std::filesystem::exists(cardPath + "/device/gpu_busy_percent"))
+                        {
+                            info.vendor = GpuVendor::AMD;
+                            info.drmCardPath = cardPath;
+                            info.vendorName = "AMD";
+                            info.hasGpuUsage = true;
+                            info.hasVram = std::filesystem::exists(cardPath + "/device/mem_info_vram_total");
+                            info.hasGtt = std::filesystem::exists(cardPath + "/device/mem_info_gtt_total");
+                            return info;
+                        }
+                    }
+                    else if (vendorId == 0x8086)
+                    {
+                        // Intel: use frequency ratio as GPU utilization estimate
+                        info.vendor = GpuVendor::Intel;
+                        info.drmCardPath = cardPath;
+                        info.vendorName = "Intel";
+                        info.hasGpuUsage = std::filesystem::exists(cardPath + "/device/gt_act_freq_mhz") &&
+                                           std::filesystem::exists(cardPath + "/device/gt_max_freq_mhz");
+                        // Intel discrete (Arc) may have VRAM via drm_memory_stats
+                        info.hasVram = std::filesystem::exists(cardPath + "/device/mem_info_vram_total");
+                        info.hasGtt = false;
+                        return info;
+                    }
+                    else if (vendorId == 0x10de)
+                    {
+                        // NVIDIA: use NVML (runtime dlopen)
+                        info.vendor = GpuVendor::NVIDIA;
+                        info.drmCardPath = cardPath;
+                        info.vendorName = "NVIDIA";
+                        if (initNvml())
+                        {
+                            info.hasGpuUsage = true;
+                            info.hasVram = true;
+                        }
+                        return info;
                     }
                 }
             }
             catch (...) {}
-            return "";
+
+            return info;
         }
+
+        // ── Static state ────────────────────────────────────────────────────
+
+        static RingBuffer<float, 300> frameTimeHistory;
+        static RingBuffer<float, 300> gpuUsageHistory;
+        static RingBuffer<float, 300> vramUsageHistory;
+        static RingBuffer<float, 300> gttUsageHistory;
+        static std::chrono::steady_clock::time_point lastFrameTime;
+        static GpuInfo gpuInfo;
+        static std::string detectedGameName;
+        static std::string autoDetectedConfig;
 
         // Read a single value from sysfs
         template<typename T>
@@ -130,48 +291,74 @@ namespace vkBasalt
             return !file.fail();
         }
 
-        // Get GPU usage percentage (0-100)
+        // ── Per-vendor stat readers ─────────────────────────────────────────
+
         float getGpuUsage()
         {
-            if (drmCardPath.empty())
-                return -1.0f;
+            if (gpuInfo.vendor == GpuVendor::AMD)
+            {
+                int usage = 0;
+                if (readSysfs(gpuInfo.drmCardPath + "/device/gpu_busy_percent", usage))
+                    return static_cast<float>(usage);
+            }
+            else if (gpuInfo.vendor == GpuVendor::Intel)
+            {
+                // Frequency ratio: (actual / max) * 100 as utilization estimate
+                int actFreq = 0, maxFreq = 0;
+                if (readSysfs(gpuInfo.drmCardPath + "/device/gt_act_freq_mhz", actFreq) &&
+                    readSysfs(gpuInfo.drmCardPath + "/device/gt_max_freq_mhz", maxFreq) &&
+                    maxFreq > 0)
+                {
+                    return std::min(100.0f, (static_cast<float>(actFreq) / static_cast<float>(maxFreq)) * 100.0f);
+                }
+            }
+            else if (gpuInfo.vendor == GpuVendor::NVIDIA && nvml.lib)
+            {
+                nvmlUtilization_t util = {};
+                if (nvml.DeviceGetUtilizationRates(nvml.device, &util) == NVML_SUCCESS)
+                    return static_cast<float>(util.gpu);
+            }
 
-            int usage = 0;
-            if (readSysfs(drmCardPath + "/device/gpu_busy_percent", usage))
-                return static_cast<float>(usage);
             return -1.0f;
         }
 
-        // Get VRAM usage in MB and total (dedicated VRAM)
         bool getVramUsage(float& usedMB, float& totalMB)
         {
-            if (drmCardPath.empty())
-                return false;
-
-            uint64_t used = 0, total = 0;
-
-            // AMD format
-            if (readSysfs(drmCardPath + "/device/mem_info_vram_used", used) &&
-                readSysfs(drmCardPath + "/device/mem_info_vram_total", total))
+            if (gpuInfo.vendor == GpuVendor::AMD || gpuInfo.vendor == GpuVendor::Intel)
             {
-                usedMB = static_cast<float>(used) / (1024.0f * 1024.0f);
-                totalMB = static_cast<float>(total) / (1024.0f * 1024.0f);
-                return true;
+                uint64_t used = 0, total = 0;
+                if (readSysfs(gpuInfo.drmCardPath + "/device/mem_info_vram_used", used) &&
+                    readSysfs(gpuInfo.drmCardPath + "/device/mem_info_vram_total", total) &&
+                    total > 0)
+                {
+                    usedMB = static_cast<float>(used) / (1024.0f * 1024.0f);
+                    totalMB = static_cast<float>(total) / (1024.0f * 1024.0f);
+                    return true;
+                }
+            }
+            else if (gpuInfo.vendor == GpuVendor::NVIDIA && nvml.lib)
+            {
+                nvmlMemory_t mem = {};
+                if (nvml.DeviceGetMemoryInfo(nvml.device, &mem) == NVML_SUCCESS && mem.total > 0)
+                {
+                    usedMB = static_cast<float>(mem.used) / (1024.0f * 1024.0f);
+                    totalMB = static_cast<float>(mem.total) / (1024.0f * 1024.0f);
+                    return true;
+                }
             }
 
             return false;
         }
 
-        // Get GTT (shared system memory) usage in MB - for iGPUs
         bool getGttUsage(float& usedMB, float& totalMB)
         {
-            if (drmCardPath.empty())
+            if (gpuInfo.vendor != GpuVendor::AMD || gpuInfo.drmCardPath.empty())
                 return false;
 
             uint64_t used = 0, total = 0;
-
-            if (readSysfs(drmCardPath + "/device/mem_info_gtt_used", used) &&
-                readSysfs(drmCardPath + "/device/mem_info_gtt_total", total))
+            if (readSysfs(gpuInfo.drmCardPath + "/device/mem_info_gtt_used", used) &&
+                readSysfs(gpuInfo.drmCardPath + "/device/mem_info_gtt_total", total) &&
+                total > 0)
             {
                 usedMB = static_cast<float>(used) / (1024.0f * 1024.0f);
                 totalMB = static_cast<float>(total) / (1024.0f * 1024.0f);
@@ -217,15 +404,16 @@ namespace vkBasalt
         static bool initialized = false;
         if (!initialized)
         {
-            drmCardPath = findDrmCard();
+            gpuInfo = findGpu();
             detectedGameName = ConfigSerializer::detectGameName();
             autoDetectedConfig = ConfigSerializer::autoDetectConfig();
             lastFrameTime = std::chrono::steady_clock::now();
             initialized = true;
-            if (!drmCardPath.empty())
-                Logger::info("Diagnostics: Found GPU at " + drmCardPath);
+
+            if (gpuInfo.vendor != GpuVendor::Unknown)
+                Logger::info("Diagnostics: Found " + gpuInfo.vendorName + " GPU at " + gpuInfo.drmCardPath);
             else
-                Logger::info("Diagnostics: No GPU sysfs interface found");
+                Logger::info("Diagnostics: No supported GPU found");
         }
 
         // Calculate frame time
@@ -267,7 +455,7 @@ namespace vkBasalt
         ImGui::Separator();
 
         // Big FPS display
-        ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]);  // Default font, could be bigger
+        ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]);
         ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "%.0f FPS", fps);
         ImGui::PopFont();
         ImGui::SameLine();
@@ -282,50 +470,47 @@ namespace vkBasalt
         ImGui::Spacing();
         ImGui::Spacing();
 
-        // GPU stats (if available)
-        if (!drmCardPath.empty())
+        // GPU stats
+        if (gpuInfo.vendor != GpuVendor::Unknown)
         {
-            ImGui::Text("GPU");
+            ImGui::Text("GPU (%s)", gpuInfo.vendorName.c_str());
             ImGui::Separator();
 
-            float currentGpuUsage = getGpuUsage();
-            if (currentGpuUsage >= 0)
+            if (gpuInfo.hasGpuUsage)
             {
-                // GPU Usage graph
-                drawGraph("GPU Usage", "##gpuusage", gpuUsageHistory, 0.0f, 100.0f, "%.0f%%",
-                          ImVec4(0.8f, 0.6f, 0.2f, 1.0f));
-
-                ImGui::Spacing();
+                float currentGpuUsage = getGpuUsage();
+                if (currentGpuUsage >= 0)
+                {
+                    const char* usageLabel = (gpuInfo.vendor == GpuVendor::Intel)
+                        ? "GPU Frequency" : "GPU Usage";
+                    drawGraph(usageLabel, "##gpuusage", gpuUsageHistory, 0.0f, 100.0f, "%.0f%%",
+                              ImVec4(0.8f, 0.6f, 0.2f, 1.0f));
+                    if (gpuInfo.vendor == GpuVendor::Intel)
+                        ImGui::TextDisabled("(estimated from frequency ratio)");
+                    ImGui::Spacing();
+                }
             }
 
             float vramUsed, vramTotal;
             if (getVramUsage(vramUsed, vramTotal))
             {
-                // VRAM bar (dedicated)
-                ImGui::Text("VRAM (dedicated): %.0f / %.0f MB",
-                    vramUsed, vramTotal);
+                ImGui::Text("VRAM: %.0f / %.0f MB", vramUsed, vramTotal);
                 ImGui::ProgressBar(vramUsed / vramTotal, ImVec2(-1, 0));
             }
 
             float gttUsed, gttTotal;
             if (getGttUsage(gttUsed, gttTotal))
             {
-                // GTT bar (shared system memory - more relevant for iGPUs)
-                ImGui::Text("GTT (shared): %.0f / %.0f MB",
-                    gttUsed, gttTotal);
+                ImGui::Text("GTT (shared): %.0f / %.0f MB", gttUsed, gttTotal);
                 ImGui::ProgressBar(gttUsed / gttTotal, ImVec2(-1, 0));
 
                 ImGui::Spacing();
-
-                // GTT usage graph (more useful for iGPUs)
                 drawGraph("Memory Usage", "##gttusage", gttUsageHistory, 0.0f, 100.0f, "%.0f%%",
                           ImVec4(0.6f, 0.4f, 0.8f, 1.0f));
             }
             else if (getVramUsage(vramUsed, vramTotal))
             {
                 ImGui::Spacing();
-
-                // VRAM usage graph (for dGPUs without GTT)
                 drawGraph("VRAM Usage", "##vramusage", vramUsageHistory, 0.0f, 100.0f, "%.0f%%",
                           ImVec4(0.6f, 0.4f, 0.8f, 1.0f));
             }
@@ -334,7 +519,7 @@ namespace vkBasalt
         {
             ImGui::Spacing();
             ImGui::TextDisabled("GPU stats not available");
-            ImGui::TextDisabled("(No sysfs interface found)");
+            ImGui::TextDisabled("(No AMD/Intel/NVIDIA GPU detected via sysfs)");
         }
 
         // Game info

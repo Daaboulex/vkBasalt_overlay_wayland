@@ -31,7 +31,7 @@ Upstream vkBasalt requires editing config files and restarting. This fork adds:
 - **Per-game profiles** with auto-detection and profile switching
 - **Save/load named configs**
 - **Shader manager** — browse directories, discover and load ReShade shaders
-- **Diagnostics** — FPS, frame time, GPU/VRAM usage (AMD GPUs via sysfs)
+- **Diagnostics** — FPS, frame time, GPU/VRAM usage (AMD, Intel, NVIDIA)
 - **Debug window** — effect state, log viewer, error display
 - **Auto-apply** — changes apply after configurable delay
 - **Up to 200 effects** with VRAM estimates
@@ -56,12 +56,18 @@ On Wayland, the overlay creates its own `wl_pointer` and `wl_keyboard` on a sepa
 
 ### GPU Diagnostics
 
-GPU stats are read from Linux sysfs and currently support **AMD GPUs only** (`amdgpu` kernel module). The diagnostics tab shows:
-- GPU busy percentage (`gpu_busy_percent`)
-- VRAM usage (`mem_info_vram_used` / `mem_info_vram_total`)
-- GTT (shared memory) usage for iGPUs
+The diagnostics tab auto-detects your GPU vendor via PCI vendor ID and reads stats accordingly:
 
-Intel and NVIDIA GPUs show "GPU stats not available" — these would require vendor-specific APIs (Intel Perf, NVML) that are not yet implemented.
+| Vendor | GPU Usage | VRAM | How |
+|--------|-----------|------|-----|
+| **AMD** | Direct (`gpu_busy_percent`) | `mem_info_vram_*` + GTT | sysfs (`amdgpu` driver) |
+| **Intel** | Frequency ratio estimate | If available (Arc discrete) | sysfs (`i915`/`xe` driver) |
+| **NVIDIA** | Direct (NVML) | Direct (NVML) | Runtime `dlopen("libnvidia-ml.so.1")` |
+
+- **AMD**: Full support — GPU utilization, dedicated VRAM, GTT (shared memory for iGPUs)
+- **Intel**: GPU frequency ratio (`gt_act_freq_mhz / gt_max_freq_mhz`) as a utilization estimate. VRAM is available on discrete Arc GPUs if the driver exposes it.
+- **NVIDIA**: Uses NVML (NVIDIA Management Library) loaded at runtime via `dlopen`. No build-time dependency — if `libnvidia-ml.so.1` is not present, GPU stats are simply unavailable. Install `nvidia-utils` (or equivalent) for NVML support.
+- **Unknown/unsupported**: FPS and frame time are always shown. GPU-specific stats gracefully degrade to "not available".
 
 ### Depth Buffer
 
@@ -209,7 +215,8 @@ ReShade shader and texture paths are managed through the Shader Manager tab in t
 - Some ReShade shaders with multiple techniques may not work
 - Depth buffer access works but is experimental (depends on game's depth format)
 - Input blocking may cause issues in some games with custom input handling
-- GPU diagnostics are AMD-only (Intel/NVIDIA GPUs not supported)
+- Intel GPU usage is estimated from frequency ratio (not direct utilization)
+- NVIDIA stats require `libnvidia-ml.so.1` (install `nvidia-utils`)
 - ReShade mouse/key uniforms (`mousepoint`, `mousedelta`, `mousebutton`, `key`) are not yet implemented
 
 ## Architecture
