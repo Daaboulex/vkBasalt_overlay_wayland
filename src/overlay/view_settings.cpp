@@ -7,6 +7,7 @@
 #include <functional>
 
 #include "imgui/imgui.h"
+#include "imgui/imgui_internal.h"
 
 namespace vkBasalt
 {
@@ -174,6 +175,20 @@ namespace vkBasalt
         }
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Show debug window with effect registry data and log output.");
+
+        ImGui::Spacing();
+        ImGui::Text("Layout");
+        ImGui::Separator();
+
+        if (ImGui::Button("Reset Window Layout"))
+        {
+            // Clear all docking state so the default layout is recreated next frame
+            ImGui::ClearIniSettings();
+            dockLayoutInitialized = false;
+            Logger::info("Window layout reset to default");
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Reset all window positions and docking to the default layout.");
 
         ImGui::EndChild();
     }

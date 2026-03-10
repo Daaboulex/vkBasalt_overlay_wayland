@@ -5,13 +5,15 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
-  outputs = { self, nixpkgs }:
+  outputs =
+    { self, nixpkgs }:
     let
       supportedSystems = [ "x86_64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
     in
     {
-      packages = forAllSystems (system:
+      packages = forAllSystems (
+        system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
         in
@@ -43,6 +45,8 @@
               libxkbcommon
             ];
 
+            mesonBuildType = "release";
+
             mesonFlags = [
               "-Dappend_libdir_vkbasalt=false"
               "--sysconfdir=/etc"
@@ -64,10 +68,15 @@
               mainProgram = null;
             };
           };
-        });
 
-      overlays.default = final: prev: {
-        vkbasalt-overlay = self.packages.${final.stdenv.hostPlatform.system}.vkbasalt-overlay;
+          vkbasalt-overlay-debug = self.packages.${system}.vkbasalt-overlay.overrideAttrs {
+            mesonBuildType = "debug";
+          };
+        }
+      );
+
+      overlays.default = final: _prev: {
+        inherit (self.packages.${final.stdenv.hostPlatform.system}) vkbasalt-overlay;
       };
     };
 }

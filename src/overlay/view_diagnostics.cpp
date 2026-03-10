@@ -182,7 +182,7 @@ namespace vkBasalt
             return true;
         }
 
-        static void shutdownNvml()
+        __attribute__((unused)) static void shutdownNvml()
         {
             if (nvml.lib)
             {

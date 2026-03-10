@@ -201,9 +201,7 @@ namespace vkBasalt
 
         // Pointer confinement was removed: the overlay renders inside the game's
         // surface, so confining the pointer doesn't prevent the compositor from
-        // interpreting clicks as window-move grabs. With NoUndocking on the
-        // dockspace, tabs can't escape anyway, and users need the cursor free
-        // to interact with other windows while the overlay is open.
+        // interpreting clicks as window-move grabs.
 
         saveToPersistentState();
     }
@@ -648,7 +646,9 @@ namespace vkBasalt
         ImGui::PopStyleVar(3);
 
         ImGuiID dockspace_id = ImGui::GetID("VkBasaltDockSpace");
-        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f),
+            ImGuiDockNodeFlags_PassthruCentralNode |
+            ImGuiDockNodeFlags_NoDockingSplit);  // Prevent docking to screen edges — only tab docking
 
         // Set up default dock layout on first run - floating tabbed window
         if (!dockLayoutInitialized)

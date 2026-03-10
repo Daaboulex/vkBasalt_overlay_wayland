@@ -35,9 +35,9 @@ namespace vkBasalt
     {
         VkSampler sampler;
 
-        VkFilter            minFilter;
-        VkFilter            magFilter;
-        VkSamplerMipmapMode mipmapMode;
+        VkFilter            minFilter  = VK_FILTER_LINEAR;
+        VkFilter            magFilter  = VK_FILTER_LINEAR;
+        VkSamplerMipmapMode mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
         convertReshadeFilter(samplerInfo.filter, minFilter, magFilter, mipmapMode);
 
         VkSamplerCreateInfo samplerCreateInfo;
