@@ -25,6 +25,16 @@ namespace vkBasalt
     // pointer frame, so we skip the continuous axis event to avoid double-counting.
     static bool discreteScrollReceived = false;
 
+    // Frame counters for auto-release. On Wayland, compositors (KWin/tiling)
+    // can intercept left-click drags as window moves, consuming the button
+    // release so it never reaches our pointer. We auto-release after a few
+    // frames to synthesize the missing release. Normal releases arrive within
+    // 1-2 frames and clear the counter before auto-release triggers.
+    static int leftPressFrames = 0;
+    static int rightPressFrames = 0;
+    static int middlePressFrames = 0;
+    static constexpr int AUTO_RELEASE_FRAMES = 3;
+
     static bool mouseInitialized = false;
 
     // Pointer listener callbacks
@@ -67,11 +77,19 @@ namespace vkBasalt
         // Linux evdev button codes: BTN_LEFT=0x110, BTN_RIGHT=0x111, BTN_MIDDLE=0x112
         switch (button)
         {
-            case 0x110: leftButton = pressed; break;   // BTN_LEFT
-            case 0x111: rightButton = pressed; break;   // BTN_RIGHT
-            case 0x112: middleButton = pressed; break;  // BTN_MIDDLE
+            case 0x110:
+                leftButton = pressed;
+                leftPressFrames = pressed ? 1 : 0;
+                break;
+            case 0x111:
+                rightButton = pressed;
+                rightPressFrames = pressed ? 1 : 0;
+                break;
+            case 0x112:
+                middleButton = pressed;
+                middlePressFrames = pressed ? 1 : 0;
+                break;
         }
-
     }
 
     static void pointerAxis(void* /*data*/, wl_pointer* /*pointer*/,
@@ -202,9 +220,18 @@ namespace vkBasalt
     {
         switch (button)
         {
-            case 0x110: leftButton = pressed; break;
-            case 0x111: rightButton = pressed; break;
-            case 0x112: middleButton = pressed; break;
+            case 0x110:
+                leftButton = pressed;
+                leftPressFrames = pressed ? 1 : 0;
+                break;
+            case 0x111:
+                rightButton = pressed;
+                rightPressFrames = pressed ? 1 : 0;
+                break;
+            case 0x112:
+                middleButton = pressed;
+                middlePressFrames = pressed ? 1 : 0;
+                break;
         }
     }
 
@@ -216,6 +243,25 @@ namespace vkBasalt
             return state;
 
         dispatchWaylandInputEvents();
+
+        // Auto-release buttons whose release was consumed by the compositor
+        // (e.g., KWin intercepting left-click drag as a window move).
+        // Normal releases arrive within 1-2 frames and reset the counter.
+        if (leftButton && ++leftPressFrames > AUTO_RELEASE_FRAMES)
+        {
+            leftButton = false;
+            leftPressFrames = 0;
+        }
+        if (rightButton && ++rightPressFrames > AUTO_RELEASE_FRAMES)
+        {
+            rightButton = false;
+            rightPressFrames = 0;
+        }
+        if (middleButton && ++middlePressFrames > AUTO_RELEASE_FRAMES)
+        {
+            middleButton = false;
+            middlePressFrames = 0;
+        }
 
         state.x = pointerX;
         state.y = pointerY;
