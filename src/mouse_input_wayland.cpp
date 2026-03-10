@@ -6,7 +6,6 @@
 
 #include <wayland-client.h>
 
-#include <chrono>
 #include <cstring>
 
 namespace vkBasalt
@@ -26,16 +25,6 @@ namespace vkBasalt
     // pointer frame, so we skip the continuous axis event to avoid double-counting.
     static bool discreteScrollReceived = false;
 
-    // Tracks whether pointer left the surface while a button was held.
-    // Used to detect lost button releases (compositor grabs during window
-    // move/resize consume the release on the game's event queue, not ours).
-    static bool leftSurfaceWithButton = false;
-
-    // Timestamp of the last pointer leave with a button held.
-    // Used to distinguish real compositor grabs (Alt+drag, >100ms) from
-    // rapid surface reconfigurations (swapchain resize, <5ms).
-    static std::chrono::steady_clock::time_point leaveTime;
-
     static bool mouseInitialized = false;
 
     // Pointer listener callbacks
@@ -46,32 +35,11 @@ namespace vkBasalt
         pointerX = wl_fixed_to_int(sx);
         pointerY = wl_fixed_to_int(sy);
 
-        // If the pointer left while a button was held and we never got a
-        // release, the compositor consumed it (e.g., interactive window
-        // move/resize via Alt+click or title bar drag). Clear stale state.
-        // Only clear if enough time has elapsed — rapid leave/enter cycles
-        // from surface reconfigurations (swapchain resize) happen in <5ms
-        // and should NOT clear button state (breaks ImGui dragging).
-        if (leftSurfaceWithButton)
-        {
-            auto elapsed = std::chrono::steady_clock::now() - leaveTime;
-            if (elapsed > std::chrono::milliseconds(100))
-            {
-                leftButton = false;
-                rightButton = false;
-                middleButton = false;
-                Logger::debug("Wayland: cleared stale button state on re-entry ("
-                    + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count())
-                    + "ms since leave)");
-            }
-            else
-            {
-                Logger::trace("Wayland: ignoring rapid leave/enter cycle ("
-                    + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count())
-                    + "ms) — preserving button state for drag");
-            }
-            leftSurfaceWithButton = false;
-        }
+        // Do NOT clear button state here. Surface reconfigurations (swapchain
+        // resize) cause rapid leave/enter cycles while the user is dragging.
+        // Clearing buttons on enter breaks ImGui drag operations. Button state
+        // is tracked purely from wl_pointer.button events. If a compositor grab
+        // (Alt+drag) consumes a release, the next user click naturally clears it.
 
         Logger::debug("Wayland: pointer enter at " + std::to_string(pointerX) + "," + std::to_string(pointerY));
     }
@@ -79,23 +47,7 @@ namespace vkBasalt
     static void pointerLeave(void* /*data*/, wl_pointer* /*pointer*/,
                              uint32_t /*serial*/, wl_surface* /*surface*/)
     {
-        // Track whether any button was held when we lost focus.
-        // Wayland's implicit grab should deliver the release to us, but
-        // our overlay uses a separate event queue — the compositor binds
-        // the grab to the game's wl_pointer, not ours. Releases during
-        // compositor grabs (window move/resize) are permanently lost.
-        if (leftButton || rightButton || middleButton)
-        {
-            leftSurfaceWithButton = true;
-            leaveTime = std::chrono::steady_clock::now();
-            Logger::trace("Wayland: pointer leave with held button (L="
-                + std::to_string(leftButton) + " R=" + std::to_string(rightButton)
-                + " M=" + std::to_string(middleButton) + ") — will clear on re-entry");
-        }
-        else
-        {
-            Logger::trace("Wayland: pointer leave (no buttons held)");
-        }
+        Logger::trace("Wayland: pointer leave");
     }
 
     static void pointerMotion(void* /*data*/, wl_pointer* /*pointer*/,
@@ -120,9 +72,6 @@ namespace vkBasalt
             case 0x112: middleButton = pressed; break;  // BTN_MIDDLE
         }
 
-        // Got a proper release — no need to clear on next enter
-        if (!pressed && !leftButton && !rightButton && !middleButton)
-            leftSurfaceWithButton = false;
     }
 
     static void pointerAxis(void* /*data*/, wl_pointer* /*pointer*/,
@@ -244,7 +193,6 @@ namespace vkBasalt
         }
 
         mouseInitialized = false;
-        leftSurfaceWithButton = false;
 
         // Clean up shared resources (idempotent)
         cleanupWaylandInputCommon();
@@ -274,8 +222,7 @@ namespace vkBasalt
                 + ") L=" + std::to_string(state.leftButton)
                 + " R=" + std::to_string(state.rightButton)
                 + " M=" + std::to_string(state.middleButton)
-                + " scroll=" + std::to_string(state.scrollDelta)
-                + " staleFlag=" + std::to_string(leftSurfaceWithButton));
+                + " scroll=" + std::to_string(state.scrollDelta));
         }
 
         return state;
