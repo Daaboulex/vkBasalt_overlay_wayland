@@ -6,6 +6,7 @@
 
 #include <wayland-client.h>
 
+#include <chrono>
 #include <cstring>
 
 namespace vkBasalt
@@ -25,19 +26,20 @@ namespace vkBasalt
     // pointer frame, so we skip the continuous axis event to avoid double-counting.
     static bool discreteScrollReceived = false;
 
-    // Frame counters for auto-release. On Wayland, compositors (KWin/tiling)
-    // can intercept left-click drags as window moves, consuming the button
-    // release so it never reaches our pointer. We auto-release after a few
-    // IDLE frames (no pointer motion) to synthesize the missing release.
-    // While the pointer is moving, the user is actively dragging — keep the
-    // button pressed. Only auto-release when motion stops (stuck button).
-    static int leftIdleFrames = 0;
-    static int rightIdleFrames = 0;
-    static int middleIdleFrames = 0;
-    static constexpr int AUTO_RELEASE_IDLE_FRAMES = 4;
+    // Time-based auto-release. When a button release is consumed by the
+    // compositor (or never arrives), we synthesize a release after the button
+    // has been idle (no pointer motion) for AUTO_RELEASE_MS milliseconds.
+    // Time-based instead of frame-based so it works at any framerate.
+    using Clock = std::chrono::steady_clock;
+    static Clock::time_point leftPressTime{};
+    static Clock::time_point rightPressTime{};
+    static Clock::time_point middlePressTime{};
+    static constexpr int AUTO_RELEASE_MS = 200; // 200ms idle = stuck button
 
     // Track whether motion occurred since last getMouseStateWayland() poll
     static bool motionSinceLastPoll = false;
+    // Last time we saw motion — used to measure idle duration
+    static Clock::time_point lastMotionTime{};
 
     static bool mouseInitialized = false;
 
@@ -80,19 +82,20 @@ namespace vkBasalt
         Logger::debug("Wayland: pointer button " + std::to_string(button) + " " + (pressed ? "pressed" : "released"));
 
         // Linux evdev button codes: BTN_LEFT=0x110, BTN_RIGHT=0x111, BTN_MIDDLE=0x112
+        auto now = Clock::now();
         switch (button)
         {
             case 0x110:
                 leftButton = pressed;
-                leftIdleFrames = 0;
+                if (pressed) leftPressTime = now;
                 break;
             case 0x111:
                 rightButton = pressed;
-                rightIdleFrames = 0;
+                if (pressed) rightPressTime = now;
                 break;
             case 0x112:
                 middleButton = pressed;
-                middleIdleFrames = 0;
+                if (pressed) middlePressTime = now;
                 break;
         }
     }
@@ -223,19 +226,20 @@ namespace vkBasalt
 
     void mirrorButtonState(uint32_t button, bool pressed)
     {
+        auto now = Clock::now();
         switch (button)
         {
             case 0x110:
                 leftButton = pressed;
-                leftIdleFrames = 0;
+                if (pressed) leftPressTime = now;
                 break;
             case 0x111:
                 rightButton = pressed;
-                rightIdleFrames = 0;
+                if (pressed) rightPressTime = now;
                 break;
             case 0x112:
                 middleButton = pressed;
-                middleIdleFrames = 0;
+                if (pressed) middlePressTime = now;
                 break;
         }
     }
@@ -249,36 +253,30 @@ namespace vkBasalt
 
         dispatchWaylandInputEvents();
 
-        // Auto-release buttons whose release was consumed by the compositor.
-        // Only count idle frames (no pointer motion). While the user is
-        // actively dragging (motion events arriving), keep the button held.
-        // When motion stops and no release arrives, synthesize the release.
+        // Time-based auto-release for stuck buttons.
+        // While the pointer is moving, keep buttons held (user is dragging).
+        // When motion stops and no release arrives within AUTO_RELEASE_MS,
+        // synthesize the release. Time-based so it works at any framerate.
+        auto now = Clock::now();
         if (motionSinceLastPoll)
         {
-            // Pointer moved — user is dragging, reset idle counters
-            leftIdleFrames = 0;
-            rightIdleFrames = 0;
-            middleIdleFrames = 0;
+            lastMotionTime = now;
             motionSinceLastPoll = false;
         }
-        else
+
+        auto idleMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastMotionTime).count();
+        if (idleMs > AUTO_RELEASE_MS)
         {
-            // No motion this frame — count idle time for held buttons
-            if (leftButton && ++leftIdleFrames > AUTO_RELEASE_IDLE_FRAMES)
-            {
+            auto leftMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - leftPressTime).count();
+            auto rightMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - rightPressTime).count();
+            auto middleMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - middlePressTime).count();
+
+            if (leftButton && leftMs > AUTO_RELEASE_MS)
                 leftButton = false;
-                leftIdleFrames = 0;
-            }
-            if (rightButton && ++rightIdleFrames > AUTO_RELEASE_IDLE_FRAMES)
-            {
+            if (rightButton && rightMs > AUTO_RELEASE_MS)
                 rightButton = false;
-                rightIdleFrames = 0;
-            }
-            if (middleButton && ++middleIdleFrames > AUTO_RELEASE_IDLE_FRAMES)
-            {
+            if (middleButton && middleMs > AUTO_RELEASE_MS)
                 middleButton = false;
-                middleIdleFrames = 0;
-            }
         }
 
         state.x = pointerX;
