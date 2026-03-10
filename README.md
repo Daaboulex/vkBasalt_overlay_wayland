@@ -141,6 +141,11 @@ Add to launch options:
 ENABLE_VKBASALT=1 %command%
 ```
 
+Example with Proton optimizations and GameMode:
+```
+ENABLE_VKBASALT=1 PROTON_ENABLE_WAYLAND=1 PROTON_USE_NTSYNC=1 DXVK_ASYNC=1 PROTON_FSR4_UPGRADE=1 gamemoderun %command%
+```
+
 ### Lutris
 
 1. Right-click game -> Configure
