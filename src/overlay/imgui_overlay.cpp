@@ -596,8 +596,21 @@ namespace vkBasalt
         // Mouse input for interactivity
         MouseState mouse = getMouseState();
         io.MousePos = ImVec2((float)mouse.x, (float)mouse.y);
-        io.MouseDown[0] = mouse.leftButton;
-        io.MouseDown[1] = mouse.rightButton;
+
+        // On Wayland, compositors (KWin/Fluid Tile) intercept left-click drags
+        // on windowed surfaces as window moves, stealing the entire pointer
+        // sequence. Right-click is unaffected. Swap buttons so right-click
+        // becomes the primary ImGui interaction button on Wayland.
+        if (isWayland())
+        {
+            io.MouseDown[0] = mouse.rightButton;
+            io.MouseDown[1] = mouse.leftButton;
+        }
+        else
+        {
+            io.MouseDown[0] = mouse.leftButton;
+            io.MouseDown[1] = mouse.rightButton;
+        }
         io.MouseDown[2] = mouse.middleButton;
         io.MouseWheel = mouse.scrollDelta;
         io.MouseDrawCursor = true;  // Draw software cursor (games often hide the OS cursor)
