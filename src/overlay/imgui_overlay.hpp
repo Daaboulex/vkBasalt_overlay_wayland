@@ -166,7 +166,7 @@ namespace vkBasalt
 
         // UI state for debug window
         int debugWindowTab = 0;  // 0=Registry, 1=Log
-        bool debugLogFilters[5] = {true, true, true, true, true};  // Trace, Debug, Info, Warn, Error
+        bool debugLogFilters[5] = {false, false, true, true, true};  // Trace, Debug, Info, Warn, Error
         char debugLogSearch[128] = "";  // Search filter for log tab
         int dragSourceIndex = -1;   // Index of effect being dragged, -1 if none
         int dragTargetIndex = -1;   // Index where effect will be dropped

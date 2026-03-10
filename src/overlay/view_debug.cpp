@@ -1,10 +1,12 @@
 #include "imgui_overlay.hpp"
 #include "effects/effect_registry.hpp"
+#include "config_serializer.hpp"
 #include "settings_manager.hpp"
 #include "logger.hpp"
 
 #include <cctype>
 #include <cstring>
+#include <fstream>
 
 #include "imgui/imgui.h"
 
@@ -12,7 +14,15 @@ namespace vkBasalt
 {
     void ImGuiOverlay::renderDebugWindow()
     {
-        if (!settingsManager.getShowDebugWindow())
+        bool shouldShow = settingsManager.getShowDebugWindow();
+
+        // Enable/disable history collection based on debug window visibility
+        if (shouldShow && !Logger::isHistoryEnabled())
+            Logger::setHistoryEnabled(true);
+        else if (!shouldShow && Logger::isHistoryEnabled())
+            Logger::setHistoryEnabled(false);
+
+        if (!shouldShow)
             return;
 
         // Local bool for ImGui window close button
@@ -21,7 +31,6 @@ namespace vkBasalt
         if (!ImGui::Begin("Debug Window", &showDebugWindow))
         {
             ImGui::End();
-            // User closed the window via X button
             if (!showDebugWindow)
             {
                 settingsManager.setShowDebugWindow(false);
@@ -30,14 +39,12 @@ namespace vkBasalt
             return;
         }
 
-        // Check if user closed via X button
         if (!showDebugWindow)
         {
             settingsManager.setShowDebugWindow(false);
             settingsManager.save();
         }
 
-        // Tab bar for different debug views
         if (ImGui::BeginTabBar("DebugTabs"))
         {
             // Effects tab
@@ -60,7 +67,6 @@ namespace vkBasalt
 
                 for (const auto& effect : effects)
                 {
-                    // Effect header
                     bool open = ImGui::TreeNode(effect.name.c_str(), "[%s] %s",
                         effect.type == EffectType::BuiltIn ? "BuiltIn" : "ReShade",
                         effect.name.c_str());
@@ -80,7 +86,6 @@ namespace vkBasalt
                             ImGui::PopStyleColor();
                         }
 
-                        // Parameters
                         if (!effect.parameters.empty())
                         {
                             if (ImGui::TreeNode("Parameters", "Parameters (%zu)", effect.parameters.size()))
@@ -88,8 +93,6 @@ namespace vkBasalt
                                 for (const auto& param : effect.parameters)
                                 {
                                     const char* typeName = param->getTypeName();
-
-                                    // Format serialized value(s)
                                     auto serialized = param->serialize();
                                     std::string valueStr;
                                     for (size_t i = 0; i < serialized.size(); i++)
@@ -99,28 +102,18 @@ namespace vkBasalt
                                             valueStr += serialized[i].first + "=";
                                         valueStr += serialized[i].second;
                                     }
-
-                                    ImGui::BulletText("[%s] %s = %s",
-                                        typeName,
-                                        param->name.c_str(),
-                                        valueStr.c_str());
+                                    ImGui::BulletText("[%s] %s = %s", typeName, param->name.c_str(), valueStr.c_str());
                                 }
                                 ImGui::TreePop();
                             }
                         }
 
-                        // Preprocessor definitions
                         if (!effect.preprocessorDefs.empty())
                         {
                             if (ImGui::TreeNode("Preprocessor", "Preprocessor Defs (%zu)", effect.preprocessorDefs.size()))
                             {
                                 for (const auto& def : effect.preprocessorDefs)
-                                {
-                                    ImGui::BulletText("%s = %s (default: %s)",
-                                        def.name.c_str(),
-                                        def.value.c_str(),
-                                        def.defaultValue.c_str());
-                                }
+                                    ImGui::BulletText("%s = %s (default: %s)", def.name.c_str(), def.value.c_str(), def.defaultValue.c_str());
                                 ImGui::TreePop();
                             }
                         }
@@ -148,7 +141,7 @@ namespace vkBasalt
                     for (int i = 0; i < io.InputQueueCharacters.Size; i++)
                     {
                         ImWchar c = io.InputQueueCharacters[i];
-                        if (c >= 32 && c < 127)  // Printable ASCII
+                        if (c >= 32 && c < 127)
                         {
                             size_t len = strlen(debugLogSearch);
                             if (len < sizeof(debugLogSearch) - 1)
@@ -158,7 +151,6 @@ namespace vkBasalt
                             }
                         }
                     }
-                    // Handle backspace
                     if (ImGui::IsKeyPressed(ImGuiKey_Backspace) && debugLogSearch[0] != '\0')
                     {
                         size_t len = strlen(debugLogSearch);
@@ -169,7 +161,6 @@ namespace vkBasalt
 
                 bool hasSearch = debugLogSearch[0] != '\0';
 
-                // Show search bar only when searching
                 if (hasSearch)
                 {
                     ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.2f, 0.2f, 0.3f, 1.0f));
@@ -182,7 +173,7 @@ namespace vkBasalt
                     ImGui::Separator();
                 }
 
-                // Filter checkboxes
+                // Filter checkboxes + actions
                 ImGui::Text("Filters:");
                 ImGui::SameLine();
                 ImGui::Checkbox("Trace", &debugLogFilters[0]);
@@ -195,8 +186,24 @@ namespace vkBasalt
                 ImGui::SameLine();
                 ImGui::Checkbox("Error", &debugLogFilters[4]);
                 ImGui::SameLine();
-                if (ImGui::Button("Clear Log"))
+                if (ImGui::Button("Clear"))
                     Logger::clearHistory();
+                ImGui::SameLine();
+                if (ImGui::Button("Export"))
+                {
+                    std::string exportPath = ConfigSerializer::getBaseConfigDir() + "/vkbasalt-log.txt";
+                    auto history = Logger::getHistory();
+                    std::ofstream out(exportPath);
+                    if (out.is_open())
+                    {
+                        for (const auto& entry : history)
+                            out << "[" << Logger::levelName(entry.level) << "] " << entry.message << "\n";
+                        out.close();
+                        Logger::info("Log exported to " + exportPath);
+                    }
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Save log to ~/.config/vkBasalt-overlay/vkbasalt-log.txt");
 
                 if (!hasSearch)
                     ImGui::TextDisabled("Type to search...");
@@ -208,7 +215,6 @@ namespace vkBasalt
 
                 auto history = Logger::getHistory();
 
-                // Color mapping for log levels
                 static ImVec4 levelColors[5] = {
                     ImVec4(0.5f, 0.5f, 0.5f, 1.0f),  // Trace - gray
                     ImVec4(0.4f, 0.7f, 1.0f, 1.0f),  // Debug - light blue
@@ -217,7 +223,6 @@ namespace vkBasalt
                     ImVec4(1.0f, 0.3f, 0.3f, 1.0f),  // Error - red
                 };
 
-                // Case-insensitive search helper
                 auto containsIgnoreCase = [](const std::string& haystack, const char* needle) {
                     if (!needle || needle[0] == '\0')
                         return true;
@@ -233,12 +238,8 @@ namespace vkBasalt
                     uint32_t levelIdx = static_cast<uint32_t>(entry.level);
                     if (levelIdx >= 5)
                         continue;
-
-                    // Check level filter
                     if (!debugLogFilters[levelIdx])
                         continue;
-
-                    // Check search filter
                     if (hasSearch && !containsIgnoreCase(entry.message, debugLogSearch))
                         continue;
 
@@ -247,8 +248,9 @@ namespace vkBasalt
                     ImGui::PopStyleColor();
                 }
 
-                // Auto-scroll to bottom (only when not searching)
-                if (!hasSearch && ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
+                // Auto-scroll: stick to bottom unless user scrolled up manually
+                bool atBottom = ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 10.0f;
+                if (atBottom && !hasSearch)
                     ImGui::SetScrollHereY(1.0f);
 
                 ImGui::EndChild();

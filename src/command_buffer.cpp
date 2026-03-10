@@ -84,7 +84,6 @@ namespace vkBasalt
 
             for (uint32_t j = 0; j < effects.size(); j++)
             {
-                Logger::debug("before applying effect " + convertToString(effects[j]));
                 effects[j]->applyEffect(i, commandBuffers[i]);
             }
 

@@ -611,17 +611,6 @@ namespace vkBasalt
         ImGui_ImplVulkan_NewFrame();
         ImGui::NewFrame();
 
-        // Trace: ImGui input state after NewFrame (use VKBASALT_LOG_LEVEL=trace)
-        if (io.MouseDown[0] || io.MouseDown[1] || io.MouseDown[2])
-        {
-            Logger::trace("ImGui input: mouse=(" + std::to_string((int)io.MousePos.x) + ","
-                + std::to_string((int)io.MousePos.y) + ") L=" + std::to_string(io.MouseDown[0])
-                + " R=" + std::to_string(io.MouseDown[1])
-                + " WantCapture=" + std::to_string(io.WantCaptureMouse)
-                + " ActiveId=" + std::to_string(ImGui::GetCurrentContext()->ActiveId != 0)
-                + " MovingWindow=" + std::to_string(ImGui::GetCurrentContext()->MovingWindow != nullptr));
-        }
-
         // Clamp overlay window to screen bounds so it can never go offscreen
         ImGuiViewport* viewport = ImGui::GetMainViewport();
         ImVec2 screenMin = viewport->WorkPos;

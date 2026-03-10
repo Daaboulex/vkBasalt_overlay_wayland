@@ -57,7 +57,7 @@ namespace vkBasalt
         // is tracked purely from wl_pointer.button events. If a compositor grab
         // (Alt+drag) consumes a release, the next user click naturally clears it.
 
-        Logger::debug("Wayland: pointer enter at " + std::to_string(pointerX) + "," + std::to_string(pointerY));
+        Logger::trace("Wayland: pointer enter at " + std::to_string(pointerX) + "," + std::to_string(pointerY));
     }
 
     static void pointerLeave(void* /*data*/, wl_pointer* /*pointer*/,
@@ -286,16 +286,6 @@ namespace vkBasalt
         state.middleButton = middleButton;
         state.scrollDelta = scrollAccumulator;
         scrollAccumulator = 0.0f;
-
-        // Trace-level per-frame state dump (use VKBASALT_LOG_LEVEL=trace)
-        if (state.leftButton || state.rightButton || state.middleButton || state.scrollDelta != 0.0f)
-        {
-            Logger::trace("mouse state: pos=(" + std::to_string(state.x) + "," + std::to_string(state.y)
-                + ") L=" + std::to_string(state.leftButton)
-                + " R=" + std::to_string(state.rightButton)
-                + " M=" + std::to_string(state.middleButton)
-                + " scroll=" + std::to_string(state.scrollDelta));
-        }
 
         return state;
     }

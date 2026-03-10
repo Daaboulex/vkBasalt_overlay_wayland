@@ -207,7 +207,6 @@ namespace vkBasalt
     }
     void SmaaEffect::applyEffect(uint32_t imageIndex, VkCommandBuffer commandBuffer)
     {
-        Logger::debug("applying smaa effect to cb " + convertToString(commandBuffer));
         // Used to make the Image accessable by the shader
         VkImageMemoryBarrier memoryBarrier;
         memoryBarrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -246,7 +245,6 @@ namespace vkBasalt
 
         pLogicalDevice->vkd.CmdPipelineBarrier(
             commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &memoryBarrier);
-        Logger::debug("after the first pipeline barrier");
 
         VkRenderPassBeginInfo renderPassBeginInfo;
         renderPassBeginInfo.sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -259,42 +257,31 @@ namespace vkBasalt
         renderPassBeginInfo.clearValueCount   = 1;
         renderPassBeginInfo.pClearValues      = &clearValue;
         // edge renderPass
-        Logger::debug("before beginn edge renderpass");
         pLogicalDevice->vkd.CmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-        Logger::debug("after beginn renderpass");
 
         pLogicalDevice->vkd.CmdBindDescriptorSets(
             commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &(imageDescriptorSets[imageIndex]), 0, nullptr);
-        Logger::debug("after binding image sampler");
 
         pLogicalDevice->vkd.CmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, edgePipeline);
-        Logger::debug("after bind pipeliene");
 
         pLogicalDevice->vkd.CmdDraw(commandBuffer, 3, 1, 0, 0);
-        Logger::debug("after draw");
 
         pLogicalDevice->vkd.CmdEndRenderPass(commandBuffer);
-        Logger::debug("after end renderpass");
 
         memoryBarrier.image             = edgeImages[imageIndex];
         renderPassBeginInfo.framebuffer = blendFramebuffers[imageIndex];
         // blend renderPass
         pLogicalDevice->vkd.CmdPipelineBarrier(
             commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &memoryBarrier);
-        Logger::debug("after the first pipeline barrier");
 
-        Logger::debug("before beginn blend renderpass");
+        // blend renderPass
         pLogicalDevice->vkd.CmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-        Logger::debug("after beginn renderpass");
 
         pLogicalDevice->vkd.CmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blendPipeline);
-        Logger::debug("after bind pipeliene");
 
         pLogicalDevice->vkd.CmdDraw(commandBuffer, 3, 1, 0, 0);
-        Logger::debug("after draw");
 
         pLogicalDevice->vkd.CmdEndRenderPass(commandBuffer);
-        Logger::debug("after end renderpass");
 
         memoryBarrier.image             = blendImages[imageIndex];
         renderPassBeginInfo.framebuffer = neignborFramebuffers[imageIndex];
@@ -302,20 +289,15 @@ namespace vkBasalt
         // neighbor renderPass
         pLogicalDevice->vkd.CmdPipelineBarrier(
             commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &memoryBarrier);
-        Logger::debug("after the first pipeline barrier");
 
-        Logger::debug("before beginn neighbor renderpass");
+        // neighbor renderPass
         pLogicalDevice->vkd.CmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-        Logger::debug("after beginn renderpass");
 
         pLogicalDevice->vkd.CmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, neighborPipeline);
-        Logger::debug("after bind pipeliene");
 
         pLogicalDevice->vkd.CmdDraw(commandBuffer, 3, 1, 0, 0);
-        Logger::debug("after draw");
 
         pLogicalDevice->vkd.CmdEndRenderPass(commandBuffer);
-        Logger::debug("after end renderpass");
 
         pLogicalDevice->vkd.CmdPipelineBarrier(commandBuffer,
                                                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
@@ -327,7 +309,6 @@ namespace vkBasalt
                                                nullptr,
                                                1,
                                                &secondBarrier);
-        Logger::debug("after the second pipeline barrier");
     }
     SmaaEffect::~SmaaEffect()
     {

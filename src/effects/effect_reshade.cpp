@@ -946,7 +946,6 @@ namespace vkBasalt
     }
     void ReshadeEffect::applyEffect(uint32_t imageIndex, VkCommandBuffer commandBuffer)
     {
-        Logger::debug("applying ReshadeEffect to command buffer" + convertToString(commandBuffer));
         // Used to make the Image accessable by the shader
         VkImageMemoryBarrier memoryBarrier;
         memoryBarrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -1024,17 +1023,14 @@ namespace vkBasalt
                                                1,
                                                &memoryBarrier);
 
-        Logger::debug("after the first pipeline barrier");
 
         pLogicalDevice->vkd.CmdBindDescriptorSets(
             commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &(inputDescriptorSets[imageIndex]), 0, nullptr);
-        Logger::debug("after binding image sampler");
 
         if (bufferSize)
         {
             pLogicalDevice->vkd.CmdBindDescriptorSets(
                 commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &bufferDescriptorSet, 0, nullptr);
-            Logger::debug("after binding uniform buffer");
         }
 
         bool backBufferNext = outputWrites % 2 == 0;
@@ -1042,18 +1038,13 @@ namespace vkBasalt
         {
             renderPassBeginInfos[i].framebuffer = framebuffers[i][imageIndex];
 
-            Logger::debug("before beginn renderpass");
             pLogicalDevice->vkd.CmdBeginRenderPass(commandBuffer, &renderPassBeginInfos[i], VK_SUBPASS_CONTENTS_INLINE);
-            Logger::debug("after beginn renderpass");
 
             pLogicalDevice->vkd.CmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipelines[i]);
-            Logger::debug("after bind pipeliene");
 
             pLogicalDevice->vkd.CmdDraw(commandBuffer, module.techniques[0].passes[i].num_vertices, 1, 0, 0);
-            Logger::debug("after draw");
 
             pLogicalDevice->vkd.CmdEndRenderPass(commandBuffer);
-            Logger::debug("after end renderpass");
 
             if (switchSamplers[i] && outputWrites > 1)
             {
@@ -1097,7 +1088,6 @@ namespace vkBasalt
                                                nullptr,
                                                1,
                                                &secondBarrier);
-        Logger::debug("after the second pipeline barrier");
     }
 
     std::vector<std::unique_ptr<EffectParam>> ReshadeEffect::getParameters() const

@@ -169,7 +169,6 @@ namespace vkBasalt
         if (ImGui::Checkbox("Show Debug Window", &showDebugWindow))
         {
             settingsManager.setShowDebugWindow(showDebugWindow);
-            Logger::setHistoryEnabled(showDebugWindow);
             saveSettings();
         }
         if (ImGui::IsItemHovered())
