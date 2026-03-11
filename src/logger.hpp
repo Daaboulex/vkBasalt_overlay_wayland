@@ -9,6 +9,7 @@
 #include <memory>
 #include <functional>
 #include <vector>
+#include <deque>
 
 namespace vkBasalt
 {
@@ -72,7 +73,7 @@ namespace vkBasalt
 
         std::unique_ptr<std::ostream, std::function<void(std::ostream*)>> m_outStream;
 
-        std::vector<LogEntry> m_history;
+        std::deque<LogEntry> m_history;
         bool m_historyEnabled = false;  // Disabled by default to save memory
 
         void emitMsg(LogLevel level, const std::string& message);

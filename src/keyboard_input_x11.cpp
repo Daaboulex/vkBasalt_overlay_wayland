@@ -183,8 +183,8 @@ namespace vkBasalt
             }
         }
 
-        state.typedChars = typedCharsAccumulator;
-        state.lastKeyName = lastKeyNameAccumulator;
+        state.typedChars = std::move(typedCharsAccumulator);
+        state.lastKeyName = std::move(lastKeyNameAccumulator);
         state.backspace = backspacePressed;
         state.del = deletePressed;
         state.enter = enterPressed;

@@ -425,11 +425,13 @@ namespace vkBasalt
         if (frameTimeMs > 0.1f && frameTimeMs < 500.0f)
             frameTimeHistory.push(frameTimeMs);
 
-        // Sample GPU stats (less frequently to reduce overhead)
-        static int sampleCounter = 0;
-        if (++sampleCounter >= 10)  // Every 10 frames
+        // Sample GPU stats at a fixed wall-clock interval (~200ms) so overhead
+        // stays constant regardless of frame rate (not "every 10 frames" which
+        // would over-poll at high FPS and under-poll at low FPS).
+        static auto lastGpuSampleTime = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastGpuSampleTime).count() >= 200)
         {
-            sampleCounter = 0;
+            lastGpuSampleTime = now;
 
             float gpuUsage = getGpuUsage();
             if (gpuUsage >= 0)
@@ -455,7 +457,8 @@ namespace vkBasalt
         ImGui::Separator();
 
         // Big FPS display
-        ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]);
+        ImFont* font = ImGui::GetIO().Fonts->Fonts[0];
+        ImGui::PushFont(font, font->LegacySize);
         ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "%.0f FPS", fps);
         ImGui::PopFont();
         ImGui::SameLine();

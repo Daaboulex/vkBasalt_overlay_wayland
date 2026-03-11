@@ -514,11 +514,14 @@ namespace vkBasalt
         currentHeight = height;
 
         // Wait for previous use of this command buffer to complete.
-        // 16ms timeout covers one full frame at 60 FPS. With triple buffering,
-        // this fence was submitted 3+ frames ago and should be signaled well
-        // within this timeout. Skip overlay rather than stall the game.
+        // Adaptive timeout: 4x the measured frame time (generous margin for GPU
+        // scheduling jitter), clamped to [2ms, 50ms].  With triple buffering the
+        // fence was submitted 2-3 frames ago and is almost always already signaled.
+        static float avgFrameTimeMs = 8.0f;  // Seed at ~120 FPS
         VkFence fence = commandBufferFences[imageIndex];
-        VkResult fenceResult = pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, 1, &fence, VK_TRUE, 16000000ULL);
+        uint64_t timeoutNs = static_cast<uint64_t>(
+            std::clamp(avgFrameTimeMs * 4.0f, 2.0f, 50.0f) * 1'000'000.0f);
+        VkResult fenceResult = pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, 1, &fence, VK_TRUE, timeoutNs);
         if (fenceResult == VK_TIMEOUT)
         {
             Logger::warn("ImGui fence wait timed out for image " + std::to_string(imageIndex));
@@ -592,12 +595,24 @@ namespace vkBasalt
         ImGuiIO& io = ImGui::GetIO();
         io.DisplaySize = ImVec2((float)width, (float)height);
 
-        // DeltaTime for ImGui's internal timing (drag thresholds, animations)
+        // DeltaTime for ImGui's internal timing (drag thresholds, animations).
+        // Uses last known good value as fallback instead of hardcoded 1/60.
         static auto lastFrameTime = std::chrono::steady_clock::now();
+        static float lastGoodDt = 0.008f;  // Seed at ~120 FPS
         auto now = std::chrono::steady_clock::now();
         float dt = std::chrono::duration<float>(now - lastFrameTime).count();
         lastFrameTime = now;
-        io.DeltaTime = (dt > 0.0f && dt < 1.0f) ? dt : 1.0f / 60.0f;
+        if (dt > 0.0f && dt < 1.0f)
+        {
+            io.DeltaTime = dt;
+            lastGoodDt = dt;
+            // Update adaptive fence timeout with exponential moving average
+            avgFrameTimeMs = avgFrameTimeMs * 0.9f + (dt * 1000.0f) * 0.1f;
+        }
+        else
+        {
+            io.DeltaTime = lastGoodDt;
+        }
 
         // Fresh input dispatch — keybinding checks earlier in the frame already
         // dispatched once, but new mouse events may have arrived since then.

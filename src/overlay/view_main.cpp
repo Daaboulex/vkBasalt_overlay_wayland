@@ -324,8 +324,10 @@ namespace vkBasalt
                 // Remove effect
                 if (ImGui::MenuItem("Remove"))
                 {
+                    std::string removedName = selectedEffects[i];
                     selectedEffects.erase(selectedEffects.begin() + i);
                     pEffectRegistry->setSelectedEffects(selectedEffects);
+                    pEffectRegistry->removeEffect(removedName);
                     paramsDirty = true;
                     lastChangeTime = std::chrono::steady_clock::now();
                 }

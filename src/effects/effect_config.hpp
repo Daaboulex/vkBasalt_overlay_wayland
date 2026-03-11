@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <filesystem>
 
 #include "params/effect_param.hpp"
 
@@ -35,6 +36,7 @@ namespace vkBasalt
         std::vector<std::unique_ptr<EffectParam>> parameters;
         std::vector<PreprocessorDefinition> preprocessorDefs;  // ReShade: user-configurable macros
         std::string compileError;  // Empty if compiled successfully, error message if failed
+        std::filesystem::file_time_type fileModTime{};  // Last modification time of .fx file when parsed
         bool hasFailed() const { return !compileError.empty(); }
     };
 

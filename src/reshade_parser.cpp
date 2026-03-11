@@ -79,6 +79,7 @@ namespace vkBasalt
             pp.add_macro_definition("BUFFER_RCP_WIDTH", "(1.0 / BUFFER_WIDTH)");
             pp.add_macro_definition("BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)");
             pp.add_macro_definition("BUFFER_COLOR_DEPTH", "8");
+            pp.add_macro_definition("BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH");
 
             // Add all discovered shader paths from shader manager
             ShaderManagerConfig shaderMgrConfig = ConfigSerializer::loadShaderManagerConfig();

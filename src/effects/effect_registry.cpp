@@ -205,6 +205,10 @@ namespace vkBasalt
         config.type = EffectType::ReShade;
         config.enabled = true;
 
+        // Record file modification time for change detection
+        std::error_code ec;
+        config.fileModTime = std::filesystem::last_write_time(path, ec);
+
         // Extract effectType from filename (e.g., "/path/to/Clarity.fx" -> "Clarity")
         std::filesystem::path p(path);
         config.effectType = p.stem().string();
@@ -491,13 +495,48 @@ namespace vkBasalt
 
         // Lock for the check-and-mutate as a single critical section
         std::lock_guard<std::mutex> lock(mutex);
-        if (findEffect(instanceName))
-            return;
+
+        EffectConfig* existing = findEffect(instanceName);
+        if (existing)
+        {
+            // For ReShade effects, check if the file changed on disk since we last parsed it
+            if (!isBuiltIn && !path.empty())
+            {
+                std::error_code ec;
+                auto currentModTime = std::filesystem::last_write_time(path, ec);
+                if (!ec && currentModTime != existing->fileModTime)
+                {
+                    Logger::info("EffectRegistry: shader file changed on disk, re-parsing: " + instanceName);
+                    // Remove the stale entry so we re-parse below
+                    effects.erase(
+                        std::remove_if(effects.begin(), effects.end(),
+                            [&](const EffectConfig& e) { return e.name == instanceName; }),
+                        effects.end());
+                }
+                else
+                {
+                    return;  // File unchanged, keep existing
+                }
+            }
+            else
+            {
+                return;  // Built-in or no path change
+            }
+        }
 
         if (isBuiltIn)
             initBuiltInEffect(instanceName, type);
         else
             initReshadeEffect(instanceName, path);
+    }
+
+    void EffectRegistry::removeEffect(const std::string& name)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        effects.erase(
+            std::remove_if(effects.begin(), effects.end(),
+                [&](const EffectConfig& e) { return e.name == name; }),
+            effects.end());
     }
 
     // Per-instance empty vector for returning when effect not found (avoids shared mutable static)

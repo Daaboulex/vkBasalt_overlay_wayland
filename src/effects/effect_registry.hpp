@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <filesystem>
 
 #include "effect_config.hpp"
 #include "config.hpp"
@@ -57,8 +58,12 @@ namespace vkBasalt
         // Check if an effect is a built-in effect
         static bool isBuiltInEffect(const std::string& name);
 
-        // Add an effect if not already present (for dynamically added effects)
+        // Add an effect if not already present (for dynamically added effects).
+        // If the shader file changed on disk since last load, re-parses automatically.
         void ensureEffect(const std::string& name, const std::string& effectPath = "");
+
+        // Remove an effect completely from the registry (parameters, config, everything)
+        void removeEffect(const std::string& name);
 
         // Check if effect exists in registry
         bool hasEffect(const std::string& name) const;

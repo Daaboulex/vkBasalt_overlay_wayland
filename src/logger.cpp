@@ -75,7 +75,7 @@ namespace vkBasalt
         {
             m_history.push_back({level, message});
             if (m_history.size() > MAX_HISTORY_SIZE)
-                m_history.erase(m_history.begin());
+                m_history.pop_front();
         }
 
         if (level >= m_minLevel)
@@ -98,7 +98,7 @@ namespace vkBasalt
     std::vector<LogEntry> Logger::getHistory()
     {
         std::lock_guard<std::mutex> lock(s_instance.m_mutex);
-        return s_instance.m_history;
+        return std::vector<LogEntry>(s_instance.m_history.begin(), s_instance.m_history.end());
     }
 
     void Logger::clearHistory()

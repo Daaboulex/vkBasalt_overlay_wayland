@@ -141,16 +141,27 @@ namespace vkBasalt
     }
     void DateUniform::update(void* mapedBuffer)
     {
-        auto        now         = std::chrono::system_clock::now();
-        std::time_t nowC        = std::chrono::system_clock::to_time_t(now);
-        struct tm   currentTimeBuf;
-        localtime_r(&nowC, &currentTimeBuf);
-        float       year        = 1900.0f + static_cast<float>(currentTimeBuf.tm_year);
-        float       month       = 1.0f + static_cast<float>(currentTimeBuf.tm_mon);
-        float       day         = static_cast<float>(currentTimeBuf.tm_mday);
-        float       seconds     = static_cast<float>((currentTimeBuf.tm_hour * 60 + currentTimeBuf.tm_min) * 60 + currentTimeBuf.tm_sec);
-        float       date[]      = {year, month, day, seconds};
-        std::memcpy((uint8_t*) mapedBuffer + offset, date, sizeof(float) * 4);
+        // Date only changes once per second — cache the result and only
+        // recompute when the second changes. Saves ~234 localtime_r calls/sec
+        // at 235 FPS.
+        static std::time_t lastSecond = 0;
+        static float cachedDate[4] = {};
+
+        auto        now  = std::chrono::system_clock::now();
+        std::time_t nowC = std::chrono::system_clock::to_time_t(now);
+
+        if (nowC != lastSecond)
+        {
+            lastSecond = nowC;
+            struct tm currentTimeBuf;
+            localtime_r(&nowC, &currentTimeBuf);
+            cachedDate[0] = 1900.0f + static_cast<float>(currentTimeBuf.tm_year);
+            cachedDate[1] = 1.0f + static_cast<float>(currentTimeBuf.tm_mon);
+            cachedDate[2] = static_cast<float>(currentTimeBuf.tm_mday);
+            cachedDate[3] = static_cast<float>((currentTimeBuf.tm_hour * 60 + currentTimeBuf.tm_min) * 60 + currentTimeBuf.tm_sec);
+        }
+
+        std::memcpy((uint8_t*) mapedBuffer + offset, cachedDate, sizeof(float) * 4);
     }
     DateUniform::~DateUniform()
     {
@@ -279,7 +290,8 @@ namespace vkBasalt
     }
     void RandomUniform::update(void* mapedBuffer)
     {
-        int32_t value = min + (static_cast<int32_t>(tlRng()) % (max - min + 1));
+        std::uniform_int_distribution<int32_t> dist(min, max);
+        int32_t value = dist(tlRng);
         std::memcpy((uint8_t*) mapedBuffer + offset, &(value), sizeof(int32_t));
     }
     RandomUniform::~RandomUniform()
