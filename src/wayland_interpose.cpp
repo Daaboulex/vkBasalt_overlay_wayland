@@ -334,3 +334,38 @@ int wl_proxy_add_listener(struct wl_proxy* proxy,
 
     return real(proxy, implementation, data);
 }
+
+namespace vkBasalt
+{
+    void notifyGameKeyboardFocus(bool hasFocus)
+    {
+        std::lock_guard<std::mutex> lock(gameDataMutex);
+        if (gameKeyboards.empty())
+            return;
+
+        for (auto& [kb, data] : gameKeyboards)
+        {
+            if (hasFocus)
+            {
+                // Synthetic enter — game regains keyboard focus with no pressed keys
+                if (data.original.enter)
+                {
+                    wl_array emptyKeys;
+                    wl_array_init(&emptyKeys);
+                    data.original.enter(data.userData, kb, 0, nullptr, &emptyKeys);
+                    wl_array_release(&emptyKeys);
+                }
+            }
+            else
+            {
+                // Synthetic leave — game drops all held keys
+                if (data.original.leave)
+                    data.original.leave(data.userData, kb, 0, nullptr);
+            }
+        }
+
+        Logger::debug(std::string("Wayland interpose: synthetic keyboard ") +
+                       (hasFocus ? "enter" : "leave") + " sent to " +
+                       std::to_string(gameKeyboards.size()) + " game keyboard(s)");
+    }
+} // namespace vkBasalt

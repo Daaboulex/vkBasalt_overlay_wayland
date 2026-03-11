@@ -79,7 +79,7 @@ namespace vkBasalt
                               uint32_t button, uint32_t state)
     {
         bool pressed = (state == WL_POINTER_BUTTON_STATE_PRESSED);
-        Logger::debug("Wayland: pointer button " + std::to_string(button) + " " + (pressed ? "pressed" : "released"));
+        Logger::trace("Wayland: pointer button " + std::to_string(button) + " " + (pressed ? "pressed" : "released"));
 
         // Linux evdev button codes: BTN_LEFT=0x110, BTN_RIGHT=0x111, BTN_MIDDLE=0x112
         auto now = Clock::now();

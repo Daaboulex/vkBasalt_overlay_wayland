@@ -1,5 +1,6 @@
 #include "input_blocker.hpp"
 #include "wayland_display.hpp"
+#include "wayland_interpose.hpp"
 #include "logger.hpp"
 
 #include <atomic>
@@ -111,8 +112,19 @@ namespace vkBasalt
         if (isWayland())
         {
             // On Wayland, interposed wl_proxy_add_listener wrapper callbacks
-            // check isInputBlocked() and suppress events to the game
+            // check isInputBlocked() and suppress events to the game.
+            // NOTE: This does NOT work for Wine Wayland games — Wine loads
+            // winewayland.so via dlopen(RTLD_LOCAL), so libwayland-client
+            // resolves in Wine's local scope, bypassing our LD_PRELOAD
+            // interposition entirely. No workaround exists without LD_AUDIT
+            // or a wrapper libwayland-client.so. X11 grabs are NOT used as
+            // fallback because Wine Wayland games don't use XWayland for input,
+            // and stale X11 grabs cause compositor focus issues.
             Logger::debug(std::string("Wayland input blocking: ") + (shouldBlock ? "suppressing game events" : "forwarding game events"));
+            // Send synthetic leave/enter to game keyboards so held keys
+            // are released when overlay opens (prevents stuck movement/actions).
+            // Only works when wl_proxy_add_listener interposition is active.
+            notifyGameKeyboardFocus(!shouldBlock);
             return;
         }
 
