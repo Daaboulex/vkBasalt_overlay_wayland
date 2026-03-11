@@ -32,10 +32,14 @@ namespace vkBasalt
     // Access the shared seat (for pointer constraints, etc.)
     wl_seat* getWaylandSeat();
 
+    // Call once at the start of each frame to allow a fresh dispatch.
+    // Without this, dispatchWaylandInputEvents() deduplicates within a frame.
+    void beginWaylandInputFrame();
+
     // Read and dispatch pending Wayland events (non-blocking).
     // Actively reads from the socket to ensure events like button release
-    // are not stuck in the kernel buffer. Safe to call multiple times
-    // per frame — subsequent calls are cheap no-ops when no data is pending.
+    // are not stuck in the kernel buffer. Deduplicated per frame — only the
+    // first call after beginWaylandInputFrame() does real work.
     void dispatchWaylandInputEvents();
 
 } // namespace vkBasalt

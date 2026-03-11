@@ -4,6 +4,7 @@
 #include <ctime>
 #include <cstdlib>
 #include <cmath>
+#include <random>
 
 #include <algorithm>
 
@@ -11,6 +12,9 @@
 
 namespace vkBasalt
 {
+    // Thread-safe RNG (avoids std::rand() which is not thread-safe)
+    static thread_local std::mt19937 tlRng{std::random_device{}()};
+
     void enumerateReshadeUniforms(reshadefx::module module)
     {
         for (auto& uniform : module.uniforms)
@@ -139,11 +143,12 @@ namespace vkBasalt
     {
         auto        now         = std::chrono::system_clock::now();
         std::time_t nowC        = std::chrono::system_clock::to_time_t(now);
-        struct tm*  currentTime = std::localtime(&nowC);
-        float       year        = 1900.0f + static_cast<float>(currentTime->tm_year);
-        float       month       = 1.0f + static_cast<float>(currentTime->tm_mon);
-        float       day         = static_cast<float>(currentTime->tm_mday);
-        float       seconds     = static_cast<float>((currentTime->tm_hour * 60 + currentTime->tm_min) * 60 + currentTime->tm_sec);
+        struct tm   currentTimeBuf;
+        localtime_r(&nowC, &currentTimeBuf);
+        float       year        = 1900.0f + static_cast<float>(currentTimeBuf.tm_year);
+        float       month       = 1.0f + static_cast<float>(currentTimeBuf.tm_mon);
+        float       day         = static_cast<float>(currentTimeBuf.tm_mday);
+        float       seconds     = static_cast<float>((currentTimeBuf.tm_hour * 60 + currentTimeBuf.tm_min) * 60 + currentTimeBuf.tm_sec);
         float       date[]      = {year, month, day, seconds};
         std::memcpy((uint8_t*) mapedBuffer + offset, date, sizeof(float) * 4);
     }
@@ -222,7 +227,7 @@ namespace vkBasalt
 
         std::chrono::duration<float, std::ratio<1>> frameTime = currentFrame - lastFrame;
 
-        float increment = stepMax == 0 ? stepMin : (stepMin + std::fmod(static_cast<float>(std::rand()), stepMax - stepMin + 1.0f));
+        float increment = stepMax == 0 ? stepMin : (stepMin + std::fmod(static_cast<float>(tlRng()), stepMax - stepMin + 1.0f));
         if (currentValue[1] >= 0)
         {
             increment = std::max(increment - std::max(0.0f, smoothing - (max - currentValue[0])), 0.05f);
@@ -274,7 +279,7 @@ namespace vkBasalt
     }
     void RandomUniform::update(void* mapedBuffer)
     {
-        int32_t value = min + (std::rand() % (max - min + 1));
+        int32_t value = min + (static_cast<int32_t>(tlRng()) % (max - min + 1));
         std::memcpy((uint8_t*) mapedBuffer + offset, &(value), sizeof(int32_t));
     }
     RandomUniform::~RandomUniform()

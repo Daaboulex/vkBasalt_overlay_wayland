@@ -326,8 +326,8 @@ namespace vkBasalt
 
         dispatchWaylandInputEvents();
 
-        state.typedChars = typedCharsAccumulator;
-        state.lastKeyName = lastKeyNameAccumulator;
+        state.typedChars = std::move(typedCharsAccumulator);
+        state.lastKeyName = std::move(lastKeyNameAccumulator);
         state.backspace = backspacePressed;
         state.del = deletePressed;
         state.enter = enterPressed;
@@ -336,7 +336,7 @@ namespace vkBasalt
         state.home = homePressed;
         state.end = endPressed;
 
-        // Reset accumulators
+        // Reset accumulators (moved-from strings are already empty or valid-but-unspecified)
         typedCharsAccumulator.clear();
         lastKeyNameAccumulator.clear();
         backspacePressed = false;

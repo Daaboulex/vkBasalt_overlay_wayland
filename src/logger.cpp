@@ -64,6 +64,10 @@ namespace vkBasalt
 
     void Logger::emitMsg(LogLevel level, const std::string& message)
     {
+        // Early-out before taking lock if nothing to do
+        if (level < m_minLevel && !m_historyEnabled)
+            return;
+
         std::lock_guard<std::mutex> lock(m_mutex);
 
         // Store in history only if enabled (to save memory when debug window is off)
@@ -86,7 +90,7 @@ namespace vkBasalt
 
             while (std::getline(stream, line, '\n'))
             {
-                *m_outStream << prefix << line << std::endl;
+                *m_outStream << prefix << line << '\n';
             }
         }
     }

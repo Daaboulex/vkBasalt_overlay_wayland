@@ -13,6 +13,12 @@ namespace vkBasalt
     static wl_seat* seat = nullptr;
     static bool commonInitialized = false;
 
+    // Frame-level dispatch deduplication — tracks a monotonic counter so
+    // multiple callers (getMouseState, getKeyboardState, isKeyPressed×N)
+    // within the same frame only do one real dispatch.
+    static uint64_t dispatchFrameId = 0;
+    static uint64_t lastDispatchedFrame = 0;
+
     // Device bind callbacks — set by keyboard/mouse modules before init
     static KeyboardBindCallback keyboardBind = nullptr;
     static PointerBindCallback pointerBind = nullptr;
@@ -125,8 +131,18 @@ namespace vkBasalt
         return seat != nullptr;
     }
 
+    void beginWaylandInputFrame()
+    {
+        dispatchFrameId++;
+    }
+
     void dispatchWaylandInputEvents()
     {
+        // Skip if already dispatched this frame
+        if (lastDispatchedFrame == dispatchFrameId)
+            return;
+        lastDispatchedFrame = dispatchFrameId;
+
         if (!queue)
             return;
 

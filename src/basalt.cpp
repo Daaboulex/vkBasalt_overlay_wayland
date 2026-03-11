@@ -18,6 +18,7 @@
 #include "keyboard_input.hpp"
 #include "keyboard_input_wayland.hpp"
 #include "mouse_input_wayland.hpp"
+#include "wayland_input_common.hpp"
 #include "input_blocker.hpp"
 #include "wayland_display.hpp"
 
@@ -605,7 +606,16 @@ namespace vkBasalt
         getAvailableEffects(pConfig.get(), overlayState.currentConfigEffects,
                             overlayState.defaultConfigEffects, overlayState.effectPaths);
         overlayState.configPath = pConfig->getConfigFilePath();
-        overlayState.configName = std::filesystem::path(overlayState.configPath).filename().string();
+
+        // Cache the filename extraction — config path rarely changes
+        static std::string cachedConfigPath;
+        static std::string cachedConfigName;
+        if (overlayState.configPath != cachedConfigPath)
+        {
+            cachedConfigPath = overlayState.configPath;
+            cachedConfigName = std::filesystem::path(cachedConfigPath).filename().string();
+        }
+        overlayState.configName = cachedConfigName;
         overlayState.effectsEnabled = effectsEnabled;
 
         // Ensure all selected effects are in the registry
@@ -1127,6 +1137,9 @@ namespace vkBasalt
     {
         scoped_lock l(globalLock);
 
+        // Mark new input frame so dispatch deduplication resets
+        beginWaylandInputFrame();
+
         // Guard: if no device for this queue, pass through
         auto devIt = deviceMap.find(GetKey(queue));
         if (devIt == deviceMap.end() || !devIt->second)
@@ -1266,10 +1279,12 @@ namespace vkBasalt
             }
         }
 
-        std::vector<VkSemaphore> presentSemaphores;
+        // Reuse static buffers to avoid per-frame heap allocations
+        static thread_local std::vector<VkSemaphore> presentSemaphores;
+        static thread_local std::vector<VkPipelineStageFlags> waitStages;
+        presentSemaphores.clear();
         presentSemaphores.reserve(pPresentInfo->swapchainCount);
-
-        std::vector<VkPipelineStageFlags> waitStages(pPresentInfo->waitSemaphoreCount, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+        waitStages.assign(pPresentInfo->waitSemaphoreCount, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 
         for (unsigned int i = 0; i < pPresentInfo->swapchainCount; i++)
         {
