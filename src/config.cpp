@@ -83,6 +83,13 @@ namespace vkBasalt
         if (configFilePath.empty())
             return false;
 
+        // Throttle stat() syscall to every 500ms instead of every frame.
+        // At 240 FPS this avoids ~479 syscalls/sec.
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastConfigCheckTime).count() < 500)
+            return false;
+        lastConfigCheckTime = now;
+
         struct stat fileStat;
         if (stat(configFilePath.c_str(), &fileStat) != 0)
             return false;

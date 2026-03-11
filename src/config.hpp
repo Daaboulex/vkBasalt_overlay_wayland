@@ -6,6 +6,7 @@
 #include <iostream>
 #include <vector>
 #include <unordered_map>
+#include <chrono>
 #include <cstdlib>
 #include <sys/stat.h>
 
@@ -76,6 +77,7 @@ namespace vkBasalt
         std::string                                  configFilePath;
         time_t                                       lastModifiedTime = 0;
         Config*                                      pFallback = nullptr;
+        std::chrono::steady_clock::time_point        lastConfigCheckTime{};  // Throttle stat() calls
 
         void readConfigLine(std::string line);
         void readConfigFile(std::ifstream& stream);
