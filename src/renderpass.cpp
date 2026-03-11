@@ -33,14 +33,25 @@ namespace vkBasalt
         subpassDescription.preserveAttachmentCount = 0;
         subpassDescription.pPreserveAttachments    = nullptr;
 
-        VkSubpassDependency subpassDependency;
-        subpassDependency.srcSubpass      = VK_SUBPASS_EXTERNAL;
-        subpassDependency.dstSubpass      = 0;
-        subpassDependency.srcStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        subpassDependency.dstStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        subpassDependency.srcAccessMask   = 0;
-        subpassDependency.dstAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        subpassDependency.dependencyFlags = 0;
+        VkSubpassDependency subpassDependencies[2];
+
+        // Incoming: wait for prior color writes before this render pass
+        subpassDependencies[0].srcSubpass      = VK_SUBPASS_EXTERNAL;
+        subpassDependencies[0].dstSubpass      = 0;
+        subpassDependencies[0].srcStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        subpassDependencies[0].dstStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        subpassDependencies[0].srcAccessMask   = 0;
+        subpassDependencies[0].dstAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        subpassDependencies[0].dependencyFlags = 0;
+
+        // Outgoing: ensure writes + layout transition are visible before subsequent reads
+        subpassDependencies[1].srcSubpass      = 0;
+        subpassDependencies[1].dstSubpass      = VK_SUBPASS_EXTERNAL;
+        subpassDependencies[1].srcStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        subpassDependencies[1].dstStageMask    = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+        subpassDependencies[1].srcAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        subpassDependencies[1].dstAccessMask   = VK_ACCESS_MEMORY_READ_BIT;
+        subpassDependencies[1].dependencyFlags = 0;
 
         VkRenderPassCreateInfo renderPassCreateInfo;
         renderPassCreateInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -50,8 +61,8 @@ namespace vkBasalt
         renderPassCreateInfo.pAttachments    = &attachmentDescription;
         renderPassCreateInfo.subpassCount    = 1;
         renderPassCreateInfo.pSubpasses      = &subpassDescription;
-        renderPassCreateInfo.dependencyCount = 1;
-        renderPassCreateInfo.pDependencies   = &subpassDependency;
+        renderPassCreateInfo.dependencyCount = 2;
+        renderPassCreateInfo.pDependencies   = subpassDependencies;
 
         VkResult result = pLogicalDevice->vkd.CreateRenderPass(pLogicalDevice->device, &renderPassCreateInfo, nullptr, &renderPass);
         ASSERT_VULKAN(result);

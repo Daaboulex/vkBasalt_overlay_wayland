@@ -8,6 +8,7 @@
 #include "config_serializer.hpp"
 #include "wayland_display.hpp"
 #include "wayland_pointer_constraints.hpp"
+#include "wayland_input_common.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -417,13 +418,15 @@ namespace vkBasalt
         dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
         // Dependency for outgoing: ensure overlay writes + layout transition complete
-        // before presentation reads the image (fixes green screen in PipeWire/screen capture)
+        // and are VISIBLE to presentation engine and DMA-BUF screen capture readers.
+        // VK_ACCESS_MEMORY_READ_BIT is critical — without it, GPU caches may not be
+        // flushed before PipeWire/compositor reads the image via DMA-BUF.
         dependencies[1].srcSubpass = 0;
         dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
         dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
         dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        dependencies[1].dstAccessMask = 0;
+        dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
 
         VkRenderPassCreateInfo renderPassInfo = {};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -510,11 +513,12 @@ namespace vkBasalt
         currentWidth = width;
         currentHeight = height;
 
-        // Wait for previous use of this command buffer to complete
-        // 5ms timeout — the overlay is lightweight and the fence should be signaled
-        // within 1-2 frames. Skip this frame's overlay rather than stall the game.
+        // Wait for previous use of this command buffer to complete.
+        // 16ms timeout covers one full frame at 60 FPS. With triple buffering,
+        // this fence was submitted 3+ frames ago and should be signaled well
+        // within this timeout. Skip overlay rather than stall the game.
         VkFence fence = commandBufferFences[imageIndex];
-        VkResult fenceResult = pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, 1, &fence, VK_TRUE, 5000000ULL);
+        VkResult fenceResult = pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, 1, &fence, VK_TRUE, 16000000ULL);
         if (fenceResult == VK_TIMEOUT)
         {
             Logger::warn("ImGui fence wait timed out for image " + std::to_string(imageIndex));
@@ -594,6 +598,11 @@ namespace vkBasalt
         float dt = std::chrono::duration<float>(now - lastFrameTime).count();
         lastFrameTime = now;
         io.DeltaTime = (dt > 0.0f && dt < 1.0f) ? dt : 1.0f / 60.0f;
+
+        // Fresh input dispatch — keybinding checks earlier in the frame already
+        // dispatched once, but new mouse events may have arrived since then.
+        // This gives the overlay the latest cursor position for smooth tracking.
+        beginWaylandInputFrame();
 
         // Mouse input for interactivity
         MouseState mouse = getMouseState();

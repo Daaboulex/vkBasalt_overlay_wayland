@@ -66,7 +66,7 @@ namespace vkBasalt
                                          &imageCopy);
 
         memoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        memoryBarrier.dstAccessMask = 0;
+        memoryBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
         memoryBarrier.image         = outputImages[imageIndex];
         memoryBarrier.oldLayout     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         memoryBarrier.newLayout     = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
