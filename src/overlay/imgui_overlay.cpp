@@ -407,13 +407,23 @@ namespace vkBasalt
         subpass.colorAttachmentCount = 1;
         subpass.pColorAttachments = &colorRef;
 
-        VkSubpassDependency dependency = {};
-        dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-        dependency.dstSubpass = 0;
-        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dependency.srcAccessMask = 0;
-        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        // Dependency for incoming: wait for prior color writes before overlay renders
+        VkSubpassDependency dependencies[2] = {};
+        dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+        dependencies[0].dstSubpass = 0;
+        dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependencies[0].srcAccessMask = 0;
+        dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+        // Dependency for outgoing: ensure overlay writes + layout transition complete
+        // before presentation reads the image (fixes green screen in PipeWire/screen capture)
+        dependencies[1].srcSubpass = 0;
+        dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+        dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+        dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        dependencies[1].dstAccessMask = 0;
 
         VkRenderPassCreateInfo renderPassInfo = {};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -421,8 +431,8 @@ namespace vkBasalt
         renderPassInfo.pAttachments = &attachment;
         renderPassInfo.subpassCount = 1;
         renderPassInfo.pSubpasses = &subpass;
-        renderPassInfo.dependencyCount = 1;
-        renderPassInfo.pDependencies = &dependency;
+        renderPassInfo.dependencyCount = 2;
+        renderPassInfo.pDependencies = dependencies;
 
         vr = pLogicalDevice->vkd.CreateRenderPass(pLogicalDevice->device, &renderPassInfo, nullptr, &renderPass);
         if (vr != VK_SUCCESS)
@@ -500,10 +510,11 @@ namespace vkBasalt
         currentWidth = width;
         currentHeight = height;
 
-        // Wait for previous use of this command buffer to complete (100ms timeout)
-        // Short timeout avoids stalling the game's presentation if GPU is under heavy load
+        // Wait for previous use of this command buffer to complete
+        // 5ms timeout — the overlay is lightweight and the fence should be signaled
+        // within 1-2 frames. Skip this frame's overlay rather than stall the game.
         VkFence fence = commandBufferFences[imageIndex];
-        VkResult fenceResult = pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, 1, &fence, VK_TRUE, 100000000ULL);
+        VkResult fenceResult = pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, 1, &fence, VK_TRUE, 5000000ULL);
         if (fenceResult == VK_TIMEOUT)
         {
             Logger::warn("ImGui fence wait timed out for image " + std::to_string(imageIndex));

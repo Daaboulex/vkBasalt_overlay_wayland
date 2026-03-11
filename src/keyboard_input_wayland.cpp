@@ -164,6 +164,7 @@ namespace vkBasalt
                               uint32_t /*serial*/, wl_surface* /*surface*/)
     {
         pressedKeys.clear();
+        keyPressEvents.clear();  // Prevent stale keysyms surviving focus loss
     }
 
     static void keyboardKey(void* /*data*/, wl_keyboard* /*keyboard*/,
