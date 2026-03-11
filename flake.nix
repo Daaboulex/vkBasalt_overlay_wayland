@@ -58,6 +58,13 @@
               substituteInPlace "$out/share/vulkan/implicit_layer.d/vkBasalt-overlay.json" \
                 --replace-fail '"library_path": "libvkbasalt-overlay.so"' \
                                '"library_path": "'"$out/lib/libvkbasalt-overlay.so"'"'
+
+              # vkbasalt-run wrapper: sets ENABLE_VKBASALT and LD_AUDIT for Wine
+              # Wayland input interposition (dlopen RTLD_LOCAL bypass).
+              mkdir -p "$out/bin"
+              substitute ${./vkbasalt-run.sh} "$out/bin/vkbasalt-run" \
+                --subst-var out
+              chmod +x "$out/bin/vkbasalt-run"
             '';
 
             meta = with pkgs.lib; {
@@ -65,7 +72,7 @@
               homepage = "https://github.com/Daaboulex/vkBasalt_overlay_wayland";
               license = licenses.zlib;
               platforms = [ "x86_64-linux" ];
-              mainProgram = null;
+              mainProgram = "vkbasalt-run";
             };
           };
 
