@@ -101,6 +101,7 @@ namespace vkBasalt
         VkBuffer                 stagingBuffer;
         VkDeviceMemory           stagingBufferMemory;
         uint32_t                 bufferSize;
+        void*                    stagingBufferMapped = nullptr;  // Persistent map (HOST_COHERENT)
         VkDescriptorSet          bufferDescriptorSet;
 
         std::vector<std::shared_ptr<ReshadeUniform>> uniforms;

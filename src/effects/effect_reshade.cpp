@@ -75,6 +75,9 @@ namespace vkBasalt
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                          stagingBuffer,
                          stagingBufferMemory);
+            // Persistent map — HOST_COHERENT means no flush needed, just write directly
+            VkResult mapResult = pLogicalDevice->vkd.MapMemory(pLogicalDevice->device, stagingBufferMemory, 0, bufferSize, 0, &stagingBufferMapped);
+            ASSERT_VULKAN(mapResult);
         }
 
         stencilFormat = getStencilFormat(pLogicalDevice);
@@ -865,16 +868,11 @@ namespace vkBasalt
 
     void ReshadeEffect::updateEffect()
     {
-        if (bufferSize)
+        if (stagingBufferMapped)
         {
-            void*    data;
-            VkResult result = pLogicalDevice->vkd.MapMemory(pLogicalDevice->device, stagingBufferMemory, 0, bufferSize, 0, &data);
-            ASSERT_VULKAN(result);
             for (auto& uniform : uniforms)
-            {
-                uniform->update(data);
-            }
-            pLogicalDevice->vkd.UnmapMemory(pLogicalDevice->device, stagingBufferMemory);
+                uniform->update(stagingBufferMapped);
+            // HOST_COHERENT: no flush needed, GPU sees writes automatically
         }
     }
 
@@ -1243,6 +1241,8 @@ namespace vkBasalt
 
         if (bufferSize)
         {
+            if (stagingBufferMapped)
+                pLogicalDevice->vkd.UnmapMemory(pLogicalDevice->device, stagingBufferMemory);
             pLogicalDevice->vkd.FreeMemory(pLogicalDevice->device, stagingBufferMemory, nullptr);
             pLogicalDevice->vkd.DestroyBuffer(pLogicalDevice->device, stagingBuffer, nullptr);
         }

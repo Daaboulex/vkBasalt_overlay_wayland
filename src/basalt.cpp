@@ -1261,21 +1261,25 @@ namespace vkBasalt
         }
 
         // Check for debounced resize reload (separate from config reload)
-        auto resizeElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - resizeDebounce.lastResizeTime).count();
-
-        if (resizeDebounce.pending && resizeElapsed >= RESIZE_DEBOUNCE_MS)
+        // Only call steady_clock::now() when a resize is actually pending
+        if (resizeDebounce.pending)
         {
-            Logger::info("debounced resize reload after " + std::to_string(resizeElapsed) + "ms");
-            resizeDebounce.pending = false;
+            auto resizeElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - resizeDebounce.lastResizeTime).count();
 
-            // Get selected effects from registry (single source of truth)
-            const auto& selectedEffects = effectRegistry.getSelectedEffects();
-            for (auto& [_, pSwapchain] : swapchainMap)
+            if (resizeElapsed >= RESIZE_DEBOUNCE_MS)
             {
-                if (pSwapchain->fakeImages.empty())
-                    continue;
-                reloadEffectsForSwapchain(pSwapchain.get(), pConfig.get(), selectedEffects);
+                Logger::info("debounced resize reload after " + std::to_string(resizeElapsed) + "ms");
+                resizeDebounce.pending = false;
+
+                // Get selected effects from registry (single source of truth)
+                const auto& selectedEffects = effectRegistry.getSelectedEffects();
+                for (auto& [_, pSwapchain] : swapchainMap)
+                {
+                    if (pSwapchain->fakeImages.empty())
+                        continue;
+                    reloadEffectsForSwapchain(pSwapchain.get(), pConfig.get(), selectedEffects);
+                }
             }
         }
 
@@ -1292,9 +1296,12 @@ namespace vkBasalt
             VkSwapchainKHR    swapchain         = pPresentInfo->pSwapchains[i];
             LogicalSwapchain* pLogicalSwapchain = swapchainMap[swapchain].get();
 
-            // Update all effects for this frame
-            for (auto& effect : pLogicalSwapchain->effects)
-                effect->updateEffect();
+            // Update effect uniforms only when effects are active (saves CPU+GPU when off)
+            if (presentEffect)
+            {
+                for (auto& effect : pLogicalSwapchain->effects)
+                    effect->updateEffect();
+            }
 
             // Submit effect command buffer
             VkSubmitInfo submitInfo = {};
