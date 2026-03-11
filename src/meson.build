@@ -149,3 +149,13 @@ shared_library(meson.project_name().to_lower(),
     gnu_symbol_visibility: 'hidden',
     install : true,
     install_dir : lib_dir)
+
+# LD_AUDIT library for Wine Wayland input interposition.
+# Redirects wl_proxy_add_listener bindings from dlopen(RTLD_LOCAL) scopes
+# (e.g. Wine's winewayland.so) to our wrapper in libvkbasalt-overlay.so.
+dl_dep = cpp.find_library('dl')
+shared_library('vkbasalt-audit',
+    'wayland_audit.c',
+    dependencies: [dl_dep],
+    install : true,
+    install_dir : lib_dir)
