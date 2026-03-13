@@ -1649,6 +1649,30 @@ IMPLEMENT_INTRINSIC_SPIRV(tex2Dfetch, 0, {
 		.result;
 	})
 
+// ret tex2Dgrad(s, coords, ddx, ddy)
+DEFINE_INTRINSIC(tex2Dgrad, 0, float4, sampler, float2, float2, float2)
+IMPLEMENT_INTRINSIC_GLSL(tex2Dgrad, 0, {
+	code += "textureGrad(" + id_to_name(args[0].base) + ", " +
+		id_to_name(args[1].base) + " * vec2(1.0, -1.0) + vec2(0.0, 1.0), " +
+		id_to_name(args[2].base) + " * vec2(1.0, -1.0), " +
+		id_to_name(args[3].base) + " * vec2(1.0, -1.0))";
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex2Dgrad, 0, {
+	if (_shader_model >= 40u)
+		code += id_to_name(args[0].base) + ".t.SampleGrad(" + id_to_name(args[0].base) + ".s, " + id_to_name(args[1].base) + ", " + id_to_name(args[2].base) + ", " + id_to_name(args[3].base) + ')';
+	else
+		code += "tex2Dgrad(" + id_to_name(args[0].base) + ".s, " + id_to_name(args[1].base) + ", " + id_to_name(args[2].base) + ", " + id_to_name(args[3].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex2Dgrad, 0, {
+	return add_instruction(spv::OpImageSampleExplicitLod, convert_type(res_type))
+		.add(args[0].base)
+		.add(args[1].base)
+		.add(spv::ImageOperandsGradMask)
+		.add(args[2].base)
+		.add(args[3].base)
+		.result;
+	})
+
 #define COMMA ,
 
 // ret tex2Dgather(s, coords, component)

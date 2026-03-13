@@ -82,6 +82,14 @@ namespace vkBasalt
             pp.add_macro_definition("BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)");
             pp.add_macro_definition("BUFFER_COLOR_DEPTH", "8");
             pp.add_macro_definition("BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH");
+
+            // Component-specific texture gather shorthands (missing from this reshadefx version)
+            // tex2DgatherR/G/B/A(s, coords) → tex2Dgather(s, coords, component)
+            using macro = reshadefx::preprocessor::macro;
+            pp.add_macro_definition("tex2DgatherR", macro{"tex2Dgather(s, coords, 0)", {"s", "coords"}, false, true});
+            pp.add_macro_definition("tex2DgatherG", macro{"tex2Dgather(s, coords, 1)", {"s", "coords"}, false, true});
+            pp.add_macro_definition("tex2DgatherB", macro{"tex2Dgather(s, coords, 2)", {"s", "coords"}, false, true});
+            pp.add_macro_definition("tex2DgatherA", macro{"tex2Dgather(s, coords, 3)", {"s", "coords"}, false, true});
         }
 
         void setupPreprocessor(reshadefx::preprocessor& pp)
