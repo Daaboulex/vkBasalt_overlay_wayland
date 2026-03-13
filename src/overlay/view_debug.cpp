@@ -130,12 +130,15 @@ namespace vkBasalt
             {
                 debugWindowTab = 1;
 
+                // Only capture keyboard when this window is focused
+                bool windowFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+
                 // Handle ESC to clear search
-                if (ImGui::IsKeyPressed(ImGuiKey_Escape) && debugLogSearch[0] != '\0')
+                if (windowFocused && ImGui::IsKeyPressed(ImGuiKey_Escape) && debugLogSearch[0] != '\0')
                     debugLogSearch[0] = '\0';
 
-                // Capture keyboard input for seamless search (only when no widget is active)
-                if (!ImGui::IsAnyItemActive())
+                // Capture keyboard input for seamless search (only when focused and no widget active)
+                if (windowFocused && !ImGui::IsAnyItemActive())
                 {
                     ImGuiIO& io = ImGui::GetIO();
                     for (int i = 0; i < io.InputQueueCharacters.Size; i++)

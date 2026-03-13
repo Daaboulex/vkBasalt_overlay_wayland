@@ -153,12 +153,20 @@ namespace vkBasalt
             ImGui::SetTooltip("If enabled, effects are active when the game starts.\nIf disabled, effects start off and must be toggled on.");
 
         bool depthCapture = settingsManager.getDepthCapture();
+        if (profileSafeAntiCheat)
+            ImGui::BeginDisabled();
         if (ImGui::Checkbox("Depth Capture (requires restart)", &depthCapture))
         {
             settingsManager.setDepthCapture(depthCapture);
             saveSettings();
         }
-        if (ImGui::IsItemHovered())
+        if (profileSafeAntiCheat)
+        {
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "(forced off by Safe Anti-Cheat)");
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Enable depth buffer capture for effects that use depth.\nMay impact performance. Most effects don't need this.\nChanges require restarting the application.");
 
         ImGui::Spacing();

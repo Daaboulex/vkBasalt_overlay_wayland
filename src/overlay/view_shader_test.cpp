@@ -144,10 +144,18 @@ namespace vkBasalt
                 else
                     failCount++;
             }
+            int depthCount = static_cast<int>(depthShaders.size());
             if (failCount == 0)
                 ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "All %d passed!", passCount);
             else
                 ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%d passed, %d failed", passCount, failCount);
+            if (depthCount > 0)
+            {
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), "(%d use depth)", depthCount);
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("These shaders require depth buffer access.\nBlocked when Safe Anti-Cheat is enabled.");
+            }
 
             // Show duplicate warning if any were skipped
             if (shaderTestDuplicateCount > 0)
@@ -162,17 +170,21 @@ namespace vkBasalt
     // Render detailed test results in collapsible sections
     // Call this separately after the main shader manager content
     static void renderShaderTestResults(
-        const std::vector<std::tuple<std::string, std::string, bool, std::string>>& results)
+        const std::vector<std::tuple<std::string, std::string, bool, std::string>>& results,
+        const std::set<std::string>& depthShaderNames)
     {
         if (results.empty())
             return;
 
-        // Count failures for header
+        // Count failures and depth shaders for headers
         int failCount = 0;
+        int depthCount = 0;
         for (const auto& [name, path, success, error] : results)
         {
             if (!success)
                 failCount++;
+            else if (depthShaderNames.count(name))
+                depthCount++;
         }
 
         // Show failed shaders first (if any)
@@ -209,19 +221,51 @@ namespace vkBasalt
             }
         }
 
-        // Show passed shaders
-        int passCount = static_cast<int>(results.size()) - failCount;
-        if (passCount > 0)
+        // Show depth shaders (if any)
+        if (depthCount > 0)
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.7f, 1.0f, 1.0f));
+            bool depthOpen = ImGui::TreeNode("DepthShaders", "Depth Shaders (%d)", depthCount);
+            ImGui::PopStyleColor();
+
+            if (depthOpen)
+            {
+                for (const auto& [name, path, success, error] : results)
+                {
+                    if (!success || !depthShaderNames.count(name))
+                        continue;
+
+                    ImGui::TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), "%s", name.c_str());
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s", path.c_str());
+
+                    if (!error.empty())
+                    {
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "(warnings)");
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip("%s", error.c_str());
+                    }
+                }
+                ImGui::TreePop();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("These shaders require depth buffer access.\nBlocked when Safe Anti-Cheat is enabled.");
+        }
+
+        // Show passed shaders (excluding depth shaders — they have their own section)
+        int safeCount = static_cast<int>(results.size()) - failCount - depthCount;
+        if (safeCount > 0)
         {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 1.0f, 0.3f, 1.0f));
-            bool passedOpen = ImGui::TreeNode("PassedShaders", "Passed Shaders (%d)", passCount);
+            bool passedOpen = ImGui::TreeNode("PassedShaders", "Safe Shaders (%d)", safeCount);
             ImGui::PopStyleColor();
 
             if (passedOpen)
             {
                 for (const auto& [name, path, success, error] : results)
                 {
-                    if (!success)
+                    if (!success || depthShaderNames.count(name))
                         continue;
 
                     ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "%s", name.c_str());
@@ -248,8 +292,9 @@ namespace vkBasalt
 namespace vkBasalt
 {
     void renderShaderTestResultsUI(
-        const std::vector<std::tuple<std::string, std::string, bool, std::string>>& results)
+        const std::vector<std::tuple<std::string, std::string, bool, std::string>>& results,
+        const std::set<std::string>& depthShaderNames)
     {
-        renderShaderTestResults(results);
+        renderShaderTestResults(results, depthShaderNames);
     }
 }

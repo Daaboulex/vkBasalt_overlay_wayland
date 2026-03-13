@@ -14,7 +14,8 @@ namespace vkBasalt
 {
     // Defined in view_shader_test.cpp
     void renderShaderTestResultsUI(
-        const std::vector<std::tuple<std::string, std::string, bool, std::string>>& results);
+        const std::vector<std::tuple<std::string, std::string, bool, std::string>>& results,
+        const std::set<std::string>& depthShaderNames);
 }
 
 namespace vkBasalt
@@ -205,7 +206,7 @@ namespace vkBasalt
 
         // Test Results (collapsible, show after test completes)
         if (shaderTestComplete)
-            renderShaderTestResultsUI(shaderTestResults);
+            renderShaderTestResultsUI(shaderTestResults, depthShaders);
 
         ImGui::EndChild();
 
