@@ -650,7 +650,14 @@ void reshadefx::preprocessor::parse_include()
 		return;
 	}
 
-	std::filesystem::path file_name = std::filesystem::u8path(_token.literal_as_string);
+	// Normalize Windows-style backslash path separators to forward slashes (Linux compatibility)
+	std::string include_name_str = _token.literal_as_string;
+	std::replace(include_name_str.begin(), include_name_str.end(), '\\', '/');
+	// Strip leading ./ prefix (common in Windows-authored shaders)
+	if (include_name_str.size() > 2 && include_name_str[0] == '.' && include_name_str[1] == '/')
+		include_name_str = include_name_str.substr(2);
+
+	std::filesystem::path file_name = std::filesystem::u8path(include_name_str);
 	std::filesystem::path file_path = std::filesystem::u8path(_output_location.source);
 	file_path.replace_filename(file_name);
 
@@ -658,6 +665,48 @@ void reshadefx::preprocessor::parse_include()
 		for (const std::filesystem::path &include_path : _include_paths)
 			if (std::filesystem::exists(file_path = include_path / file_name, ec))
 				break;
+
+	// Case-insensitive fallback: if file not found, search the target directory for a match
+	if (std::error_code ec; !std::filesystem::exists(file_path, ec))
+	{
+		const std::string target_filename = file_name.filename().string();
+		std::string target_lower = target_filename;
+		std::transform(target_lower.begin(), target_lower.end(), target_lower.begin(), ::tolower);
+
+		// Search in the directory where the file was expected
+		auto try_case_insensitive = [&](const std::filesystem::path &search_dir) -> bool {
+			if (!std::filesystem::is_directory(search_dir, ec))
+				return false;
+			for (const auto &entry : std::filesystem::directory_iterator(search_dir, ec))
+			{
+				if (!entry.is_regular_file(ec))
+					continue;
+				std::string candidate = entry.path().filename().string();
+				std::string candidate_lower = candidate;
+				std::transform(candidate_lower.begin(), candidate_lower.end(), candidate_lower.begin(), ::tolower);
+				if (candidate_lower == target_lower)
+				{
+					file_path = entry.path();
+					return true;
+				}
+			}
+			return false;
+		};
+
+		// Try the parent directory of the include (handles subdirectory includes like "lilium__include/foo.fxh")
+		std::filesystem::path expected_dir = std::filesystem::u8path(_output_location.source);
+		expected_dir.replace_filename(file_name);
+		expected_dir = expected_dir.parent_path();
+		if (!try_case_insensitive(expected_dir))
+		{
+			for (const std::filesystem::path &include_path : _include_paths)
+			{
+				std::filesystem::path candidate_dir = (include_path / file_name).parent_path();
+				if (try_case_insensitive(candidate_dir))
+					break;
+			}
+		}
+	}
 
 	const std::string file_path_string = file_path.u8string();
 
