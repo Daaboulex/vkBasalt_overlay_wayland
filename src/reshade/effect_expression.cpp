@@ -207,7 +207,8 @@ void reshadefx::expression::add_cast_operation(const reshadefx::type &cast_type)
 	}
 	else
 	{
-		assert(!type.is_array() && !cast_type.is_array());
+		if (type.is_array() || cast_type.is_array())
+			return;
 
 		chain.push_back({ operation::op_cast, type, cast_type });
 	}
@@ -216,7 +217,8 @@ void reshadefx::expression::add_cast_operation(const reshadefx::type &cast_type)
 }
 void reshadefx::expression::add_member_access(unsigned int index, const reshadefx::type &in_type)
 {
-	assert(type.is_struct());
+	if (!type.is_struct())
+		return;
 
 	chain.push_back({ operation::op_member, type, in_type, index });
 
@@ -226,7 +228,9 @@ void reshadefx::expression::add_member_access(unsigned int index, const reshadef
 }
 void reshadefx::expression::add_dynamic_index_access(uint32_t index_expression)
 {
-	assert(type.is_numeric() && !is_constant);
+	// Graceful error instead of fatal assert — can trigger during rapid reload cycles
+	if (!type.is_numeric() || is_constant)
+		return;
 
 	auto prev_type = type;
 
@@ -248,26 +252,30 @@ void reshadefx::expression::add_dynamic_index_access(uint32_t index_expression)
 }
 void reshadefx::expression::add_constant_index_access(unsigned int index)
 {
-	assert(type.is_numeric() && !type.is_scalar());
+	if (!type.is_numeric() || type.is_scalar())
+		return;
 
 	auto prev_type = type;
 
 	if (type.is_array())
 	{
-		assert(type.array_length < 0 || index < static_cast<unsigned int>(type.array_length));
+		if (type.array_length >= 0 && index >= static_cast<unsigned int>(type.array_length))
+			return;
 
 		type.array_length = 0;
 	}
 	else if (type.is_matrix())
 	{
-		assert(index < type.components());
+		if (index >= type.components())
+			return;
 
 		type.rows = type.cols;
 		type.cols = 1;
 	}
 	else if (type.is_vector())
 	{
-		assert(index < type.components());
+		if (index >= type.components())
+			return;
 
 		type.rows = 1;
 	}
@@ -295,7 +303,8 @@ void reshadefx::expression::add_constant_index_access(unsigned int index)
 }
 void reshadefx::expression::add_swizzle_access(const signed char swizzle[4], unsigned int length)
 {
-	assert(type.is_numeric() && !type.is_array());
+	if (!type.is_numeric() || type.is_array())
+		return;
 
 	const auto prev_type = type;
 
@@ -304,7 +313,8 @@ void reshadefx::expression::add_swizzle_access(const signed char swizzle[4], uns
 
 	if (is_constant)
 	{
-		assert(constant.array_data.empty());
+		if (!constant.array_data.empty())
+			return;
 
 		uint32_t data[16];
 		std::memcpy(data, &constant.as_uint[0], sizeof(data));

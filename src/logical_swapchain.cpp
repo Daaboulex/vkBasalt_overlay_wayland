@@ -6,6 +6,9 @@ namespace vkBasalt
     {
         if (imageCount > 0)
         {
+            // Wait for GPU to finish before destroying resources
+            pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
+
             effects.clear();
             defaultTransfer.reset();
 

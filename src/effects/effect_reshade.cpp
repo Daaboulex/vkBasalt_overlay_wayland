@@ -77,7 +77,11 @@ namespace vkBasalt
                          stagingBufferMemory);
             // Persistent map — HOST_COHERENT means no flush needed, just write directly
             VkResult mapResult = pLogicalDevice->vkd.MapMemory(pLogicalDevice->device, stagingBufferMemory, 0, bufferSize, 0, &stagingBufferMapped);
-            ASSERT_VULKAN(mapResult);
+            if (mapResult != VK_SUCCESS)
+            {
+                Logger::err("MapMemory failed for effect " + effectName + ": " + std::to_string(mapResult));
+                stagingBufferMapped = nullptr;
+            }
         }
 
         stencilFormat = getStencilFormat(pLogicalDevice);
@@ -1362,9 +1366,6 @@ namespace vkBasalt
 
     void ReshadeEffect::createReshadeModule()
     {
-        std::string tempFile  = "/tmp/vkBasalt.spv";
-        std::string tempFile2 = "/tmp/vkBasalt.spv";
-
         reshadefx::preprocessor preprocessor;
         preprocessor.add_macro_definition("__RESHADE__", std::to_string(INT_MAX));
         preprocessor.add_macro_definition("__RESHADE_PERFORMANCE_MODE__", "1");

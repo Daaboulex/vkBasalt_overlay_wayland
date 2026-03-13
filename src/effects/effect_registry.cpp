@@ -592,8 +592,11 @@ namespace vkBasalt
 
     void EffectRegistry::initializeSelectedEffectsFromConfig()
     {
-        if (initializedFromConfig || !pConfig)
-            return;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            if (initializedFromConfig || !pConfig)
+                return;
+        }
 
         // Read effects list from config
         std::vector<std::string> configEffects = pConfig->getOption<std::vector<std::string>>("effects", {});
