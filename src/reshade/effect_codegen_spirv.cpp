@@ -420,7 +420,8 @@ private:
 				type = add_instruction( spv::OpTypeFloat, 0, _types_and_constants).add(32).result;
 				break;
 			case type::t_struct:
-				assert(info.rows == 0 && info.cols == 0 && info.definition != 0);
+				if (info.definition == 0)
+					return 0; // Struct type not fully defined — skip gracefully
 				type = info.definition;
 				break;
 			case type::t_texture:
@@ -1728,7 +1729,6 @@ private:
 		// There must be exactly one constituent for each top-level component of the result
 		if (type.is_matrix())
 		{
-			assert(type.rows == type.cols);
 
 			auto vector_type = type;
 			vector_type.cols = 1;

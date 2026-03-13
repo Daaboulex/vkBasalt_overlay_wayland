@@ -13,6 +13,7 @@
 #include "keyboard_input.hpp"
 #include "effects/params/effect_param.hpp"
 #include "config_serializer.hpp"
+#include "settings_manager.hpp"
 
 namespace vkBasalt
 {
@@ -80,6 +81,7 @@ namespace vkBasalt
             {
                 ProfileSettings ps = ConfigSerializer::loadProfileSettings(profilePath);
                 profileSafeAntiCheat = ps.safeAntiCheat;
+                settingsManager.setSafeAntiCheat(profileSafeAntiCheat);
             }
         }
 
@@ -124,6 +126,8 @@ namespace vkBasalt
         void renderSettingsView(const KeyboardState& keyboard);
         void renderShaderManagerView();
         void renderShaderTestSection();  // Shader test UI (part of shader manager)
+        void startShaderTest();          // Initialize shader test queue and start
+        void processShaderTest();        // Process one shader per frame (runs every frame)
         void renderMainView(const KeyboardState& keyboard);
         void renderDiagnosticsView();
         void renderDebugWindow();  // Debug window with effect registry and log data
@@ -166,6 +170,7 @@ namespace vkBasalt
         std::vector<std::string> shaderTestIncludePaths;  // Cached include paths (avoid re-reading config per shader)
         std::vector<std::tuple<std::string, std::string, bool, std::string>> shaderTestResults;  // {name, path, success, error}
         std::set<std::string> depthShaders;  // Effect names that use depth buffer (populated by shader test)
+        std::set<std::string> checkedShaders; // Effects already checked for depth (avoids recompiling)
 
         // UI state for settings view
         int listeningForKey = 0;  // 0=none, 1=toggle, 2=reload, 3=overlay

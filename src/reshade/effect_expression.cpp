@@ -19,8 +19,16 @@ reshadefx::type reshadefx::type::merge(const type &lhs, const type &rhs)
 {
 	type result = { std::max(lhs.base, rhs.base) };
 
+	// Struct types take priority — use struct's rows/cols/definition directly
+	if (lhs.is_struct() || rhs.is_struct())
+	{
+		const type &struct_side = lhs.is_struct() ? lhs : rhs;
+		result.rows = struct_side.rows;
+		result.cols = struct_side.cols;
+		result.definition = struct_side.definition;
+	}
 	// If one side of the expression is scalar, it needs to be promoted to the same dimension as the other side
-	if ((lhs.rows == 1 && lhs.cols == 1) || (rhs.rows == 1 && rhs.cols == 1))
+	else if ((lhs.rows == 1 && lhs.cols == 1) || (rhs.rows == 1 && rhs.cols == 1))
 	{
 		result.rows = std::max(lhs.rows, rhs.rows);
 		result.cols = std::max(lhs.cols, rhs.cols);
@@ -231,7 +239,7 @@ void reshadefx::expression::add_member_access(unsigned int index, const reshadef
 }
 void reshadefx::expression::add_dynamic_index_access(uint32_t index_expression)
 {
-	assert(type.is_numeric() && !is_constant);
+	assert((type.is_numeric() || type.is_array()) && !is_constant);
 
 	auto prev_type = type;
 
@@ -253,7 +261,11 @@ void reshadefx::expression::add_dynamic_index_access(uint32_t index_expression)
 }
 void reshadefx::expression::add_constant_index_access(unsigned int index)
 {
-	assert(type.is_numeric() && !type.is_scalar());
+	// Scalar indexing with [0] is valid and is a no-op
+	if (type.is_scalar() && index == 0)
+		return;
+
+	assert((type.is_numeric() || type.is_array()) && !type.is_scalar());
 
 	auto prev_type = type;
 

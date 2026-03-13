@@ -717,6 +717,9 @@ namespace vkBasalt
         if (clamped)
             ImGui::SetWindowPos(winPos);
 
+        // Process shader test (one per frame) regardless of active tab
+        processShaderTest();
+
         if (ImGui::BeginTabBar("OverlayTabs"))
         {
             if (ImGui::BeginTabItem("Effects"))

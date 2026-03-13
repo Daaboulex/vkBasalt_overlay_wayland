@@ -314,11 +314,23 @@ bool reshadefx::parser::accept_type_class(type &type)
 	case tokenid::sampler:
 		type.base = type::t_sampler;
 		break;
+	case tokenid::storage:
+		type.base = type::t_sampler; // Treat storage as sampler for compilation (no compute dispatch)
+		break;
 	default:
 		return false;
 	}
 
 	consume();
+
+	// Consume optional template parameter for sampler/storage types (e.g., sampler<int>, storage<float4>)
+	if (type.base == type::t_sampler && accept('<'))
+	{
+		reshadefx::type dummy;
+		if (!accept_type_class(dummy))
+			consume(); // skip unknown type token
+		expect('>');
+	}
 
 	return true;
 }
@@ -2372,6 +2384,20 @@ bool reshadefx::parser::parse_function(type type, std::string name)
 			error(param.location, 3072, '\'' + param.name + "': array dimensions of function parameters must be explicit");
 		}
 
+		// Handle optional default parameter value (e.g., float x = 0.0)
+		// Skip the default value — it's not used, but must be consumed for parsing
+		if (accept('='))
+		{
+			expression default_value;
+			if (!parse_expression_assignment(default_value))
+			{
+				parse_success = false;
+				expect_parenthesis = false;
+				consume_until(')');
+				break;
+			}
+		}
+
 		// Handle parameter type semantic
 		if (accept(':'))
 		{
@@ -2809,7 +2835,7 @@ bool reshadefx::parser::parse_technique_pass(pass_info &info)
 		if (!expect('='))
 			return consume_until('}'), false;
 
-		const bool is_shader_state = state == "VertexShader" || state == "PixelShader";
+		const bool is_shader_state = state == "VertexShader" || state == "PixelShader" || state == "ComputeShader";
 		const bool is_texture_state = state.compare(0, 12, "RenderTarget") == 0 && (state.size() == 12 || (state[12] >= '0' && state[12] < '8'));
 
 		// Shader and render target assignment looks up values in the symbol table, so handle those separately from the other states
@@ -2836,13 +2862,21 @@ bool reshadefx::parser::parse_technique_pass(pass_info &info)
 						error(location, 3020, "type mismatch, expected function name");
 					else {
 						const bool is_vs = state[0] == 'V';
-						const bool is_ps = state[0] == 'P';
+						const bool is_ps = state[0] == 'P' || state[0] == 'C'; // Treat ComputeShader as pixel shader for compilation
 
 						// Look up the matching function info for this function definition
 						function_info &function_info = _codegen->find_function(symbol.id);
 
 						// We potentially need to generate a special entry point function which translates between function parameters and input/output variables
 						_codegen->define_entry_point(function_info, is_ps);
+
+						// Consume optional dispatch size template for compute shaders: CS<X, Y, Z>
+						if (state[0] == 'C' && accept('<'))
+						{
+							while (!peek('>') && !peek(tokenid::end_of_file) && !peek(';'))
+								consume();
+							expect('>');
+						}
 
 						if (is_vs)
 						{
@@ -3001,6 +3035,13 @@ bool reshadefx::parser::parse_technique_pass(pass_info &info)
 				info.num_vertices = value;
 			else if (state == "PrimitiveType" || state == "PrimitiveTopology")
 				info.topology = static_cast<primitive_topology>(value);
+			else if (state == "DispatchSizeX" || state == "DispatchSizeY" || state == "DispatchSizeZ" || state == "GenerateMipMaps")
+				; // Compute shader pass states — accepted but ignored (no compute dispatch in fragment pipeline)
+			else if (state.compare(0, 11, "BlendEnable") == 0 && state.size() == 12 && state[11] >= '0' && state[11] <= '7')
+				info.blend_enable = value != 0; // Per-RT blend enable — apply to global blend state
+			else if ((state.compare(0, 8, "SrcBlend") == 0 || state.compare(0, 9, "DestBlend") == 0 ||
+			          state.compare(0, 7, "BlendOp") == 0) && state.back() >= '0' && state.back() <= '7')
+				; // Per-RT blend states — accepted but only RT0 semantics apply in our pipeline
 			else
 				parse_success = false,
 				error(location, 3004, "unrecognized pass state '" + state + '\'');
@@ -3012,14 +3053,15 @@ bool reshadefx::parser::parse_technique_pass(pass_info &info)
 
 	if (parse_success)
 	{
-		if (info.vs_entry_point.empty() || info.ps_entry_point.empty())
+		if (info.vs_entry_point.empty() && info.ps_entry_point.empty())
 		{
 			parse_success = false;
-
-			if (info.vs_entry_point.empty())
-				error(pass_location, 3012, "pass is missing 'VertexShader' property");
-			if (info.ps_entry_point.empty())
-				error(pass_location, 3012,  "pass is missing 'PixelShader' property");
+			error(pass_location, 3012, "pass is missing 'VertexShader' or 'PixelShader' property");
+		}
+		else if (info.vs_entry_point.empty() || info.ps_entry_point.empty())
+		{
+			// Compute-only pass or pass missing one shader — skip VS/PS signature validation
+			// but still register the pass for compilation purposes
 		}
 		else
 		{

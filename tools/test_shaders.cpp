@@ -19,6 +19,9 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <queue>
+#include <set>
+#include <unordered_map>
 #include <signal.h>
 #include <setjmp.h>
 #include <string>
@@ -92,6 +95,24 @@ static void addStandardMacros(reshadefx::preprocessor& pp)
         "#define ddy_fine(x) ddy(x)\n"
         "#define ddx_coarse(x) ddx(x)\n"
         "#define ddy_coarse(x) ddy(x)\n"
+        "#define atomicAdd(d, v) (v)\n"
+        "#define atomicMax(d, v) (v)\n"
+        "#define atomicMin(d, v) (v)\n"
+        "#define atomicOr(d, v) (v)\n"
+        "#define atomicAnd(d, v) (v)\n"
+        "#define atomicXor(d, v) (v)\n"
+        "#define atomicExchange(d, v) (v)\n"
+        "#define atomicCompSwap(d, c, v) (v)\n"
+        "#define tex2Dstore(s, c, v) (0)\n"
+        "#define barrier() (0)\n"
+        "#define memoryBarrier() (0)\n"
+        "#define groupMemoryBarrier() (0)\n"
+        "#define DeviceMemoryBarrier() (0)\n"
+        "#define GroupMemoryBarrier() (0)\n"
+        "#define AllMemoryBarrier() (0)\n"
+        "#define DeviceMemoryBarrierWithGroupSync() (0)\n"
+        "#define GroupMemoryBarrierWithGroupSync() (0)\n"
+        "#define AllMemoryBarrierWithGroupSync() (0)\n"
     );
 }
 
@@ -249,11 +270,14 @@ static TestResult testShader(
             return result;
         }
 
+        // Save preprocessed output for depth check (parser takes ownership via move)
+        std::string ppOutput = preprocessor.output();
+
         reshadefx::parser parser;
         auto codegen = std::unique_ptr<reshadefx::codegen>(
             reshadefx::create_codegen_spirv(true, true, true, true));
 
-        if (!parser.parse(std::move(preprocessor.output()), codegen.get()))
+        if (!parser.parse(preprocessor.output(), codegen.get()))
         {
             result.success = false;
             result.errorMessage = "Parse errors: " + parser.errors();
@@ -265,22 +289,95 @@ static TestResult testShader(
         std::string parseErrors = parser.errors();
         if (!parseErrors.empty())
         {
-            // Warnings — still considered success
-            result.success = true;
+            // Warnings — still considered success, but continue to depth detection
             result.errorMessage = "Warnings: " + parseErrors;
-            s_jmpActive = 0;
-            return result;
         }
 
         reshadefx::module module;
         codegen->write_result(module);
 
-        for (const auto& tex : module.textures)
+        // Check if shader actually uses depth buffer at runtime.
+        // Verify via SPIR-V that any depth sampler is actually referenced
+        // in executable code (not just declared in a header).
         {
-            if (tex.semantic == "DEPTH")
+            std::string depthTexName;
+            for (const auto& tex : module.textures)
             {
-                result.usesDepth = true;
-                break;
+                if (tex.semantic == "DEPTH")
+                {
+                    depthTexName = tex.unique_name;
+                    break;
+                }
+            }
+
+            if (!depthTexName.empty())
+            {
+                // Check if entry points transitively use the depth sampler.
+                // Build per-function call graph + BFS from entry points.
+                auto isSamplerUsedInSpirv = [&](uint32_t samplerId) -> bool {
+                    const auto& code = module.spirv;
+                    if (code.size() < 5)
+                        return false;
+
+                    std::set<uint32_t> entryFuncIds;
+                    size_t i = 5;
+                    while (i < code.size())
+                    {
+                        uint32_t wc = code[i] >> 16;
+                        uint32_t op = code[i] & 0xFFFF;
+                        if (wc == 0) break;
+                        if (op == 15 && wc >= 3 && (i + 2) < code.size())
+                            entryFuncIds.insert(code[i + 2]);
+                        i += wc;
+                    }
+
+                    struct FuncInfo { bool loadsDepth = false; std::vector<uint32_t> callees; };
+                    std::unordered_map<uint32_t, FuncInfo> funcs;
+                    uint32_t curFunc = 0;
+                    i = 5;
+                    while (i < code.size())
+                    {
+                        uint32_t wc = code[i] >> 16;
+                        uint32_t op = code[i] & 0xFFFF;
+                        if (wc == 0) break;
+                        if (op == 54 && wc >= 3 && (i + 2) < code.size())
+                        { curFunc = code[i + 2]; funcs[curFunc]; }
+                        else if (op == 56)
+                            curFunc = 0;
+                        else if (curFunc != 0)
+                        {
+                            if (op == 61 && wc >= 4 && (i + 3) < code.size() && code[i + 3] == samplerId)
+                                funcs[curFunc].loadsDepth = true;
+                            if (op == 57 && wc >= 4 && (i + 3) < code.size())
+                                funcs[curFunc].callees.push_back(code[i + 3]);
+                        }
+                        i += wc;
+                    }
+
+                    std::queue<uint32_t> q;
+                    std::set<uint32_t> visited;
+                    for (uint32_t ep : entryFuncIds) { q.push(ep); visited.insert(ep); }
+                    while (!q.empty())
+                    {
+                        uint32_t fid = q.front(); q.pop();
+                        auto it = funcs.find(fid);
+                        if (it == funcs.end()) continue;
+                        if (it->second.loadsDepth) return true;
+                        for (uint32_t c : it->second.callees)
+                            if (visited.insert(c).second) q.push(c);
+                    }
+                    return false;
+                };
+
+                for (const auto& samp : module.samplers)
+                {
+                    if (samp.texture_name != depthTexName)
+                        continue;
+                    if (!isSamplerUsedInSpirv(samp.id))
+                        continue;
+                    result.usesDepth = true;
+                    break;
+                }
             }
         }
 
@@ -385,7 +482,12 @@ int main(int argc, char* argv[])
         allFiles.insert(allFiles.end(), files.begin(), files.end());
     }
 
-    // Deduplicate (in case overlapping directories)
+    // Deduplicate by canonical path (resolves symlinks, e.g. /etc/... → /nix/store/...)
+    for (auto& f : allFiles)
+    {
+        try { f = fs::canonical(f); }
+        catch (...) {}
+    }
     std::sort(allFiles.begin(), allFiles.end());
     allFiles.erase(std::unique(allFiles.begin(), allFiles.end()), allFiles.end());
 

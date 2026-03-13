@@ -29,6 +29,11 @@ namespace vkBasalt
         if (!pEffectRegistry)
             return;
 
+        // Auto-start shader test when safe anti-cheat is on — pre-compiles all
+        // shaders so depth detection is instant instead of lagging per-effect
+        if (profileSafeAntiCheat && !shaderTestComplete && !shaderTestRunning)
+            startShaderTest();
+
         // Get a mutable copy of selected effects
         std::vector<std::string> selectedEffects = pEffectRegistry->getSelectedEffects();
 
@@ -70,6 +75,15 @@ namespace vkBasalt
             ImGui::Text("Insert Effects at position %d (max %zu)", insertPosition, maxEffectsLimit);
         else
             ImGui::Text("Add Effects (max %zu)", maxEffectsLimit);
+        // Show shader pre-compilation progress when safe anti-cheat auto-triggered it
+        if (shaderTestRunning && profileSafeAntiCheat)
+        {
+            float progress = shaderTestQueue.empty() ? 1.0f :
+                static_cast<float>(shaderTestCurrentIndex) / static_cast<float>(shaderTestQueue.size());
+            ImGui::ProgressBar(progress, ImVec2(-1, 0),
+                ("Checking shaders " + std::to_string(shaderTestCurrentIndex) + "/" +
+                 std::to_string(shaderTestQueue.size())).c_str());
+        }
         ImGui::Separator();
 
         size_t currentCount = selectedEffects.size();
@@ -102,26 +116,31 @@ namespace vkBasalt
             return effectType + ".99";
         };
 
-        // Check if an effect uses depth (lazy — checks cache first, compiles if needed)
+        // Check if an effect uses depth — only relevant when safe anti-cheat is on
         auto isDepthEffect = [&](const std::string& effectType) -> bool {
+            // No need to check if safe anti-cheat is off
+            if (!profileSafeAntiCheat)
+                return false;
+
             // Built-in effects never use depth
             static const std::set<std::string> safeBuiltins = {"cas", "dls", "fxaa", "smaa", "deband", "lut"};
             if (safeBuiltins.count(effectType))
                 return false;
 
-            // Check cached results from shader test
+            // Check cached results from shader test or previous lazy checks
             if (depthShaders.count(effectType))
                 return true;
 
-            // If shader test has been run and this effect wasn't flagged, it's safe
-            if (shaderTestComplete)
+            // If already checked or shader test completed, it's safe
+            if (checkedShaders.count(effectType) || shaderTestComplete)
                 return false;
 
-            // Lazy check: compile shader to determine depth usage
+            // Lazy check: compile shader once to determine depth usage (cached in checkedShaders)
             auto it = state.effectPaths.find(effectType);
             if (it == state.effectPaths.end())
                 return false;
 
+            checkedShaders.insert(effectType);
             ShaderManagerConfig smConfig = ConfigSerializer::loadShaderManagerConfig();
             if (checkShaderUsesDepth(effectType, it->second, smConfig.discoveredShaderPaths))
             {

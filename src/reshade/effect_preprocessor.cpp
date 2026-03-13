@@ -413,6 +413,14 @@ void reshadefx::preprocessor::parse()
 			_output += '\n';
 			line.clear();
 			continue;
+		case tokenid::backslash:
+			if (peek(tokenid::end_of_line))
+			{
+				consume(); // Consume the end_of_line — line continues
+				continue;
+			}
+			line += _current_token_raw_data;
+			break;
 		case tokenid::identifier:
 			if (evaluate_identifier_as_macro())
 				continue;

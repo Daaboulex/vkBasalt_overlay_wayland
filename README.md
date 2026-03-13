@@ -35,6 +35,8 @@ Upstream vkBasalt requires editing config files and restarting. This fork adds:
 - **Debug window** — effect state, log viewer, error display
 - **Auto-apply** — changes apply after configurable delay
 - **Up to 200 effects** with VRAM estimates
+- **Safe Anti-Cheat mode** — per-profile toggle that blocks depth-using shaders and disables depth capture, keeping safe shaders like Vibrance usable
+- **Shader test tool** — batch-tests all `.fx` shaders for compilation errors and depth usage
 - **Graceful error handling** — failed effects show errors instead of crashing
 
 ### This Wayland Fork Adds
@@ -73,6 +75,15 @@ The diagnostics tab auto-detects your GPU vendor via PCI vendor ID and reads sta
 ### Depth Buffer
 
 The layer intercepts `vkCreateImage` to detect depth images and adds `VK_IMAGE_USAGE_SAMPLED_BIT` so shaders can sample them. ReShade effects with `semantic = "DEPTH"` textures receive the actual depth buffer, and the `bufready_depth` uniform correctly reports availability.
+
+### Safe Anti-Cheat Mode
+
+Per-profile toggle (`safeAntiCheat = true`) that:
+- Forces `depthCapture = off` — no depth buffer binding
+- Blocks shaders that use depth at runtime (hidden in Add Effects, shows tooltip explaining why)
+- Auto-tests all shaders on first Add Effects open (one per frame, progress bar shown)
+
+**Depth detection** uses SPIR-V call graph analysis: builds a per-function call graph from the compiled shader bytecode, then BFS from entry points to check if any reachable function loads the depth sampler. This correctly distinguishes shaders that merely *include* depth declarations (via `ReShade.fxh`) from those that actually *use* depth at runtime. Zero false positives, zero false negatives.
 
 ### ReShade Shader Support
 

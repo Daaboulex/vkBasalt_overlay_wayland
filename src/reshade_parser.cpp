@@ -3,7 +3,9 @@
 #include <climits>
 #include <algorithm>
 #include <filesystem>
+#include <queue>
 #include <set>
+#include <unordered_map>
 #include <signal.h>
 #include <setjmp.h>
 
@@ -104,6 +106,28 @@ namespace vkBasalt
                 "#define ddy_fine(x) ddy(x)\n"
                 "#define ddx_coarse(x) ddx(x)\n"
                 "#define ddy_coarse(x) ddy(x)\n"
+
+                // Atomic operation stubs — no-op for fragment pipeline (compute shader feature)
+                "#define atomicAdd(d, v) (v)\n"
+                "#define atomicMax(d, v) (v)\n"
+                "#define atomicMin(d, v) (v)\n"
+                "#define atomicOr(d, v) (v)\n"
+                "#define atomicAnd(d, v) (v)\n"
+                "#define atomicXor(d, v) (v)\n"
+                "#define atomicExchange(d, v) (v)\n"
+                "#define atomicCompSwap(d, c, v) (v)\n"
+
+                // Compute shader stubs — expand to valid no-op expressions for fragment-only pipeline
+                "#define tex2Dstore(s, c, v) (0)\n"
+                "#define barrier() (0)\n"
+                "#define memoryBarrier() (0)\n"
+                "#define groupMemoryBarrier() (0)\n"
+                "#define DeviceMemoryBarrier() (0)\n"
+                "#define GroupMemoryBarrier() (0)\n"
+                "#define AllMemoryBarrier() (0)\n"
+                "#define DeviceMemoryBarrierWithGroupSync() (0)\n"
+                "#define GroupMemoryBarrierWithGroupSync() (0)\n"
+                "#define AllMemoryBarrierWithGroupSync() (0)\n"
             );
         }
 
@@ -652,12 +676,15 @@ namespace vkBasalt
                 return result;
             }
 
+            // Save preprocessed source for depth check (parser takes ownership via move)
+            std::string ppSource = preprocessor.output();
+
             // Try to parse the shader
             reshadefx::parser parser;
             auto codegen = std::unique_ptr<reshadefx::codegen>(
                 reshadefx::create_codegen_spirv(true, true, true, true));
 
-            if (!parser.parse(std::move(preprocessor.output()), codegen.get()))
+            if (!parser.parse(preprocessor.output(), codegen.get()))
             {
                 result.success = false;
                 result.errorMessage = "Parse errors: " + parser.errors();
@@ -667,24 +694,138 @@ namespace vkBasalt
             // Check for parse warnings/errors
             std::string parseErrors = parser.errors();
             if (!parseErrors.empty())
-            {
-                // Some shaders have warnings but still work
-                result.success = true;
                 result.errorMessage = "Warnings: " + parseErrors;
-                return result;
-            }
 
             // Try to generate code
             reshadefx::module module;
             codegen->write_result(module);
 
-            // Check if shader uses depth buffer
-            for (const auto& tex : module.textures)
+            // Check if shader actually uses the depth buffer at runtime.
+            // ReShade.fxh always declares a DEPTH texture + "DepthBuffer" sampler +
+            // GetLinearizedDepth function, but most shaders never call them.
+            // Libraries like qUINT_common.fxh also declare depth samplers that
+            // may go unused (e.g. qUINT_bloom includes the header but never uses depth).
+            //
+            // Strategy: find depth samplers, then verify they're actually used
+            // in the compiled SPIR-V code (not just declared). A sampler that is
+            // declared but never loaded/sampled in any entry point is dead code.
             {
-                if (tex.semantic == "DEPTH")
+                std::string depthTexName;
+                for (const auto& tex : module.textures)
                 {
-                    result.usesDepth = true;
-                    break;
+                    if (tex.semantic == "DEPTH")
+                    {
+                        depthTexName = tex.unique_name;
+                        break;
+                    }
+                }
+
+                if (!depthTexName.empty())
+                {
+                    // Check if any entry point transitively uses the depth sampler.
+                    //
+                    // ReShade.fxh/qUINT_common.fxh declare depth functions that
+                    // compile into the SPIR-V even when unreachable from entry
+                    // points. A raw OpLoad scan would produce false positives.
+                    //
+                    // Algorithm: build a per-function call graph from the SPIR-V,
+                    // then BFS from entry points to check reachability.
+                    auto isSamplerUsedInSpirv = [&](uint32_t samplerId) -> bool {
+                        const auto& code = module.spirv;
+                        if (code.size() < 5)
+                            return false;
+
+                        // Pass 1: collect entry point function IDs
+                        std::set<uint32_t> entryFuncIds;
+                        size_t i = 5;  // Skip SPIR-V header
+                        while (i < code.size())
+                        {
+                            uint32_t wc = code[i] >> 16;
+                            uint32_t op = code[i] & 0xFFFF;
+                            if (wc == 0)
+                                break;
+                            // OpEntryPoint: [wc|15, execModel, funcId, name..., interface...]
+                            if (op == 15 && wc >= 3 && (i + 2) < code.size())
+                                entryFuncIds.insert(code[i + 2]);
+                            i += wc;
+                        }
+
+                        // Pass 2: scan function bodies for depth sampler loads and call edges
+                        struct FuncInfo
+                        {
+                            bool loadsDepthSampler = false;
+                            std::vector<uint32_t> callees;
+                        };
+                        std::unordered_map<uint32_t, FuncInfo> funcs;
+                        uint32_t currentFunc = 0;
+                        i = 5;
+                        while (i < code.size())
+                        {
+                            uint32_t wc = code[i] >> 16;
+                            uint32_t op = code[i] & 0xFFFF;
+                            if (wc == 0)
+                                break;
+                            // OpFunction: [wc|54, resultType, funcId, control, funcType]
+                            if (op == 54 && wc >= 3 && (i + 2) < code.size())
+                            {
+                                currentFunc = code[i + 2];
+                                funcs[currentFunc];
+                            }
+                            // OpFunctionEnd: [wc|56]
+                            else if (op == 56)
+                                currentFunc = 0;
+                            else if (currentFunc != 0)
+                            {
+                                // OpLoad: [wc|61, resultType, resultId, pointer]
+                                if (op == 61 && wc >= 4 && (i + 3) < code.size())
+                                {
+                                    if (code[i + 3] == samplerId)
+                                        funcs[currentFunc].loadsDepthSampler = true;
+                                }
+                                // OpFunctionCall: [wc|57, resultType, resultId, funcId, args...]
+                                if (op == 57 && wc >= 4 && (i + 3) < code.size())
+                                    funcs[currentFunc].callees.push_back(code[i + 3]);
+                            }
+                            i += wc;
+                        }
+
+                        // BFS from entry points through call graph
+                        std::queue<uint32_t> worklist;
+                        std::set<uint32_t> visited;
+                        for (uint32_t ep : entryFuncIds)
+                        {
+                            worklist.push(ep);
+                            visited.insert(ep);
+                        }
+                        while (!worklist.empty())
+                        {
+                            uint32_t fid = worklist.front();
+                            worklist.pop();
+                            auto it = funcs.find(fid);
+                            if (it == funcs.end())
+                                continue;
+                            if (it->second.loadsDepthSampler)
+                                return true;
+                            for (uint32_t callee : it->second.callees)
+                            {
+                                if (visited.insert(callee).second)
+                                    worklist.push(callee);
+                            }
+                        }
+                        return false;
+                    };
+
+                    bool depthUsed = false;
+                    for (const auto& samp : module.samplers)
+                    {
+                        if (samp.texture_name != depthTexName)
+                            continue;
+                        if (!isSamplerUsedInSpirv(samp.id))
+                            continue;  // Declared but never used — dead code
+                        depthUsed = true;
+                        break;
+                    }
+                    result.usesDepth = depthUsed;
                 }
             }
 

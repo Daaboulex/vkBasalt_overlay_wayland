@@ -37,6 +37,7 @@ namespace vkBasalt
         bool getAutoApply() const { return settings.autoApply; }
         int getAutoApplyDelay() const { return settings.autoApplyDelay; }
         bool getShowDebugWindow() const { return settings.showDebugWindow; }
+        bool getSafeAntiCheat() const { return safeAntiCheat; }
 
         // Setters (update in-memory state, call save() to persist)
         void setMaxEffects(int value) { settings.maxEffects = value; }
@@ -49,6 +50,7 @@ namespace vkBasalt
         void setAutoApply(bool value) { settings.autoApply = value; }
         void setAutoApplyDelay(int value) { settings.autoApplyDelay = value; }
         void setShowDebugWindow(bool value) { settings.showDebugWindow = value; }
+        void setSafeAntiCheat(bool value) { safeAntiCheat = value; }
 
         // Get raw settings struct (for bulk operations)
         const VkBasaltSettings& getSettings() const { return settings; }
@@ -56,6 +58,7 @@ namespace vkBasalt
     private:
         VkBasaltSettings settings;
         bool initialized = false;
+        bool safeAntiCheat = false; // Runtime flag: layer hiding active
     };
 
     // Global settings manager instance (like effectRegistry)

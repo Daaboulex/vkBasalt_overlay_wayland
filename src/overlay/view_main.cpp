@@ -100,6 +100,7 @@ namespace vkBasalt
                             // Load per-profile settings for the new profile
                             ProfileSettings ps = ConfigSerializer::loadProfileSettings(activeProfilePath);
                             profileSafeAntiCheat = ps.safeAntiCheat;
+                            settingsManager.setSafeAntiCheat(profileSafeAntiCheat);
                             if (profileSafeAntiCheat)
                             {
                                 settingsManager.setDepthCapture(false);
@@ -183,6 +184,7 @@ namespace vkBasalt
             // Safe Anti-Cheat toggle (per-profile)
             if (ImGui::Checkbox("Safe Anti-Cheat", &profileSafeAntiCheat))
             {
+                settingsManager.setSafeAntiCheat(profileSafeAntiCheat);
                 if (profileSafeAntiCheat)
                 {
                     settingsManager.setDepthCapture(false);
@@ -198,14 +200,15 @@ namespace vkBasalt
                 ImGui::Text("Force-disable depth buffer capture for this profile.");
                 ImGui::Spacing();
                 ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "When enabled:");
+                ImGui::BulletText("Layer hidden from Vulkan enumeration queries");
                 ImGui::BulletText("Depth buffer access is disabled (no wallhack capability)");
                 ImGui::BulletText("Only color post-processing effects work (sharpening, color grading, etc.)");
                 ImGui::BulletText("Depth-using effects are auto-disabled and hidden from Add Effects");
-                ImGui::BulletText("Effects that need depth (SSAO, DoF, fog) will not function");
                 ImGui::Spacing();
                 ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f),
-                    "vkBasalt is a standard Vulkan layer — same as NVIDIA Freestyle or AMD RIS.\n"
-                    "With depth capture off, only pixel colors are modified. Completely non-intrusive.");
+                    "The layer becomes invisible to the application — it cannot detect\n"
+                    "vkBasalt via vkEnumerateInstanceLayerProperties or similar queries.\n"
+                    "Only pixel colors are modified. Completely non-intrusive.");
                 ImGui::EndTooltip();
             }
         }

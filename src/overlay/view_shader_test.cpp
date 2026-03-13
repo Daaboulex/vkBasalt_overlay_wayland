@@ -14,6 +14,103 @@
 
 namespace vkBasalt
 {
+    void ImGuiOverlay::startShaderTest()
+    {
+        if (shaderTestRunning || shaderTestComplete)
+            return;
+
+        // Ensure shader manager paths are loaded
+        if (!shaderMgrInitialized)
+        {
+            ShaderManagerConfig config = ConfigSerializer::loadShaderManagerConfig();
+            shaderMgrParentDirs = config.parentDirectories;
+            shaderMgrShaderPaths = config.discoveredShaderPaths;
+            shaderMgrTexturePaths = config.discoveredTexturePaths;
+            shaderMgrInitialized = true;
+        }
+
+        // Build test queue from all .fx files in discovered shader paths
+        shaderTestQueue.clear();
+        shaderTestResults.clear();
+        shaderTestCurrentIndex = 0;
+        shaderTestComplete = false;
+        shaderTestDuplicateCount = 0;
+
+        // Cache include paths once — avoids re-reading shader_manager.conf per shader
+        ShaderManagerConfig smConfig = ConfigSerializer::loadShaderManagerConfig();
+        shaderTestIncludePaths = smConfig.discoveredShaderPaths;
+
+        std::set<std::string> seenNames;
+        for (const auto& shaderPath : shaderMgrShaderPaths)
+        {
+            try
+            {
+                for (const auto& entry : std::filesystem::directory_iterator(shaderPath))
+                {
+                    if (!entry.is_regular_file())
+                        continue;
+                    std::string ext = entry.path().extension().string();
+                    if (ext != ".fx" && ext != ".FX")
+                        continue;
+
+                    std::string effectName = entry.path().stem().string();
+                    // Skip duplicates (first occurrence wins)
+                    if (seenNames.count(effectName))
+                    {
+                        shaderTestDuplicateCount++;
+                        continue;
+                    }
+                    seenNames.insert(effectName);
+                    shaderTestQueue.emplace_back(effectName, entry.path().string());
+                }
+            }
+            catch (const std::filesystem::filesystem_error&)
+            {
+                // Skip inaccessible directories
+            }
+        }
+
+        if (!shaderTestQueue.empty())
+        {
+            shaderTestRunning = true;
+            Logger::info("Shader test auto-started: " + std::to_string(shaderTestQueue.size()) + " shaders");
+        }
+    }
+
+    void ImGuiOverlay::processShaderTest()
+    {
+        if (!shaderTestRunning)
+            return;
+
+        if (shaderTestCurrentIndex < shaderTestQueue.size())
+        {
+            const auto& [name, path] = shaderTestQueue[shaderTestCurrentIndex];
+            ShaderTestResult result = testShaderCompilation(name, path, shaderTestIncludePaths);
+            shaderTestResults.emplace_back(result.effectName, result.filePath,
+                result.success, result.errorMessage);
+            if (result.usesDepth)
+                depthShaders.insert(result.effectName);
+            shaderTestCurrentIndex++;
+
+            // Reclaim fragmented heap memory every 25 shaders to prevent
+            // OOM from accumulating freed-but-unreturned allocations
+#ifdef __linux__
+            if (shaderTestCurrentIndex % 25 == 0)
+                malloc_trim(0);
+#endif
+        }
+        else
+        {
+            shaderTestRunning = false;
+            shaderTestComplete = true;
+#ifdef __linux__
+            malloc_trim(0);  // Final cleanup after all tests
+#endif
+            Logger::info("Shader test complete: tested " +
+                std::to_string(shaderTestResults.size()) + " shaders");
+        }
+    }
+
     void ImGuiOverlay::renderShaderTestSection()
     {
         // Test All Shaders button
@@ -26,84 +123,11 @@ namespace vkBasalt
             ImGui::ProgressBar(progress, ImVec2(-1, 0),
                 ("Testing " + std::to_string(shaderTestCurrentIndex) + "/" +
                  std::to_string(shaderTestQueue.size())).c_str());
-
-            // Process one shader per frame to avoid blocking
-            if (shaderTestCurrentIndex < shaderTestQueue.size())
-            {
-                const auto& [name, path] = shaderTestQueue[shaderTestCurrentIndex];
-                ShaderTestResult result = testShaderCompilation(name, path, shaderTestIncludePaths);
-                shaderTestResults.emplace_back(result.effectName, result.filePath,
-                    result.success, result.errorMessage);
-                if (result.usesDepth)
-                    depthShaders.insert(result.effectName);
-                shaderTestCurrentIndex++;
-
-                // Reclaim fragmented heap memory every 25 shaders to prevent
-                // OOM from accumulating freed-but-unreturned allocations
-#ifdef __linux__
-                if (shaderTestCurrentIndex % 25 == 0)
-                    malloc_trim(0);
-#endif
-            }
-            else
-            {
-                shaderTestRunning = false;
-                shaderTestComplete = true;
-#ifdef __linux__
-                malloc_trim(0);  // Final cleanup after all tests
-#endif
-                Logger::info("Shader test complete: tested " +
-                    std::to_string(shaderTestResults.size()) + " shaders");
-            }
         }
         else
         {
             if (ImGui::Button("Test All Shaders"))
-            {
-                // Build test queue from all .fx files in discovered shader paths
-                shaderTestQueue.clear();
-                shaderTestResults.clear();
-                shaderTestCurrentIndex = 0;
-                shaderTestComplete = false;
-                shaderTestDuplicateCount = 0;
-
-                // Cache include paths once — avoids re-reading shader_manager.conf per shader
-                ShaderManagerConfig smConfig = ConfigSerializer::loadShaderManagerConfig();
-                shaderTestIncludePaths = smConfig.discoveredShaderPaths;
-
-                std::set<std::string> seenNames;
-                for (const auto& shaderPath : shaderMgrShaderPaths)
-                {
-                    try
-                    {
-                        for (const auto& entry : std::filesystem::directory_iterator(shaderPath))
-                        {
-                            if (!entry.is_regular_file())
-                                continue;
-                            std::string ext = entry.path().extension().string();
-                            if (ext != ".fx" && ext != ".FX")
-                                continue;
-
-                            std::string effectName = entry.path().stem().string();
-                            // Skip duplicates (first occurrence wins)
-                            if (seenNames.count(effectName))
-                            {
-                                shaderTestDuplicateCount++;
-                                continue;
-                            }
-                            seenNames.insert(effectName);
-                            shaderTestQueue.emplace_back(effectName, entry.path().string());
-                        }
-                    }
-                    catch (const std::filesystem::filesystem_error&)
-                    {
-                        // Skip inaccessible directories
-                    }
-                }
-
-                if (!shaderTestQueue.empty())
-                    shaderTestRunning = true;
-            }
+                startShaderTest();
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Test all .fx shaders for compilation errors");
         }
