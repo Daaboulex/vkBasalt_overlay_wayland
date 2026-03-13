@@ -995,10 +995,20 @@ bool reshadefx::preprocessor::evaluate_expression()
 				BINARY_OPERATION(-);
 				break;
 			case op_modulo:
-				BINARY_OPERATION(%);
+				if (stack_index < 2)
+					return error(_token.location, "invalid expression"), 0;
+				if (stack[stack_index - 1] == 0)
+					return error(_token.location, "division by zero in preprocessor expression"), 0;
+				stack[stack_index - 2] = stack[stack_index - 2] % stack[stack_index - 1];
+				stack_index--;
 				break;
 			case op_divide:
-				BINARY_OPERATION(/);
+				if (stack_index < 2)
+					return error(_token.location, "invalid expression"), 0;
+				if (stack[stack_index - 1] == 0)
+					return error(_token.location, "division by zero in preprocessor expression"), 0;
+				stack[stack_index - 2] = stack[stack_index - 2] / stack[stack_index - 1];
+				stack_index--;
 				break;
 			case op_multiply:
 				BINARY_OPERATION(*);

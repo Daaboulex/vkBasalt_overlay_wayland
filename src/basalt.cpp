@@ -15,6 +15,7 @@
 #include <sys/stat.h>
 #include <signal.h>
 #include <setjmp.h>
+#include <execinfo.h>
 
 #include "util.hpp"
 #include "keyboard_input.hpp"
@@ -134,7 +135,14 @@ namespace vkBasalt
             caughtSignal = sig;
             siglongjmp(signalJmpBuf, 1);
         }
-        // If not in a protected region, restore default handler and re-raise
+        // Print backtrace before crashing so we can find the source
+        const char* sigName = (sig == SIGFPE) ? "SIGFPE" : (sig == SIGABRT) ? "SIGABRT" : "SIGNAL";
+        fprintf(stderr, "\nvkBasalt: caught %s — backtrace:\n", sigName);
+        void* frames[64];
+        int count = backtrace(frames, 64);
+        backtrace_symbols_fd(frames, count, 2);  // fd 2 = stderr
+        fprintf(stderr, "\n");
+        // Restore default handler and re-raise
         signal(sig, SIG_DFL);
         raise(sig);
     }
