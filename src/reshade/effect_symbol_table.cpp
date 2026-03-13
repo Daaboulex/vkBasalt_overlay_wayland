@@ -55,7 +55,13 @@ enum {
 #define float3 { reshadefx::type::t_float, 3, 1 }
 #define float4 { reshadefx::type::t_float, 4, 1 }
 #define float2x2 { reshadefx::type::t_float, 2, 2 }
+#define float2x3 { reshadefx::type::t_float, 2, 3 }
+#define float2x4 { reshadefx::type::t_float, 2, 4 }
+#define float3x2 { reshadefx::type::t_float, 3, 2 }
 #define float3x3 { reshadefx::type::t_float, 3, 3 }
+#define float3x4 { reshadefx::type::t_float, 3, 4 }
+#define float4x2 { reshadefx::type::t_float, 4, 2 }
+#define float4x3 { reshadefx::type::t_float, 4, 3 }
 #define float4x4 { reshadefx::type::t_float, 4, 4 }
 #define out_float { reshadefx::type::t_float, 1, 1, reshadefx::type::q_out }
 #define out_float2 { reshadefx::type::t_float, 2, 1, reshadefx::type::q_out }
@@ -87,7 +93,13 @@ static const intrinsic s_intrinsics[] = {
 #undef float3
 #undef float4
 #undef float2x2
+#undef float2x3
+#undef float2x4
+#undef float3x2
 #undef float3x3
+#undef float3x4
+#undef float4x2
+#undef float4x3
 #undef float4x4
 #undef out_float
 #undef out_float2

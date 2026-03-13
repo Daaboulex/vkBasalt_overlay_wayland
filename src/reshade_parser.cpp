@@ -84,12 +84,27 @@ namespace vkBasalt
             pp.add_macro_definition("BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH");
 
             // Component-specific texture gather shorthands (missing from this reshadefx version)
-            // tex2DgatherR/G/B/A(s, coords) → tex2Dgather(s, coords, component)
-            using macro = reshadefx::preprocessor::macro;
-            pp.add_macro_definition("tex2DgatherR", macro{"tex2Dgather(s, coords, 0)", {"s", "coords"}, false, true});
-            pp.add_macro_definition("tex2DgatherG", macro{"tex2Dgather(s, coords, 1)", {"s", "coords"}, false, true});
-            pp.add_macro_definition("tex2DgatherB", macro{"tex2Dgather(s, coords, 2)", {"s", "coords"}, false, true});
-            pp.add_macro_definition("tex2DgatherA", macro{"tex2Dgather(s, coords, 3)", {"s", "coords"}, false, true});
+            // Must use append_string — raw macro structs lack parameter substitution markers
+            pp.append_string(
+                "#define tex2DgatherR(s, coords) tex2Dgather(s, coords, 0)\n"
+                "#define tex2DgatherG(s, coords) tex2Dgather(s, coords, 1)\n"
+                "#define tex2DgatherB(s, coords) tex2Dgather(s, coords, 2)\n"
+                "#define tex2DgatherA(s, coords) tex2Dgather(s, coords, 3)\n"
+
+                // Non-square matrix types — map to matrix<> template syntax
+                "#define float2x3 matrix<float, 2, 3>\n"
+                "#define float2x4 matrix<float, 2, 4>\n"
+                "#define float3x2 matrix<float, 3, 2>\n"
+                "#define float3x4 matrix<float, 3, 4>\n"
+                "#define float4x2 matrix<float, 4, 2>\n"
+                "#define float4x3 matrix<float, 4, 3>\n"
+
+                // High-precision derivative variants — map to standard derivatives
+                "#define ddx_fine(x) ddx(x)\n"
+                "#define ddy_fine(x) ddy(x)\n"
+                "#define ddx_coarse(x) ddx(x)\n"
+                "#define ddy_coarse(x) ddy(x)\n"
+            );
         }
 
         void setupPreprocessor(reshadefx::preprocessor& pp)
@@ -628,9 +643,9 @@ namespace vkBasalt
                 return result;
             }
 
-            // Check for preprocessor errors
+            // Check for preprocessor errors (skip warnings — e.g. unknown pragma)
             std::string ppErrors = preprocessor.errors();
-            if (!ppErrors.empty())
+            if (!ppErrors.empty() && ppErrors.find("preprocessor error:") != std::string::npos)
             {
                 result.success = false;
                 result.errorMessage = "Preprocessor errors: " + ppErrors;

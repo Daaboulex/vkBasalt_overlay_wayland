@@ -2579,14 +2579,16 @@ bool reshadefx::parser::parse_variable(type type, std::string name, bool global)
 
 					static const std::unordered_map<std::string, uint32_t> s_values = {
 						{ "NONE", 0 }, { "POINT", 0 },
-						{ "LINEAR", 1 },
+						{ "LINEAR", 1 }, { "ANISOTROPIC", 1 },
 						{ "WRAP", uint32_t(texture_address_mode::wrap) }, { "REPEAT", uint32_t(texture_address_mode::wrap) },
 						{ "MIRROR", uint32_t(texture_address_mode::mirror) },
 						{ "CLAMP", uint32_t(texture_address_mode::clamp) },
 						{ "BORDER", uint32_t(texture_address_mode::border) },
 						{ "R8", uint32_t(texture_format::r8) },
+						{ "R16", uint32_t(texture_format::r16) },
 						{ "R16F", uint32_t(texture_format::r16f) },
 						{ "R32F", uint32_t(texture_format::r32f) },
+						{ "R32I", uint32_t(texture_format::r32i) },
 						{ "RG8", uint32_t(texture_format::rg8) }, { "R8G8", uint32_t(texture_format::rg8) },
 						{ "RG16", uint32_t(texture_format::rg16) }, { "R16G16", uint32_t(texture_format::rg16) },
 						{ "RG16F", uint32_t(texture_format::rg16f) }, { "R16G16F", uint32_t(texture_format::rg16f) },

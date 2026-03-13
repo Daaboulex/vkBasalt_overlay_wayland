@@ -1481,8 +1481,10 @@ namespace vkBasalt
         switch (texFormat)
         {
             case reshadefx::texture_format::r8: return VK_FORMAT_R8_UNORM;
+            case reshadefx::texture_format::r16: return VK_FORMAT_R16_UNORM;
             case reshadefx::texture_format::r16f: return VK_FORMAT_R16_SFLOAT;
             case reshadefx::texture_format::r32f: return VK_FORMAT_R32_SFLOAT;
+            case reshadefx::texture_format::r32i: return VK_FORMAT_R32_SINT;
             case reshadefx::texture_format::rg8: return VK_FORMAT_R8G8_UNORM;
             case reshadefx::texture_format::rg16: return VK_FORMAT_R16G16_UNORM;
             case reshadefx::texture_format::rg16f: return VK_FORMAT_R16G16_SFLOAT;

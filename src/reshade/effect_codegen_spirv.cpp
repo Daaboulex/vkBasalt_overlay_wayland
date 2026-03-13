@@ -1157,17 +1157,39 @@ private:
 						spv_op = op.from.is_floating_point() ? spv::OpConvertFToU : spv::OpBitcast;
 						break;
 					case type::t_float:
-						assert(op.from.is_integral());
-						spv_op = op.from.is_signed() ? spv::OpConvertSToF : spv::OpConvertUToF;
+						if (op.from.is_floating_point())
+							spv_op = spv::OpNop; // No conversion needed
+						else if (op.from.is_boolean())
+							spv_op = spv::OpSelect;
+						else
+							spv_op = op.from.is_signed() ? spv::OpConvertSToF : spv::OpConvertUToF;
 						break;
 					default:
 						assert(false);
 						break;
 					}
 
-					result = add_instruction(spv_op, convert_type(op.to))
-						.add(result)
-						.result;
+					if (spv_op == spv::OpNop)
+					{
+						// No conversion needed (same base type)
+					}
+					else if (spv_op == spv::OpSelect)
+					{
+						// Bool to numeric: select 1.0/1 for true, 0.0/0 for false
+						const spv::Id one = emit_constant(op.to, 1);
+						const spv::Id zero = emit_constant(op.to, 0);
+						result = add_instruction(spv::OpSelect, convert_type(op.to))
+							.add(result)
+							.add(one)
+							.add(zero)
+							.result;
+					}
+					else
+					{
+						result = add_instruction(spv_op, convert_type(op.to))
+							.add(result)
+							.result;
+					}
 				}
 				break;
 			case expression::operation::op_member:
