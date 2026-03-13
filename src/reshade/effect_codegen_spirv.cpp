@@ -9,6 +9,12 @@
 #include <cstring> // memcmp
 #include <algorithm> // std::find_if, std::max
 #include <unordered_set>
+#include <stdexcept>
+
+// Override assert to throw instead of abort — lets callers catch compilation failures gracefully
+// Uses expression form (not do-while) to support `return assert(false), 0;` comma-operator pattern
+#undef assert
+#define assert(expr) ((expr) ? (void)0 : throw std::runtime_error("SPIR-V codegen assertion failed: " #expr " at " __FILE__ ":" + std::to_string(__LINE__)))
 
 // Use the C++ variant of the SPIR-V headers
 #include <spirv.hpp>

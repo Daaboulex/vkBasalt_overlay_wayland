@@ -9,6 +9,11 @@
 #include <cassert>
 #include <cstring> // memcpy, memset
 #include <algorithm> // std::min, std::max
+#include <stdexcept>
+
+// Override assert to throw instead of abort — lets callers catch compilation failures gracefully
+#undef assert
+#define assert(expr) ((expr) ? (void)0 : throw std::runtime_error("expression assertion failed: " #expr " at " __FILE__ ":" + std::to_string(__LINE__)))
 
 reshadefx::type reshadefx::type::merge(const type &lhs, const type &rhs)
 {
@@ -207,8 +212,7 @@ void reshadefx::expression::add_cast_operation(const reshadefx::type &cast_type)
 	}
 	else
 	{
-		if (type.is_array() || cast_type.is_array())
-			return;
+		assert(!type.is_array() && !cast_type.is_array());
 
 		chain.push_back({ operation::op_cast, type, cast_type });
 	}
@@ -217,8 +221,7 @@ void reshadefx::expression::add_cast_operation(const reshadefx::type &cast_type)
 }
 void reshadefx::expression::add_member_access(unsigned int index, const reshadefx::type &in_type)
 {
-	if (!type.is_struct())
-		return;
+	assert(type.is_struct());
 
 	chain.push_back({ operation::op_member, type, in_type, index });
 
@@ -228,9 +231,7 @@ void reshadefx::expression::add_member_access(unsigned int index, const reshadef
 }
 void reshadefx::expression::add_dynamic_index_access(uint32_t index_expression)
 {
-	// Graceful error instead of fatal assert — can trigger during rapid reload cycles
-	if (!type.is_numeric() || is_constant)
-		return;
+	assert(type.is_numeric() && !is_constant);
 
 	auto prev_type = type;
 
@@ -252,30 +253,26 @@ void reshadefx::expression::add_dynamic_index_access(uint32_t index_expression)
 }
 void reshadefx::expression::add_constant_index_access(unsigned int index)
 {
-	if (!type.is_numeric() || type.is_scalar())
-		return;
+	assert(type.is_numeric() && !type.is_scalar());
 
 	auto prev_type = type;
 
 	if (type.is_array())
 	{
-		if (type.array_length >= 0 && index >= static_cast<unsigned int>(type.array_length))
-			return;
+		assert(type.array_length < 0 || index < static_cast<unsigned int>(type.array_length));
 
 		type.array_length = 0;
 	}
 	else if (type.is_matrix())
 	{
-		if (index >= type.components())
-			return;
+		assert(index < type.components());
 
 		type.rows = type.cols;
 		type.cols = 1;
 	}
 	else if (type.is_vector())
 	{
-		if (index >= type.components())
-			return;
+		assert(index < type.components());
 
 		type.rows = 1;
 	}
@@ -303,8 +300,7 @@ void reshadefx::expression::add_constant_index_access(unsigned int index)
 }
 void reshadefx::expression::add_swizzle_access(const signed char swizzle[4], unsigned int length)
 {
-	if (!type.is_numeric() || type.is_array())
-		return;
+	assert(type.is_numeric() && !type.is_array());
 
 	const auto prev_type = type;
 
@@ -313,8 +309,7 @@ void reshadefx::expression::add_swizzle_access(const signed char swizzle[4], uns
 
 	if (is_constant)
 	{
-		if (!constant.array_data.empty())
-			return;
+		assert(constant.array_data.empty());
 
 		uint32_t data[16];
 		std::memcpy(data, &constant.as_uint[0], sizeof(data));

@@ -6,6 +6,11 @@
 #include "effect_symbol_table.hpp"
 #include <cassert>
 #include <algorithm> // std::upper_bound, std::sort
+#include <stdexcept>
+
+// Override assert to throw instead of abort — lets callers catch compilation failures gracefully
+#undef assert
+#define assert(expr) ((expr) ? (void)0 : throw std::runtime_error("symbol table assertion failed: " #expr " at " __FILE__ ":" + std::to_string(__LINE__)))
 
 #pragma region Import intrinsic functions
 

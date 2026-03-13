@@ -7,6 +7,11 @@
 #include "effect_preprocessor.hpp"
 #include <cassert>
 #include <algorithm>
+#include <stdexcept>
+
+// Override assert to throw instead of abort — lets callers catch compilation failures gracefully
+#undef assert
+#define assert(expr) ((expr) ? (void)0 : throw std::runtime_error("preprocessor assertion failed: " #expr " at " __FILE__ ":" + std::to_string(__LINE__)))
 
 #ifndef _WIN32
 	// On Linux systems the native path encoding is UTF-8 already, so no conversion necessary

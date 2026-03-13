@@ -9,6 +9,11 @@
 #include <cassert>
 #include <algorithm>
 #include <functional>
+#include <stdexcept>
+
+// Override assert to throw instead of abort — lets callers catch compilation failures gracefully
+#undef assert
+#define assert(expr) ((expr) ? (void)0 : throw std::runtime_error("parser assertion failed: " #expr " at " __FILE__ ":" + std::to_string(__LINE__)))
 
 struct on_scope_exit
 {
