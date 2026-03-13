@@ -96,6 +96,12 @@ namespace vkBasalt
                             pendingConfigPath = activeProfilePath;
                             applyRequested = true;
                             profileListStale = true;
+
+                            // Load per-profile settings for the new profile
+                            ProfileSettings ps = ConfigSerializer::loadProfileSettings(activeProfilePath);
+                            profileSafeAntiCheat = ps.safeAntiCheat;
+                            if (profileSafeAntiCheat)
+                                settingsManager.setDepthCapture(false);
                         }
                     }
                     if (selected)
@@ -168,6 +174,30 @@ namespace vkBasalt
                 if (ImGui::Button("Cancel"))
                     ImGui::CloseCurrentPopup();
                 ImGui::EndPopup();
+            }
+
+            // Safe Anti-Cheat toggle (per-profile)
+            if (ImGui::Checkbox("Safe Anti-Cheat", &profileSafeAntiCheat))
+            {
+                if (profileSafeAntiCheat)
+                    settingsManager.setDepthCapture(false);
+                profileDirty = true;
+                lastChangeTime = std::chrono::steady_clock::now();
+            }
+            if (ImGui::IsItemHovered())
+            {
+                ImGui::BeginTooltip();
+                ImGui::Text("Force-disable depth buffer capture for this profile.");
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "When enabled:");
+                ImGui::BulletText("Depth buffer access is disabled (no wallhack capability)");
+                ImGui::BulletText("Only color post-processing effects work (sharpening, color grading, etc.)");
+                ImGui::BulletText("Effects that need depth (SSAO, DoF, fog) will not function");
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f),
+                    "vkBasalt is a standard Vulkan layer — same as NVIDIA Freestyle or AMD RIS.\n"
+                    "With depth capture off, only pixel colors are modified. Completely non-intrusive.");
+                ImGui::EndTooltip();
             }
         }
         else

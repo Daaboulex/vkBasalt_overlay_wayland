@@ -32,6 +32,12 @@ namespace vkBasalt
         bool showDebugWindow = false;  // Show debug window with raw effect registry data
     };
 
+    // Per-profile settings (stored in per-game .conf files)
+    struct ProfileSettings
+    {
+        bool safeAntiCheat = false;  // Force-disable depth capture for anti-cheat safety
+    };
+
     // Shader Manager configuration (from shader_manager.conf)
     struct ShaderManagerConfig
     {
@@ -121,6 +127,9 @@ namespace vkBasalt
         static bool deleteProfile(const std::string& gameName,
                                   const std::string& profileName);
 
+        // Load per-profile settings from a config file
+        static ProfileSettings loadProfileSettings(const std::string& filePath);
+
         // Save directly to a profile path (bypasses config name lookup)
         static bool saveToPath(
             const std::string& filePath,
@@ -128,7 +137,8 @@ namespace vkBasalt
             const std::vector<std::string>& disabledEffects,
             const std::vector<ConfigParam>& params,
             const std::map<std::string, std::string>& effectPaths = {},
-            const std::vector<PreprocessorDefinition>& preprocessorDefs = {});
+            const std::vector<PreprocessorDefinition>& preprocessorDefs = {},
+            const ProfileSettings& profileSettings = {});
     };
 
 } // namespace vkBasalt

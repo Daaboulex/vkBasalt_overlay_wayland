@@ -332,7 +332,10 @@ namespace vkBasalt
         std::vector<PreprocessorDefinition> allDefs;
         collectSaveData(effects, disabledEffects, params, effectPaths, allDefs);
 
-        if (ConfigSerializer::saveToPath(activeProfilePath, effects, disabledEffects, params, effectPaths, allDefs))
+        ProfileSettings profileSettings;
+        profileSettings.safeAntiCheat = profileSafeAntiCheat;
+
+        if (ConfigSerializer::saveToPath(activeProfilePath, effects, disabledEffects, params, effectPaths, allDefs, profileSettings))
         {
             profileDirty = false;
             Logger::debug("Auto-saved profile: " + activeProfilePath);

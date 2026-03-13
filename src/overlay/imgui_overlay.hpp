@@ -74,6 +74,13 @@ namespace vkBasalt
             activeGameName = gameName;
             activeProfileName = profileName;
             activeProfilePath = profilePath;
+
+            // Load per-profile settings
+            if (!profilePath.empty())
+            {
+                ProfileSettings ps = ConfigSerializer::loadProfileSettings(profilePath);
+                profileSafeAntiCheat = ps.safeAntiCheat;
+            }
         }
 
         // Trigger debounced reload (for config switch)
@@ -190,6 +197,7 @@ namespace vkBasalt
         std::string activeProfileName;    // Active profile ("default", "performance", etc.)
         std::string activeProfilePath;    // Full path to active profile file
         bool profileDirty = false;        // True when changes need saving
+        bool profileSafeAntiCheat = false; // Per-profile: force-disable depth capture
 
         void autoSaveProfile();           // Save current state to active profile
         void collectSaveData(            // Shared helper for save operations

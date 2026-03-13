@@ -336,6 +336,17 @@ namespace vkBasalt
             pConfig = pBaseConfig;
         }
 
+        // Enforce per-profile safe anti-cheat: override global depthCapture
+        if (!activeProfilePath.empty())
+        {
+            ProfileSettings ps = ConfigSerializer::loadProfileSettings(activeProfilePath);
+            if (ps.safeAntiCheat)
+            {
+                settingsManager.setDepthCapture(false);
+                Logger::info("safeAntiCheat enabled — depth capture forced off");
+            }
+        }
+
         // Initialize effect registry with current config
         effectRegistry.initialize(pConfig.get());
     }
