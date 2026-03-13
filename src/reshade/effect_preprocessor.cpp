@@ -498,10 +498,23 @@ void reshadefx::preprocessor::parse_if()
 	level.pp_token = _token;
 	level.input_index = _current_input_index;
 
-	// Evaluate expression after updating 'pp_token', so that it points at the beginning # token
-	level.value = evaluate_expression();
-
 	const bool parent_skipping = !_if_stack.empty() && _if_stack.back().skipping;
+
+	// Only evaluate expression when parent is active — avoids errors from
+	// undefined macros in skipped blocks (e.g. division by zero)
+	if (parent_skipping)
+	{
+		level.value = false;
+		// Skip tokens until end of line without evaluating
+		// (don't consume end_of_line — caller expects it)
+		while (!peek(tokenid::end_of_line) && !peek(tokenid::end_of_file))
+			consume();
+	}
+	else
+	{
+		level.value = evaluate_expression();
+	}
+
 	level.skipping = parent_skipping || !level.value;
 
 	_if_stack.push_back(std::move(level));
@@ -565,7 +578,21 @@ void reshadefx::preprocessor::parse_elif()
 	level.input_index = _current_input_index;
 
 	const bool parent_skipping = _if_stack.size() > 1 && _if_stack[_if_stack.size() - 2].skipping;
-	const bool condition_result = evaluate_expression();
+
+	bool condition_result;
+	if (parent_skipping)
+	{
+		condition_result = false;
+		// Skip tokens until end of line without evaluating
+		// (don't consume end_of_line — caller expects it)
+		while (!peek(tokenid::end_of_line) && !peek(tokenid::end_of_file))
+			consume();
+	}
+	else
+	{
+		condition_result = evaluate_expression();
+	}
+
 	level.skipping = parent_skipping || level.value || !condition_result;
 
 	if (!level.value) level.value = condition_result;
