@@ -330,6 +330,9 @@ namespace vkBasalt
                     pEffectRegistry->removeEffect(removedName);
                     paramsDirty = true;
                     lastChangeTime = std::chrono::steady_clock::now();
+                    ImGui::EndPopup();
+                    ImGui::PopID();
+                    break;  // Iterator invalidated — exit loop safely
                 }
 
                 ImGui::EndPopup();
@@ -405,7 +408,7 @@ namespace vkBasalt
         }
 
         // Handle drag end and reorder
-        if (isDragging)
+        if (isDragging && dragSourceIndex >= 0 && dragSourceIndex < static_cast<int>(selectedEffects.size()))
         {
             // Show floating tooltip with dragged effect name
             ImGui::SetTooltip("Moving: %s", selectedEffects[dragSourceIndex].c_str());

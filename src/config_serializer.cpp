@@ -210,7 +210,10 @@ namespace vkBasalt
             trimWs(value);
 
             if (key == "maxEffects")
-                settings.maxEffects = std::stoi(value);
+            {
+                try { settings.maxEffects = std::stoi(value); }
+                catch (...) { Logger::err("invalid maxEffects value: " + value); }
+            }
             else if (key == "overlayBlockInput")
                 settings.overlayBlockInput = (value == "true" || value == "1");
             else if (key == "toggleKey")
@@ -226,7 +229,10 @@ namespace vkBasalt
             else if (key == "autoApply")
                 settings.autoApply = (value == "true" || value == "1");
             else if (key == "autoApplyDelay")
-                settings.autoApplyDelay = std::stoi(value);
+            {
+                try { settings.autoApplyDelay = std::stoi(value); }
+                catch (...) { Logger::err("invalid autoApplyDelay value: " + value); }
+            }
             else if (key == "showDebugWindow")
                 settings.showDebugWindow = (value == "true" || value == "1");
         }

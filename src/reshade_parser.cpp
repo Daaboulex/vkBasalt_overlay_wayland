@@ -69,7 +69,7 @@ namespace vkBasalt
             return items;
         }
 
-        void setupPreprocessor(reshadefx::preprocessor& pp)
+        void addStandardMacros(reshadefx::preprocessor& pp)
         {
             pp.add_macro_definition("__RESHADE__", std::to_string(INT_MAX));
             pp.add_macro_definition("__RESHADE_PERFORMANCE_MODE__", "1");
@@ -80,10 +80,24 @@ namespace vkBasalt
             pp.add_macro_definition("BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)");
             pp.add_macro_definition("BUFFER_COLOR_DEPTH", "8");
             pp.add_macro_definition("BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH");
+        }
+
+        void setupPreprocessor(reshadefx::preprocessor& pp)
+        {
+            addStandardMacros(pp);
 
             // Add all discovered shader paths from shader manager
             ShaderManagerConfig shaderMgrConfig = ConfigSerializer::loadShaderManagerConfig();
             for (const auto& path : shaderMgrConfig.discoveredShaderPaths)
+                pp.add_include_path(path);
+        }
+
+        // Overload with pre-cached include paths (avoids re-reading config from disk)
+        void setupPreprocessor(reshadefx::preprocessor& pp,
+                               const std::vector<std::string>& includePaths)
+        {
+            addStandardMacros(pp);
+            for (const auto& path : includePaths)
                 pp.add_include_path(path);
         }
 
@@ -329,6 +343,9 @@ namespace vkBasalt
     {
         std::vector<std::unique_ptr<EffectParam>> params;
 
+        try
+        {
+
         // Setup preprocessor
         reshadefx::preprocessor preprocessor;
         setupPreprocessor(preprocessor);
@@ -500,6 +517,16 @@ namespace vkBasalt
                 params.push_back(std::move(param));
         }
 
+        }
+        catch (const std::exception& e)
+        {
+            Logger::err("parseReshadeEffect exception for " + effectName + ": " + e.what());
+        }
+        catch (...)
+        {
+            Logger::err("parseReshadeEffect unknown exception for " + effectName);
+        }
+
         return params;
     }
 
@@ -507,15 +534,25 @@ namespace vkBasalt
         const std::string& effectName,
         const std::string& effectPath)
     {
+        // Convenience overload — loads include paths from shader_manager.conf
+        ShaderManagerConfig smConfig = ConfigSerializer::loadShaderManagerConfig();
+        return testShaderCompilation(effectName, effectPath, smConfig.discoveredShaderPaths);
+    }
+
+    ShaderTestResult testShaderCompilation(
+        const std::string& effectName,
+        const std::string& effectPath,
+        const std::vector<std::string>& includePaths)
+    {
         ShaderTestResult result;
         result.effectName = effectName;
         result.filePath = effectPath;
 
         try
         {
-            // Setup preprocessor with include paths
+            // Setup preprocessor with pre-cached include paths
             reshadefx::preprocessor preprocessor;
-            setupPreprocessor(preprocessor);
+            setupPreprocessor(preprocessor, includePaths);
 
             // Try to load and preprocess the file
             if (!preprocessor.append_file(effectPath))
@@ -615,43 +652,54 @@ namespace vkBasalt
     {
         std::vector<PreprocessorDefinition> defs;
 
-        // Setup preprocessor
-        reshadefx::preprocessor preprocessor;
-        setupPreprocessor(preprocessor);
-
-        if (!preprocessor.append_file(effectPath))
+        try
         {
-            Logger::err("extractPreprocessorDefinitions: failed to load shader: " + effectPath);
-            return defs;
+            // Setup preprocessor
+            reshadefx::preprocessor preprocessor;
+            setupPreprocessor(preprocessor);
+
+            if (!preprocessor.append_file(effectPath))
+            {
+                Logger::err("extractPreprocessorDefinitions: failed to load shader: " + effectPath);
+                return defs;
+            }
+
+            // Get all macros that were actually used in the shader
+            auto usedMacros = preprocessor.used_macro_definitions();
+
+            for (const auto& [name, value] : usedMacros)
+            {
+                // Skip built-in macros
+                if (builtInMacros.count(name))
+                    continue;
+
+                // Skip macros that start with underscore (internal/compiler)
+                if (!name.empty() && name[0] == '_')
+                    continue;
+
+                PreprocessorDefinition def;
+                def.name = name;
+                def.effectName = effectName;
+                def.defaultValue = value.empty() ? "1" : value;
+                def.value = def.defaultValue;
+                defs.push_back(def);
+            }
+
+            if (!defs.empty())
+            {
+                Logger::debug("extractPreprocessorDefinitions: found " + std::to_string(defs.size()) +
+                    " user macros in " + effectName);
+                for (const auto& def : defs)
+                    Logger::debug("  " + def.name + " = " + def.defaultValue);
+            }
         }
-
-        // Get all macros that were actually used in the shader
-        auto usedMacros = preprocessor.used_macro_definitions();
-
-        for (const auto& [name, value] : usedMacros)
+        catch (const std::exception& e)
         {
-            // Skip built-in macros
-            if (builtInMacros.count(name))
-                continue;
-
-            // Skip macros that start with underscore (internal/compiler)
-            if (!name.empty() && name[0] == '_')
-                continue;
-
-            PreprocessorDefinition def;
-            def.name = name;
-            def.effectName = effectName;
-            def.defaultValue = value.empty() ? "1" : value;
-            def.value = def.defaultValue;
-            defs.push_back(def);
+            Logger::err("extractPreprocessorDefinitions exception for " + effectName + ": " + e.what());
         }
-
-        if (!defs.empty())
+        catch (...)
         {
-            Logger::debug("extractPreprocessorDefinitions: found " + std::to_string(defs.size()) +
-                " user macros in " + effectName);
-            for (const auto& def : defs)
-                Logger::debug("  " + def.name + " = " + def.defaultValue);
+            Logger::err("extractPreprocessorDefinitions unknown exception for " + effectName);
         }
 
         return defs;

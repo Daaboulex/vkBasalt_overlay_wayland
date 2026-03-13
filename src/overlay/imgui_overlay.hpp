@@ -156,6 +156,7 @@ namespace vkBasalt
         size_t shaderTestCurrentIndex = 0;
         int shaderTestDuplicateCount = 0;  // Number of duplicate shaders skipped
         std::vector<std::pair<std::string, std::string>> shaderTestQueue;  // {effectName, filePath}
+        std::vector<std::string> shaderTestIncludePaths;  // Cached include paths (avoid re-reading config per shader)
         std::vector<std::tuple<std::string, std::string, bool, std::string>> shaderTestResults;  // {name, path, success, error}
 
         // UI state for settings view

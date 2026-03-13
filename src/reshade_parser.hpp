@@ -31,9 +31,14 @@ namespace vkBasalt
 
     // Test a ReShade .fx shader for compilation errors without creating Vulkan resources.
     // Returns a ShaderTestResult with success status and any error messages.
+    // Overload with includePaths avoids re-reading shader_manager.conf (use for batch testing).
     ShaderTestResult testShaderCompilation(
         const std::string& effectName,
         const std::string& effectPath);
+    ShaderTestResult testShaderCompilation(
+        const std::string& effectName,
+        const std::string& effectPath,
+        const std::vector<std::string>& includePaths);
 
     // Extract user-configurable preprocessor definitions from a ReShade shader.
     // These are macros used via #ifndef/#ifdef that aren't built-in (like __RESHADE__).

@@ -23,7 +23,13 @@ namespace vkBasalt
         void initialize(Config* pConfig);
 
         // Get all effect configs (enabled + disabled)
-        const std::vector<EffectConfig>& getAllEffects() const { return effects; }
+        // NOTE: caller must not hold this reference across effect mutations
+        const std::vector<EffectConfig>& getAllEffects() const
+        {
+            // No mutex here — intended for same-thread use only (overlay render thread).
+            // For cross-thread access, use getEnabledEffects() which copies.
+            return effects;
+        }
 
         // Get only enabled effects (for rendering) - returns pointers to avoid copying
         std::vector<const EffectConfig*> getEnabledEffects() const;

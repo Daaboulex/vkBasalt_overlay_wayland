@@ -96,6 +96,9 @@ namespace vkBasalt
 
         std::vector<std::vector<VkImageView>> imageViewVector;
 
+        // Cache shader manager config once for all texture lookups (avoids re-reading per texture)
+        ShaderManagerConfig cachedShaderMgrConfig = ConfigSerializer::loadShaderManagerConfig();
+
         for (size_t i = 0; i < module.textures.size(); i++)
         {
             textureMipLevels[module.textures[i].unique_name] = module.textures[i].levels;
@@ -248,8 +251,7 @@ namespace vkBasalt
                 std::string filePath;
                 FILE* file = nullptr;
 
-                ShaderManagerConfig shaderMgrConfig = ConfigSerializer::loadShaderManagerConfig();
-                for (const auto& texPath : shaderMgrConfig.discoveredTexturePaths)
+                for (const auto& texPath : cachedShaderMgrConfig.discoveredTexturePaths)
                 {
                     filePath = texPath + "/" + textureName;
                     file = fopen(filePath.c_str(), "rb");
@@ -268,8 +270,10 @@ namespace vkBasalt
                 if (file == nullptr)
                 {
                     Logger::err("couldn't open texture: " + textureName + " (searched " +
-                        std::to_string(shaderMgrConfig.discoveredTexturePaths.size()) + " directories)");
+                        std::to_string(cachedShaderMgrConfig.discoveredTexturePaths.size()) + " directories)");
+                    continue;
                 }
+
                 if (stbi_dds_test_file(file))
                 {
                     int channels;
@@ -279,6 +283,13 @@ namespace vkBasalt
                 {
                     int channels;
                     pixels = stbi_load_from_file(file, &width, &height, &channels, desiredChannels);
+                }
+                fclose(file);
+
+                if (pixels == nullptr)
+                {
+                    Logger::err("failed to decode texture: " + textureName + " from " + filePath);
+                    continue;
                 }
 
                 // change RGBA to RG
@@ -1409,26 +1420,43 @@ namespace vkBasalt
         {
             Logger::err("failed to load shader file: " + shaderPath);
             Logger::err("Does the filepath exist and does it not include spaces?");
+            throw std::runtime_error("failed to load shader: " + effectName);
         }
 
         reshadefx::parser parser;
 
         std::string errors = preprocessor.errors();
-        if (errors != "")
-        {
+        if (!errors.empty())
             Logger::err(errors);
-        }
 
         std::unique_ptr<reshadefx::codegen> codegen(reshadefx::create_codegen_spirv(
             true /* vulkan semantics */, true /* debug info */, true /* uniforms to spec constants */, true /*flip vertex shader*/));
-        parser.parse(std::move(preprocessor.output()), codegen.get());
+
+        if (!parser.parse(std::move(preprocessor.output()), codegen.get()))
+        {
+            errors = parser.errors();
+            if (!errors.empty())
+                Logger::err(errors);
+            throw std::runtime_error("failed to compile shader: " + effectName);
+        }
 
         errors = parser.errors();
-        if (errors != "")
-        {
+        if (!errors.empty())
             Logger::err(errors);
-        }
+
         codegen->write_result(module);
+
+        if (module.techniques.empty())
+        {
+            Logger::err("shader has no techniques: " + effectName);
+            throw std::runtime_error("shader has no techniques: " + effectName);
+        }
+
+        if (module.spirv.empty())
+        {
+            Logger::err("shader produced empty SPIR-V: " + effectName);
+            throw std::runtime_error("shader produced empty SPIR-V: " + effectName);
+        }
 
         VkShaderModuleCreateInfo shaderCreateInfo;
         shaderCreateInfo.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -1438,7 +1466,11 @@ namespace vkBasalt
         shaderCreateInfo.pCode    = module.spirv.data();
 
         VkResult result = pLogicalDevice->vkd.CreateShaderModule(pLogicalDevice->device, &shaderCreateInfo, nullptr, &shaderModule);
-        ASSERT_VULKAN(result);
+        if (result != VK_SUCCESS)
+        {
+            Logger::err("failed to create shader module for: " + effectName);
+            throw std::runtime_error("VkCreateShaderModule failed for: " + effectName);
+        }
 
         Logger::debug("created reshade shaderModule");
     }

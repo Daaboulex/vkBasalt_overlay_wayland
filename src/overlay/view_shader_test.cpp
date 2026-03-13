@@ -1,9 +1,14 @@
 #include "imgui_overlay.hpp"
 #include "reshade_parser.hpp"
+#include "config_serializer.hpp"
 #include "logger.hpp"
 
 #include <filesystem>
 #include <set>
+
+#ifdef __linux__
+#include <malloc.h>  // malloc_trim — reclaim fragmented heap memory
+#endif
 
 #include "imgui/imgui.h"
 
@@ -26,15 +31,25 @@ namespace vkBasalt
             if (shaderTestCurrentIndex < shaderTestQueue.size())
             {
                 const auto& [name, path] = shaderTestQueue[shaderTestCurrentIndex];
-                ShaderTestResult result = testShaderCompilation(name, path);
+                ShaderTestResult result = testShaderCompilation(name, path, shaderTestIncludePaths);
                 shaderTestResults.emplace_back(result.effectName, result.filePath,
                     result.success, result.errorMessage);
                 shaderTestCurrentIndex++;
+
+                // Reclaim fragmented heap memory every 25 shaders to prevent
+                // OOM from accumulating freed-but-unreturned allocations
+#ifdef __linux__
+                if (shaderTestCurrentIndex % 25 == 0)
+                    malloc_trim(0);
+#endif
             }
             else
             {
                 shaderTestRunning = false;
                 shaderTestComplete = true;
+#ifdef __linux__
+                malloc_trim(0);  // Final cleanup after all tests
+#endif
                 Logger::info("Shader test complete: tested " +
                     std::to_string(shaderTestResults.size()) + " shaders");
             }
@@ -49,6 +64,10 @@ namespace vkBasalt
                 shaderTestCurrentIndex = 0;
                 shaderTestComplete = false;
                 shaderTestDuplicateCount = 0;
+
+                // Cache include paths once — avoids re-reading shader_manager.conf per shader
+                ShaderManagerConfig smConfig = ConfigSerializer::loadShaderManagerConfig();
+                shaderTestIncludePaths = smConfig.discoveredShaderPaths;
 
                 std::set<std::string> seenNames;
                 for (const auto& shaderPath : shaderMgrShaderPaths)
