@@ -13,6 +13,8 @@
 #include <filesystem>
 #include <algorithm>
 #include <sys/stat.h>
+#include <signal.h>
+#include <setjmp.h>
 
 #include "util.hpp"
 #include "keyboard_input.hpp"
@@ -118,6 +120,38 @@ namespace vkBasalt
     };
     ResizeDebounceState resizeDebounce;
     constexpr int64_t RESIZE_DEBOUNCE_MS = 200;
+
+    // Signal-safe crash recovery for SIGFPE/SIGABRT from embedded reshadefx compiler.
+    // These signals cannot be caught by C++ try-catch — they require signal handlers.
+    static thread_local sigjmp_buf signalJmpBuf;
+    static thread_local volatile sig_atomic_t signalJmpActive = 0;
+    static thread_local volatile sig_atomic_t caughtSignal = 0;
+
+    static void crashSignalHandler(int sig)
+    {
+        if (signalJmpActive)
+        {
+            caughtSignal = sig;
+            siglongjmp(signalJmpBuf, 1);
+        }
+        // If not in a protected region, restore default handler and re-raise
+        signal(sig, SIG_DFL);
+        raise(sig);
+    }
+
+    static void installCrashHandlers()
+    {
+        static bool installed = false;
+        if (installed)
+            return;
+        struct sigaction sa = {};
+        sa.sa_handler = crashSignalHandler;
+        sa.sa_flags = 0;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGFPE, &sa, nullptr);
+        sigaction(SIGABRT, &sa, nullptr);
+        installed = true;
+    }
 
     // Helper for key press with debounce - returns true on key-down edge
     bool handleKeyPress(uint32_t keySymbol, bool& wasPressed)
@@ -504,21 +538,42 @@ namespace vkBasalt
             }
             else
             {
-                // ReShade effect - wrap in try-catch to handle compilation failures gracefully
+                // ReShade effect - wrap in try-catch + signal handler to handle compilation failures gracefully
+                // The embedded reshadefx compiler can trigger SIGFPE/SIGABRT in edge cases
                 std::string effectPath = effectRegistry.getEffectFilePath(effectStrings[i]);
                 auto customDefs = effectRegistry.getPreprocessorDefs(effectStrings[i]);
-                try
+
+                installCrashHandlers();
+                bool signalCrash = false;
+                if (sigsetjmp(signalJmpBuf, 1) != 0)
                 {
-                    pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new ReshadeEffect(
-                        pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent,
-                        firstImages, secondImages, &effectRegistry, effectStrings[i], effectPath, customDefs)));
-                }
-                catch (const std::exception& e)
-                {
-                    Logger::err("Failed to create ReshadeEffect " + effectStrings[i] + ": " + e.what());
-                    effectRegistry.setEffectError(effectStrings[i], e.what());
+                    // Returned here from signal handler (SIGFPE/SIGABRT)
+                    signalJmpActive = 0;
+                    signalCrash = true;
+                    std::string sigName = (caughtSignal == SIGFPE) ? "SIGFPE" : "SIGABRT";
+                    Logger::err("Caught " + sigName + " creating ReshadeEffect " + effectStrings[i]);
+                    effectRegistry.setEffectError(effectStrings[i], sigName + " during shader compilation");
                     pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
                         new TransferEffect(pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
+                }
+
+                if (!signalCrash)
+                {
+                    signalJmpActive = 1;
+                    try
+                    {
+                        pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new ReshadeEffect(
+                            pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent,
+                            firstImages, secondImages, &effectRegistry, effectStrings[i], effectPath, customDefs)));
+                    }
+                    catch (const std::exception& e)
+                    {
+                        Logger::err("Failed to create ReshadeEffect " + effectStrings[i] + ": " + e.what());
+                        effectRegistry.setEffectError(effectStrings[i], e.what());
+                        pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
+                            new TransferEffect(pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
+                    }
+                    signalJmpActive = 0;
                 }
             }
         }

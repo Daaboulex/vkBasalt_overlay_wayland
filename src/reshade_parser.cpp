@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <filesystem>
 #include <set>
+#include <signal.h>
+#include <setjmp.h>
 
 #include "reshade/effect_parser.hpp"
 #include "reshade/effect_codegen.hpp"
@@ -336,12 +338,52 @@ namespace vkBasalt
         }
     } // anonymous namespace
 
+    // Signal-safe crash recovery for SIGFPE/SIGABRT from embedded reshadefx compiler
+    static thread_local sigjmp_buf parserSignalJmpBuf;
+    static thread_local volatile sig_atomic_t parserSignalJmpActive = 0;
+    static thread_local volatile sig_atomic_t parserCaughtSignal = 0;
+
+    static void parserCrashHandler(int sig)
+    {
+        if (parserSignalJmpActive)
+        {
+            parserCaughtSignal = sig;
+            siglongjmp(parserSignalJmpBuf, 1);
+        }
+        signal(sig, SIG_DFL);
+        raise(sig);
+    }
+
+    static void installParserCrashHandlers()
+    {
+        static bool installed = false;
+        if (installed)
+            return;
+        struct sigaction sa = {};
+        sa.sa_handler = parserCrashHandler;
+        sa.sa_flags = 0;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGFPE, &sa, nullptr);
+        sigaction(SIGABRT, &sa, nullptr);
+        installed = true;
+    }
+
     std::vector<std::unique_ptr<EffectParam>> parseReshadeEffect(
         const std::string& effectName,
         const std::string& effectPath,
         Config* pConfig)
     {
         std::vector<std::unique_ptr<EffectParam>> params;
+
+        // Protect against SIGFPE/SIGABRT from reshadefx compiler
+        installParserCrashHandlers();
+        if (sigsetjmp(parserSignalJmpBuf, 1) != 0)
+        {
+            parserSignalJmpActive = 0;
+            Logger::err("parseReshadeEffect: caught signal for " + effectName);
+            return params;
+        }
+        parserSignalJmpActive = 1;
 
         try
         {
@@ -527,6 +569,7 @@ namespace vkBasalt
             Logger::err("parseReshadeEffect unknown exception for " + effectName);
         }
 
+        parserSignalJmpActive = 0;
         return params;
     }
 
@@ -547,6 +590,18 @@ namespace vkBasalt
         ShaderTestResult result;
         result.effectName = effectName;
         result.filePath = effectPath;
+
+        // Install signal handlers for SIGFPE/SIGABRT from reshadefx compiler
+        installParserCrashHandlers();
+        if (sigsetjmp(parserSignalJmpBuf, 1) != 0)
+        {
+            parserSignalJmpActive = 0;
+            std::string sigName = (parserCaughtSignal == SIGFPE) ? "SIGFPE" : "SIGABRT";
+            result.success = false;
+            result.errorMessage = sigName + " signal during shader compilation";
+            return result;
+        }
+        parserSignalJmpActive = 1;
 
         try
         {
@@ -613,6 +668,7 @@ namespace vkBasalt
             result.errorMessage = "Unknown exception during compilation";
         }
 
+        parserSignalJmpActive = 0;
         return result;
     }
 
