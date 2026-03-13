@@ -40,7 +40,7 @@ namespace vkBasalt
         ShaderManagerConfig smConfig = ConfigSerializer::loadShaderManagerConfig();
         shaderTestIncludePaths = smConfig.discoveredShaderPaths;
 
-        std::set<std::string> seenNames;
+        std::set<std::string> seenCanonicalPaths;
         for (const auto& shaderPath : shaderMgrShaderPaths)
         {
             try
@@ -53,15 +53,21 @@ namespace vkBasalt
                     if (ext != ".fx" && ext != ".FX")
                         continue;
 
-                    std::string effectName = entry.path().stem().string();
-                    // Skip duplicates (first occurrence wins)
-                    if (seenNames.count(effectName))
+                    // Deduplicate by canonical path — catches symlinks pointing
+                    // to the same nix store file across shader packs
+                    std::string filePath = entry.path().string();
+                    std::string canonical = filePath;
+                    try { canonical = std::filesystem::canonical(entry.path()).string(); }
+                    catch (...) {}
+                    if (seenCanonicalPaths.count(canonical))
                     {
                         shaderTestDuplicateCount++;
                         continue;
                     }
-                    seenNames.insert(effectName);
-                    shaderTestQueue.emplace_back(effectName, entry.path().string());
+                    seenCanonicalPaths.insert(canonical);
+
+                    std::string effectName = entry.path().stem().string();
+                    shaderTestQueue.emplace_back(effectName, filePath);
                 }
             }
             catch (const std::filesystem::filesystem_error&)
@@ -162,7 +168,7 @@ namespace vkBasalt
             {
                 ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "(%d duplicates skipped)", shaderTestDuplicateCount);
                 if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("Shaders with the same name found in multiple paths.\nFirst occurrence was tested, others were skipped.");
+                    ImGui::SetTooltip("Identical files (symlinks or copies) found in multiple shader paths.\nEach unique file is tested exactly once.");
             }
         }
     }
