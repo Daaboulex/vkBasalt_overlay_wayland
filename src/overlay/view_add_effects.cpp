@@ -1,6 +1,8 @@
 #include "imgui_overlay.hpp"
 #include "effects/effect_registry.hpp"
 #include "settings_manager.hpp"
+#include "reshade_parser.hpp"
+#include "config_serializer.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -100,10 +102,41 @@ namespace vkBasalt
             return effectType + ".99";
         };
 
+        // Check if an effect uses depth (lazy — checks cache first, compiles if needed)
+        auto isDepthEffect = [&](const std::string& effectType) -> bool {
+            // Built-in effects never use depth
+            static const std::set<std::string> safeBuiltins = {"cas", "dls", "fxaa", "smaa", "deband", "lut"};
+            if (safeBuiltins.count(effectType))
+                return false;
+
+            // Check cached results from shader test
+            if (depthShaders.count(effectType))
+                return true;
+
+            // If shader test has been run and this effect wasn't flagged, it's safe
+            if (shaderTestComplete)
+                return false;
+
+            // Lazy check: compile shader to determine depth usage
+            auto it = state.effectPaths.find(effectType);
+            if (it == state.effectPaths.end())
+                return false;
+
+            ShaderManagerConfig smConfig = ConfigSerializer::loadShaderManagerConfig();
+            if (checkShaderUsesDepth(effectType, it->second, smConfig.discoveredShaderPaths))
+            {
+                depthShaders.insert(effectType);
+                return true;
+            }
+            return false;
+        };
+
         // Helper to render add button for an effect
         auto renderAddButton = [&](const std::string& effectType, const std::string& tooltip = "") {
             bool atLimit = totalCount >= maxEffectsLimit;
-            if (atLimit)
+            bool depthBlocked = profileSafeAntiCheat && isDepthEffect(effectType);
+
+            if (atLimit || depthBlocked)
                 ImGui::BeginDisabled();
 
             if (ImGui::Button(effectType.c_str(), ImVec2(-1, 0)))
@@ -113,10 +146,15 @@ namespace vkBasalt
             }
 
             // Show tooltip with shader path on hover
-            if (!tooltip.empty() && ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s", tooltip.c_str());
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            {
+                if (depthBlocked)
+                    ImGui::SetTooltip("Requires depth buffer (blocked by Safe Anti-Cheat)");
+                else if (!tooltip.empty())
+                    ImGui::SetTooltip("%s", tooltip.c_str());
+            }
 
-            if (atLimit)
+            if (atLimit || depthBlocked)
                 ImGui::EndDisabled();
         };
 

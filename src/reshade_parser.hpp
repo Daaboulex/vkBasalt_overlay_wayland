@@ -17,6 +17,7 @@ namespace vkBasalt
         std::string effectName;     // Effect name (filename without extension)
         std::string filePath;       // Full path to .fx file
         bool success = false;       // True if shader compiled without errors
+        bool usesDepth = false;     // True if shader uses depth buffer (DEPTH semantic texture)
         std::string errorMessage;   // Error message if failed
     };
 
@@ -36,6 +37,13 @@ namespace vkBasalt
         const std::string& effectName,
         const std::string& effectPath);
     ShaderTestResult testShaderCompilation(
+        const std::string& effectName,
+        const std::string& effectPath,
+        const std::vector<std::string>& includePaths);
+
+    // Check if a compiled shader uses depth buffer (has DEPTH semantic textures).
+    // Uses cached test results if available, otherwise compiles the shader.
+    bool checkShaderUsesDepth(
         const std::string& effectName,
         const std::string& effectPath,
         const std::vector<std::string>& includePaths);

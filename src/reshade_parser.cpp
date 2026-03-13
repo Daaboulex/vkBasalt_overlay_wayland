@@ -663,6 +663,16 @@ namespace vkBasalt
             reshadefx::module module;
             codegen->write_result(module);
 
+            // Check if shader uses depth buffer
+            for (const auto& tex : module.textures)
+            {
+                if (tex.semantic == "DEPTH")
+                {
+                    result.usesDepth = true;
+                    break;
+                }
+            }
+
             result.success = true;
         }
         catch (const std::exception& e)
@@ -678,6 +688,15 @@ namespace vkBasalt
 
         parserSignalJmpActive = 0;
         return result;
+    }
+
+    bool checkShaderUsesDepth(
+        const std::string& effectName,
+        const std::string& effectPath,
+        const std::vector<std::string>& includePaths)
+    {
+        ShaderTestResult result = testShaderCompilation(effectName, effectPath, includePaths);
+        return result.usesDepth;
     }
 
     // Built-in macros that should not be exposed to users

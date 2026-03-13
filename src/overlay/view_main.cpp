@@ -101,7 +101,11 @@ namespace vkBasalt
                             ProfileSettings ps = ConfigSerializer::loadProfileSettings(activeProfilePath);
                             profileSafeAntiCheat = ps.safeAntiCheat;
                             if (profileSafeAntiCheat)
+                            {
                                 settingsManager.setDepthCapture(false);
+                                // Depth effects will be disabled after reload completes
+                                // (the new config hasn't loaded yet — pendingConfigPath triggers reload)
+                            }
                         }
                     }
                     if (selected)
@@ -180,7 +184,11 @@ namespace vkBasalt
             if (ImGui::Checkbox("Safe Anti-Cheat", &profileSafeAntiCheat))
             {
                 if (profileSafeAntiCheat)
+                {
                     settingsManager.setDepthCapture(false);
+                    disableDepthEffects();
+                    paramsDirty = true;
+                }
                 profileDirty = true;
                 lastChangeTime = std::chrono::steady_clock::now();
             }
@@ -192,6 +200,7 @@ namespace vkBasalt
                 ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "When enabled:");
                 ImGui::BulletText("Depth buffer access is disabled (no wallhack capability)");
                 ImGui::BulletText("Only color post-processing effects work (sharpening, color grading, etc.)");
+                ImGui::BulletText("Depth-using effects are auto-disabled and hidden from Add Effects");
                 ImGui::BulletText("Effects that need depth (SSAO, DoF, fog) will not function");
                 ImGui::Spacing();
                 ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f),

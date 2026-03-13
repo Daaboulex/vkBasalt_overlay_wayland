@@ -165,6 +165,7 @@ namespace vkBasalt
         std::vector<std::pair<std::string, std::string>> shaderTestQueue;  // {effectName, filePath}
         std::vector<std::string> shaderTestIncludePaths;  // Cached include paths (avoid re-reading config per shader)
         std::vector<std::tuple<std::string, std::string, bool, std::string>> shaderTestResults;  // {name, path, success, error}
+        std::set<std::string> depthShaders;  // Effect names that use depth buffer (populated by shader test)
 
         // UI state for settings view
         int listeningForKey = 0;  // 0=none, 1=toggle, 2=reload, 3=overlay
@@ -199,6 +200,7 @@ namespace vkBasalt
         bool profileDirty = false;        // True when changes need saving
         bool profileSafeAntiCheat = false; // Per-profile: force-disable depth capture
 
+        void disableDepthEffects();        // Disable effects that use depth buffer
         void autoSaveProfile();           // Save current state to active profile
         void collectSaveData(            // Shared helper for save operations
             std::vector<std::string>& effects,

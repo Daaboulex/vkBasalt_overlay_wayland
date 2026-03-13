@@ -34,6 +34,8 @@ namespace vkBasalt
                 ShaderTestResult result = testShaderCompilation(name, path, shaderTestIncludePaths);
                 shaderTestResults.emplace_back(result.effectName, result.filePath,
                     result.success, result.errorMessage);
+                if (result.usesDepth)
+                    depthShaders.insert(result.effectName);
                 shaderTestCurrentIndex++;
 
                 // Reclaim fragmented heap memory every 25 shaders to prevent

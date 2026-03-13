@@ -1,6 +1,7 @@
 #include "imgui_overlay.hpp"
 #include "effects/effect_registry.hpp"
 #include "settings_manager.hpp"
+#include "reshade_parser.hpp"
 #include "logger.hpp"
 #include "mouse_input.hpp"
 #include "keyboard_input.hpp"
@@ -225,6 +226,41 @@ namespace vkBasalt
                 pEffectRegistry->ensureEffect(effectName);
         }
         // No editableParams merging needed - Registry IS the source of truth
+
+        // If Safe Anti-Cheat is active, disable any depth-using effects in the selection
+        if (profileSafeAntiCheat)
+            disableDepthEffects();
+    }
+
+    void ImGuiOverlay::disableDepthEffects()
+    {
+        if (!pEffectRegistry)
+            return;
+
+        ShaderManagerConfig smConfig = ConfigSerializer::loadShaderManagerConfig();
+        const auto& selectedEffects = pEffectRegistry->getSelectedEffects();
+
+        for (const auto& effectName : selectedEffects)
+        {
+            auto it = state.effectPaths.find(effectName);
+            if (it == state.effectPaths.end())
+                continue;
+
+            bool usesDepth = depthShaders.count(effectName) > 0;
+            if (!usesDepth && !shaderTestComplete)
+            {
+                if (checkShaderUsesDepth(effectName, it->second, smConfig.discoveredShaderPaths))
+                {
+                    depthShaders.insert(effectName);
+                    usesDepth = true;
+                }
+            }
+            if (usesDepth && pEffectRegistry->isEffectEnabled(effectName))
+            {
+                pEffectRegistry->setEffectEnabled(effectName, false);
+                Logger::info("Safe Anti-Cheat: disabled depth effect '" + effectName + "'");
+            }
+        }
     }
 
     std::vector<std::unique_ptr<EffectParam>> ImGuiOverlay::getModifiedParams()
