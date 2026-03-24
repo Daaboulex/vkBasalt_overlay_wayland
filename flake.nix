@@ -3,10 +3,18 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    git-hooks = {
+      url = "github:cachix/git-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
-    { self, nixpkgs }:
+    {
+      self,
+      nixpkgs,
+      git-hooks,
+    }:
     let
       supportedSystems = [ "x86_64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
@@ -78,6 +86,32 @@
 
           vkbasalt-overlay-debug = self.packages.${system}.vkbasalt-overlay.overrideAttrs {
             mesonBuildType = "debug";
+          };
+        }
+      );
+
+      formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt);
+
+      checks = forAllSystems (system: {
+        pre-commit = git-hooks.lib.${system}.run {
+          src = self;
+          hooks = {
+            nixfmt.enable = true;
+          };
+        };
+      });
+
+      devShells = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
+          default = pkgs.mkShell {
+            inherit (self.checks.${system}.pre-commit) shellHook;
+            buildInputs = self.checks.${system}.pre-commit.enabledPackages ++ [
+              pkgs.nil
+            ];
           };
         }
       );

@@ -1,0 +1,13 @@
+{
+  "package": "vkbasalt-overlay",
+  "upstream": {
+    "type": "none"
+  },
+  "packageFile": "flake.nix",
+  "hashes": [],
+  "verify": {
+    "binary": null,
+    "args": null,
+    "check": "elf"
+  }
+}
