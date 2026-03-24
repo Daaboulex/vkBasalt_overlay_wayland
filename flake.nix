@@ -23,7 +23,7 @@
       packages = forAllSystems (
         system:
         let
-          pkgs = nixpkgs.legacyPackages.${system};
+          pkgs = import nixpkgs { localSystem.system = system; };
         in
         {
           default = self.packages.${system}.vkbasalt-overlay;
@@ -90,7 +90,7 @@
         }
       );
 
-      formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt);
+      formatter = forAllSystems (system: (import nixpkgs { localSystem.system = system; }).nixfmt);
 
       checks = forAllSystems (system: {
         pre-commit = git-hooks.lib.${system}.run {
@@ -104,7 +104,7 @@
       devShells = forAllSystems (
         system:
         let
-          pkgs = nixpkgs.legacyPackages.${system};
+          pkgs = import nixpkgs { localSystem.system = system; };
         in
         {
           default = pkgs.mkShell {
