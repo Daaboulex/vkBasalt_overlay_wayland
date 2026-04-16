@@ -8,6 +8,8 @@ This is a fork of [vkBasalt](https://github.com/DadSchoorse/vkBasalt) by [@DadSc
 
 # vkBasalt Overlay (Wayland Fork)
 
+[![CI](https://github.com/Daaboulex/vkBasalt_overlay_wayland/actions/workflows/ci.yml/badge.svg)](https://github.com/Daaboulex/vkBasalt_overlay_wayland/actions/workflows/ci.yml)
+
 A Vulkan post-processing layer with an in-game ImGui overlay for real-time effect configuration. Works on both **X11** and **Wayland**.
 
 Feature showcase (slightly outdated): https://www.youtube.com/watch?v=_KJTToAynr0
