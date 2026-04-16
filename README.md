@@ -9,6 +9,11 @@ This is a fork of [vkBasalt](https://github.com/DadSchoorse/vkBasalt) by [@DadSc
 # vkBasalt Overlay (Wayland Fork)
 
 [![CI](https://github.com/Daaboulex/vkBasalt_overlay_wayland/actions/workflows/ci.yml/badge.svg)](https://github.com/Daaboulex/vkBasalt_overlay_wayland/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/Daaboulex/vkBasalt_overlay_wayland)](./LICENSE)
+[![NixOS](https://img.shields.io/badge/NixOS-unstable-78C0E8?logo=nixos&logoColor=white)](https://nixos.org)
+[![Last commit](https://img.shields.io/github/last-commit/Daaboulex/vkBasalt_overlay_wayland)](https://github.com/Daaboulex/vkBasalt_overlay_wayland/commits)
+[![Stars](https://img.shields.io/github/stars/Daaboulex/vkBasalt_overlay_wayland?style=flat)](https://github.com/Daaboulex/vkBasalt_overlay_wayland/stargazers)
+[![Issues](https://img.shields.io/github/issues/Daaboulex/vkBasalt_overlay_wayland)](https://github.com/Daaboulex/vkBasalt_overlay_wayland/issues)
 
 A Vulkan post-processing layer with an in-game ImGui overlay for real-time effect configuration. Works on both **X11** and **Wayland**.
 
