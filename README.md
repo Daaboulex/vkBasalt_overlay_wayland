@@ -8,12 +8,10 @@ This is a fork of [vkBasalt](https://github.com/DadSchoorse/vkBasalt) by [@DadSc
 
 # vkBasalt Overlay (Wayland Fork)
 
-[![CI](https://github.com/Daaboulex/vkBasalt_overlay_wayland/actions/workflows/ci.yml/badge.svg)](https://github.com/Daaboulex/vkBasalt_overlay_wayland/actions/workflows/ci.yml)
-[![License](https://img.shields.io/github/license/Daaboulex/vkBasalt_overlay_wayland)](./LICENSE)
-[![NixOS](https://img.shields.io/badge/NixOS-unstable-78C0E8?logo=nixos&logoColor=white)](https://nixos.org)
-[![Last commit](https://img.shields.io/github/last-commit/Daaboulex/vkBasalt_overlay_wayland)](https://github.com/Daaboulex/vkBasalt_overlay_wayland/commits)
-[![Stars](https://img.shields.io/github/stars/Daaboulex/vkBasalt_overlay_wayland?style=flat)](https://github.com/Daaboulex/vkBasalt_overlay_wayland/stargazers)
-[![Issues](https://img.shields.io/github/issues/Daaboulex/vkBasalt_overlay_wayland)](https://github.com/Daaboulex/vkBasalt_overlay_wayland/issues)
+<!-- BEGIN generated:badges -->
+[![NixOS unstable](https://img.shields.io/badge/NixOS-unstable-78C0E8?logo=nixos&logoColor=white)](https://nixos.org)
+[![License: Zlib](https://img.shields.io/badge/License-Zlib-blue.svg)](./LICENSE)
+<!-- END generated:badges -->
 
 A Vulkan post-processing layer with an in-game ImGui overlay for real-time effect configuration. Works on both **X11** and **Wayland**.
 
@@ -101,6 +99,17 @@ Download shader packs and point the Shader Manager at them:
 
 Place shaders in `~/.config/vkBasalt-overlay/reshade/Shaders/` and textures in `~/.config/vkBasalt-overlay/reshade/Textures/`, or use the Shader Manager's browse feature to add directories.
 
+<!-- BEGIN generated:upstream -->
+## Upstream
+
+| | |
+|---|---|
+| **Project** | Original code (no upstream) |
+| **License** | N/A |
+| **Tracked** | N/A |
+<!-- END generated:upstream -->
+
+<!-- BEGIN generated:installation -->
 ## Installation
 
 **Warning:** You must uninstall the original vkBasalt before installing this fork. Both use the same `ENABLE_VKBASALT` environment variable and cannot coexist (see [why](#why-cant-this-fork-coexist-with-original-vkbasalt)).
@@ -141,6 +150,8 @@ nix-shell -p meson ninja pkg-config gcc wayland wayland-protocols wayland-scanne
   libxkbcommon glslang spirv-headers vulkan-headers vulkan-loader xorg.libX11 xorg.libXi \
   --run "meson setup --buildtype=debug builddir && ninja -C builddir"
 ```
+
+<!-- END generated:installation -->
 
 ## Usage
 
@@ -294,3 +305,9 @@ Since `wl_pointer_add_listener` is a `static inline` function in `<wayland-clien
 - **Wayland fork** by [@Daaboulex](https://github.com/Daaboulex/vkBasalt_overlay_wayland) — Wayland input, input blocking interposition, depth fix
 - **ReShade** shader compiler by [@crosire](https://github.com/crosire)
 - **ImGui** by [@ocornut](https://github.com/ocornut)
+
+<!-- BEGIN generated:footer -->
+---
+
+*Maintained as part of the [Daaboulex](https://github.com/Daaboulex) NixOS ecosystem.*
+<!-- END generated:footer -->
