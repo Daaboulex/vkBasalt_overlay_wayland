@@ -112,45 +112,22 @@ Place shaders in `~/.config/vkBasalt-overlay/reshade/Shaders/` and textures in `
 <!-- BEGIN generated:installation -->
 ## Installation
 
-**Warning:** You must uninstall the original vkBasalt before installing this fork. Both use the same `ENABLE_VKBASALT` environment variable and cannot coexist (see [why](#why-cant-this-fork-coexist-with-original-vkbasalt)).
+Add as a flake input:
 
-### Dependencies
-
-- GCC >= 9
-- Meson + Ninja
-- Vulkan Headers
-- SPIR-V Headers
-- glslang (glslangValidator)
-- X11 + Xi development files
-- wayland-client + wayland-protocols + wayland-scanner
-- libxkbcommon
-
-### AUR
-
-```
-yay -S vkbasalt-overlay-git
+```nix
+{
+  inputs.vkbasalt-overlay-src = {
+    url = "github:Daaboulex/vkbasalt-overlay-src";
+    inputs.nixpkgs.follows = "nixpkgs";
+  };
+}
 ```
 
-### From Source
+Then add the overlay:
 
-```bash
-git clone https://github.com/Daaboulex/vkBasalt_overlay_wayland.git
-cd vkBasalt_overlay_wayland
-meson setup --buildtype=release --prefix=/usr build-release
-ninja -C build-release
-sudo ninja -C build-release install
+```nix
+nixpkgs.overlays = [ inputs.vkbasalt-overlay-src.overlays.default ];
 ```
-
-### NixOS
-
-This project can be built with a nix-shell for development:
-
-```bash
-nix-shell -p meson ninja pkg-config gcc wayland wayland-protocols wayland-scanner \
-  libxkbcommon glslang spirv-headers vulkan-headers vulkan-loader xorg.libX11 xorg.libXi \
-  --run "meson setup --buildtype=debug builddir && ninja -C builddir"
-```
-
 <!-- END generated:installation -->
 
 ## Usage
