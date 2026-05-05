@@ -116,8 +116,8 @@ Add as a flake input:
 
 ```nix
 {
-  inputs.vkbasalt-overlay-src = {
-    url = "github:Daaboulex/vkbasalt-overlay-src";
+  inputs.vkBasalt_overlay_wayland = {
+    url = "github:Daaboulex/vkBasalt_overlay_wayland";
     inputs.nixpkgs.follows = "nixpkgs";
   };
 }
@@ -126,7 +126,7 @@ Add as a flake input:
 Then add the overlay:
 
 ```nix
-nixpkgs.overlays = [ inputs.vkbasalt-overlay-src.overlays.default ];
+nixpkgs.overlays = [ inputs.vkBasalt_overlay_wayland.overlays.default ];
 ```
 <!-- END generated:installation -->
 
@@ -274,6 +274,15 @@ Since `wl_pointer_add_listener` is a `static inline` function in `<wayland-clien
 1. Checks `wl_proxy_get_class()` to identify `wl_pointer` and `wl_keyboard` proxies
 2. Skips overlay-owned proxies (registered via `registerOverlayProxy()`)
 3. Wraps the game's listener with callbacks that check `isInputBlocked()` before forwarding
+
+## Development
+
+```bash
+nix develop                  # dev shell with pre-commit hooks
+nix flake check --no-build   # eval check (fast)
+nix build                    # build package
+nix fmt                      # format with treefmt
+```
 
 ## Credits
 
