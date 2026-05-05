@@ -97,6 +97,15 @@
           src = self;
           hooks = {
             nixfmt.enable = true;
+            typos.enable = true;
+            rumdl.enable = true;
+            check-readme-sections = {
+              enable = true;
+              name = "check-readme-sections";
+              entry = "bash scripts/check-readme-sections.sh";
+              files = "README\\.md$";
+              language = "system";
+            };
           };
         };
       });
