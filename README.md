@@ -9,6 +9,7 @@ This is a fork of [vkBasalt](https://github.com/DadSchoorse/vkBasalt) by [@DadSc
 # vkBasalt Overlay (Wayland Fork)
 
 <!-- BEGIN generated:badges -->
+[![CI](https://github.com/Daaboulex/vkBasalt_overlay_wayland/actions/workflows/ci.yml/badge.svg)](https://github.com/Daaboulex/vkBasalt_overlay_wayland/actions/workflows/ci.yml)
 [![NixOS unstable](https://img.shields.io/badge/NixOS-unstable-78C0E8?logo=nixos&logoColor=white)](https://nixos.org)
 [![License: Zlib](https://img.shields.io/badge/License-Zlib-blue.svg)](./LICENSE)
 <!-- END generated:badges -->
