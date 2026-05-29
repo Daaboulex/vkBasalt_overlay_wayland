@@ -1,11 +1,3 @@
-## Fork Notice
-
-This is a fork of [vkBasalt](https://github.com/DadSchoorse/vkBasalt) by [@DadSchoorse](https://github.com/DadSchoorse), via the overlay fork by [@Boux](https://github.com/Boux/vkBasalt_overlay). Most of this fork was written with vibe-coding (AI assistance). The original vkBasalt is a mature, well-tested project; this fork adds experimental features on top.
-
-**Use at your own risk** — it may crash or freeze games. Adding GPU-intensive shaders (e.g., CRT-Guest) to a game already at 100% GPU usage will freeze your system.
-
----
-
 # vkBasalt Overlay (Wayland Fork)
 
 <!-- BEGIN generated:badges -->
@@ -14,9 +6,13 @@ This is a fork of [vkBasalt](https://github.com/DadSchoorse/vkBasalt) by [@DadSc
 [![License: Zlib](https://img.shields.io/badge/License-Zlib-blue.svg)](./LICENSE)
 <!-- END generated:badges -->
 
+> **Fork Notice.** This is a fork of [vkBasalt](https://github.com/DadSchoorse/vkBasalt) by [@DadSchoorse](https://github.com/DadSchoorse), via the overlay fork by [@Boux](https://github.com/Boux/vkBasalt_overlay). Most of this fork was written with vibe-coding (AI assistance). The original vkBasalt is a mature, well-tested project; this fork adds experimental features on top.
+>
+> **Use at your own risk** — it may crash or freeze games. Adding GPU-intensive shaders (e.g., CRT-Guest) to a game already at 100% GPU usage will freeze your system.
+
 A Vulkan post-processing layer with an in-game ImGui overlay for real-time effect configuration. Works on both **X11** and **Wayland**.
 
-Feature showcase (slightly outdated): https://www.youtube.com/watch?v=_KJTToAynr0
+Feature showcase (slightly outdated): <https://www.youtube.com/watch?v=_KJTToAynr0>
 
 <details>
   <summary>Click to view screenshots</summary>
@@ -85,6 +81,7 @@ The layer intercepts `vkCreateImage` to detect depth images and adds `VK_IMAGE_U
 ### Safe Anti-Cheat Mode
 
 Per-profile toggle (`safeAntiCheat = true`) that:
+
 - Forces `depthCapture = off` — no depth buffer binding
 - Blocks shaders that use depth at runtime (hidden in Add Effects, shows tooltip explaining why)
 - Auto-tests all shaders on first Add Effects open (one per frame, progress bar shown)
@@ -94,9 +91,10 @@ Per-profile toggle (`safeAntiCheat = true`) that:
 ### ReShade Shader Support
 
 Download shader packs and point the Shader Manager at them:
-- https://github.com/crosire/reshade-shaders
-- https://github.com/HelelSingh/CRT-Guest-ReShade
-- https://github.com/kevinlekiller/reshade-steam-proton
+
+- <https://github.com/crosire/reshade-shaders>
+- <https://github.com/HelelSingh/CRT-Guest-ReShade>
+- <https://github.com/kevinlekiller/reshade-steam-proton>
 
 Place shaders in `~/.config/vkBasalt-overlay/reshade/Shaders/` and textures in `~/.config/vkBasalt-overlay/reshade/Textures/`, or use the Shader Manager's browse feature to add directories.
 
@@ -108,6 +106,7 @@ Place shaders in `~/.config/vkBasalt-overlay/reshade/Shaders/` and textures in `
 | **Project** | Original code (no upstream) |
 | **License** | N/A |
 | **Tracked** | N/A |
+
 <!-- END generated:upstream -->
 
 <!-- BEGIN generated:installation -->
@@ -129,6 +128,7 @@ Then add the overlay:
 ```nix
 nixpkgs.overlays = [ inputs.vkBasalt_overlay_wayland.overlays.default ];
 ```
+
 <!-- END generated:installation -->
 
 ## Usage
@@ -144,12 +144,14 @@ ENABLE_VKBASALT=1 vkgears
 ### Steam
 
 Add to launch options:
-```
+
+```text
 ENABLE_VKBASALT=1 %command%
 ```
 
 Example with Proton optimizations and GameMode:
-```
+
+```text
 ENABLE_VKBASALT=1 PROTON_ENABLE_WAYLAND=1 PROTON_USE_NTSYNC=1 DXVK_ASYNC=1 PROTON_FSR4_UPGRADE=1 gamemoderun %command%
 ```
 
@@ -174,6 +176,7 @@ To log to a file: `VKBASALT_LOG_FILE=/tmp/vkbasalt.log`
 This fork **cannot** be installed alongside the original vkBasalt because both must use the same `ENABLE_VKBASALT` environment variable. Gamescope and other Vulkan compositors [filter known layer environment variables](https://github.com/Boux/vkBasalt_overlay/issues/5#issuecomment-3706694598) to prevent layers from loading twice (on both the compositor and nested apps). Using a different env var name would break this filtering, causing the overlay and all active effects to render twice when using gamescope.
 
 The library and layer names are still different to avoid file conflicts:
+
 - Library: `libvkbasalt-overlay.so` (vs `libvkbasalt.so`)
 - Layer: `VK_LAYER_VKBASALT_OVERLAY_post_processing` (vs `VK_LAYER_VKBASALT_post_processing`)
 - Layer JSON: `vkBasalt-overlay.json` (vs `vkBasalt.json`)
@@ -255,6 +258,7 @@ vkBasalt is a **read-only visual filter** — it applies post-processing shaders
 ### Vulkan Layer
 
 vkBasalt is a Vulkan implicit layer that intercepts API calls:
+
 - `vkCreateSwapchainKHR` — creates intermediate images for effect processing
 - `vkQueuePresentKHR` — applies effects before presentation
 - `vkCreateImage` — detects depth images and adds `SAMPLED_BIT`

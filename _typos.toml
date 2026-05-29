@@ -1,0 +1,9 @@
+# typos scope for this repo.
+#
+# src/ is forked from upstream vkBasalt and vendors Dear ImGui, ReShade FX,
+# stb_image, and the SMAA AreaTex/SearchTex tables. Re-spelling any of it would
+# diverge from upstream and break clean merges, and its misspellings are not
+# ours to own. typos therefore covers only what this repo authors: prose
+# (README, docs/), the Nix flake, scripts, and config.
+[files]
+extend-exclude = ["src/"]

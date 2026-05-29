@@ -3,33 +3,44 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-parts.url = "github:hercules-ci/flake-parts";
     git-hooks = {
       url = "github:cachix/git-hooks.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    std = {
+      url = "github:Daaboulex/nix-packaging-standard?ref=v2.2.3";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.git-hooks.follows = "git-hooks";
+    };
   };
 
   outputs =
-    {
-      self,
-      nixpkgs,
-      git-hooks,
-    }:
-    let
-      supportedSystems = [ "x86_64-linux" ];
-      forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
-    in
-    {
-      packages = forAllSystems (
-        system:
-        let
-          pkgs = import nixpkgs { localSystem.system = system; };
-        in
-        {
-          default = self.packages.${system}.vkbasalt-overlay;
+    inputs@{ flake-parts, self, ... }:
+    flake-parts.lib.mkFlake { inherit inputs; } {
+      # Vulkan layer, x86_64-only (see meta.platforms). declared == built.
+      systems = [ "x86_64-linux" ];
 
-          vkbasalt-overlay = pkgs.stdenv.mkDerivation {
+      imports = [ inputs.std.flakeModules.base ];
+
+      flake.overlays.default = final: _prev: {
+        inherit (self.packages.${final.stdenv.hostPlatform.system}) vkbasalt-overlay;
+      };
+
+      perSystem =
+        { pkgs, self', ... }:
+        {
+          # Extend the standard's lint config for this fork: src/ vendors
+          # third-party markdown (ReShade's LICENSE.md) that we do not relint,
+          # and the README uses inline HTML (<details>/<img>) for screenshots.
+          pre-commit.settings.hooks.rumdl = {
+            excludes = [ "^src/" ];
+            settings.configuration.MD033.enabled = false;
+          };
+
+          packages.vkbasalt-overlay = pkgs.stdenv.mkDerivation {
             pname = "vkbasalt-overlay";
+            # This repo IS the source; the version tracks its own git revision.
             version = "0.1.0-unstable-${self.shortRev or "dirty"}";
 
             src = self;
@@ -84,49 +95,11 @@
             };
           };
 
-          vkbasalt-overlay-debug = self.packages.${system}.vkbasalt-overlay.overrideAttrs {
+          packages.vkbasalt-overlay-debug = self'.packages.vkbasalt-overlay.overrideAttrs {
             mesonBuildType = "debug";
           };
-        }
-      );
 
-      formatter = forAllSystems (system: (import nixpkgs { localSystem.system = system; }).nixfmt);
-
-      checks = forAllSystems (system: {
-        pre-commit = git-hooks.lib.${system}.run {
-          src = self;
-          hooks = {
-            nixfmt.enable = true;
-            typos.enable = true;
-            rumdl.enable = true;
-            check-readme-sections = {
-              enable = true;
-              name = "check-readme-sections";
-              entry = "bash scripts/check-readme-sections.sh";
-              files = "README\\.md$";
-              language = "system";
-            };
-          };
+          packages.default = self'.packages.vkbasalt-overlay;
         };
-      });
-
-      devShells = forAllSystems (
-        system:
-        let
-          pkgs = import nixpkgs { localSystem.system = system; };
-        in
-        {
-          default = pkgs.mkShell {
-            inherit (self.checks.${system}.pre-commit) shellHook;
-            buildInputs = self.checks.${system}.pre-commit.enabledPackages ++ [
-              pkgs.nil
-            ];
-          };
-        }
-      );
-
-      overlays.default = final: _prev: {
-        inherit (self.packages.${final.stdenv.hostPlatform.system}) vkbasalt-overlay;
-      };
     };
 }

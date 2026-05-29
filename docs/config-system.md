@@ -6,7 +6,7 @@ This document explains how configuration loading and handling works in vkBasalt.
 
 vkBasalt uses a two-config architecture:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                      pBaseConfig                            │
 │              (always vkBasalt.conf)                         │
@@ -85,7 +85,7 @@ effects = cas:deband:Clarity
 
 When `getOption()` is called:
 
-```
+```text
 1. Check overrides map (in-memory values from overlay)
    ↓ not found
 2. Check options map (values from config file)
@@ -108,7 +108,7 @@ std::shared_ptr<Config> pConfig = nullptr;      // Current active config
 
 Called when the Vulkan layer initializes:
 
-```
+```text
 1. Load pBaseConfig (vkBasalt.conf from standard paths)
 
 2. Determine current config path:
@@ -156,13 +156,14 @@ Effects defined in vkBasalt.conf that aren't in the current config.
 
 The overlay automatically scans `reshadeIncludePath` for .fx files:
 
-```
+```text
 reshadeIncludePath = /home/user/.config/vkBasalt/reshade/Shaders
 ```
 
 All .fx files in this directory are available as effects, using the filename (without .fx) as the effect name.
 
 **Discovery order:**
+
 1. Current config definitions (highest priority)
 2. Base config definitions
 3. Auto-discovered .fx files (sorted alphabetically)
@@ -208,7 +209,7 @@ disabledEffects = deband
 
 The file `~/.config/vkBasalt/default_config` contains just the name of the default config (without .conf extension):
 
-```
+```text
 tunic
 ```
 
@@ -242,6 +243,7 @@ struct CachedParametersData {
 ```
 
 Parameters are only recollected when:
+
 - `dirty` flag is set (after config switch/reload)
 - Effect list changes
 - Config path changes
@@ -253,6 +255,7 @@ The ImGui overlay can modify config behavior:
 ### In-Memory Overrides
 
 When user adjusts a slider in the overlay:
+
 ```cpp
 pConfig->setOverride("casSharpness", "0.8");
 ```
@@ -278,7 +281,7 @@ vkBasalt supports hot-reloading configs:
 
 ## Flow Diagram
 
-```
+```text
 Game Launch
     │
     ▼
