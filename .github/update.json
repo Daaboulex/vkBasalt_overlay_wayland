@@ -9,5 +9,20 @@
     "binary": null,
     "args": null,
     "check": "wrapper"
-  }
+  },
+  "description": "vkBasalt fork packaged for NixOS - Vulkan post-processing layer with real-time ImGui overlay UI on Wayland + X11",
+  "topics": [
+    "nix",
+    "nixos",
+    "flake",
+    "vkbasalt",
+    "vulkan",
+    "vulkan-layer",
+    "post-processing",
+    "reshade",
+    "wayland",
+    "overlay",
+    "imgui",
+    "gaming"
+  ]
 }
