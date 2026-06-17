@@ -18,8 +18,10 @@
   outputs =
     inputs@{ flake-parts, self, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
-      # Vulkan layer, x86_64-only (see meta.platforms). declared == built.
-      systems = [ "x86_64-linux" ];
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+      ];
 
       imports = [ inputs.std.flakeModules.base ];
 
@@ -90,7 +92,7 @@
               description = "Vulkan post-processing layer with real-time overlay UI (Wayland + X11)";
               homepage = "https://github.com/Daaboulex/vkBasalt_overlay_wayland";
               license = licenses.zlib;
-              platforms = [ "x86_64-linux" ];
+              platforms = pkgs.lib.platforms.linux;
               mainProgram = "vkbasalt-run";
             };
           };
