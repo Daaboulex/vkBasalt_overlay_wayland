@@ -758,6 +758,31 @@ namespace vkBasalt
 
         Logger::trace("vkCreateInstance");
 
+        // Detect the windowing backend from the surface extension the app enables
+        // here -- the authoritative signal of a native-Wayland vs an X11 (incl.
+        // XWayland/Wine) client. Under a Wayland session XWayland clients inherit
+        // WAYLAND_DISPLAY, so the env var alone misroutes their input to the
+        // Wayland backend (issue #1); the enabled surface extension does not. A
+        // client enabling only an X11 surface extension is X11 even when
+        // WAYLAND_DISPLAY is set; if it also enables wayland_surface, the actual
+        // vkCreateWaylandSurfaceKHR call stays the tie-breaker.
+        {
+            bool wantsWayland = false;
+            bool wantsX11     = false;
+            for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; ++i)
+            {
+                const char* ext = pCreateInfo->ppEnabledExtensionNames[i];
+                if (!ext)
+                    continue;
+                if (!std::strcmp(ext, "VK_KHR_wayland_surface"))
+                    wantsWayland = true;
+                else if (!std::strcmp(ext, "VK_KHR_xlib_surface") || !std::strcmp(ext, "VK_KHR_xcb_surface"))
+                    wantsX11 = true;
+            }
+            if (wantsX11 && !wantsWayland)
+                setX11Surface();
+        }
+
         if (layerCreateInfo == nullptr)
         {
             // No loader instance create info

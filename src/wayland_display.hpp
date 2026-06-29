@@ -17,6 +17,13 @@ namespace vkBasalt
     // Returns the captured wl_surface, or nullptr if not on Wayland
     wl_surface* getWaylandSurface();
 
-    // Returns true if running under Wayland (WAYLAND_DISPLAY env var is set)
+    // Called when the app is detected as an X11 (Xlib/Xcb) client -- e.g. an
+    // XWayland/Wine game that enables only an X11 surface extension. Selects the
+    // X11 input backend even when WAYLAND_DISPLAY is set in the environment.
+    void setX11Surface();
+
+    // Returns true for a Wayland client. Decided from the surface/extension the
+    // app actually uses (authoritative); falls back to WAYLAND_DISPLAY only until
+    // that is known.
     bool isWayland();
 } // namespace vkBasalt
