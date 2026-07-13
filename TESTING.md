@@ -1,0 +1,138 @@
+# lsfg-order-testing -- test protocol
+
+Goal of this branch: make the efficient layer order work --
+`game -> vkBasalt -> LSFG-VK -> (MangoHud)` -- so vkBasalt processes only the
+REAL frames (60), and LSFG generates afterwards (120). Today that order black
+screens or crashes; only the wasteful reverse order works (vkBasalt processing
+all 120 generated frames).
+
+What changed in this branch:
+
+- vkBasalt no longer REPLACES the swapchain usage flags the game (or another
+  layer) asked for -- it adds its own on top. Dropped flags are a classic
+  cause of black output when another layer needs them.
+- vkBasalt no longer holds its internal lock while the layer below it presents.
+  LSFG presents several frames and waits for images INSIDE that call; holding
+  the lock across it can freeze the whole game (black screen, sound dead, no
+  crash) -- exactly one of the two reported symptoms.
+- Debug logging that tells us, from one run, which side broke and where.
+
+Everything below is copy-paste. Please run all steps in order.
+
+## 0. Clean up previous builds (once)
+
+List what is installed before deleting anything:
+
+```sh
+ls -l ~/.local/share/vulkan/implicit_layer.d/ 2>/dev/null
+ls -l /usr/local/share/vulkan/implicit_layer.d/ 2>/dev/null
+ls -l /usr/share/vulkan/implicit_layer.d/ | grep -i basalt
+ls -l ~/.local/lib/libvkbasalt* ~/.local/lib/vkbasalt/ 2>/dev/null
+ls -l /usr/local/lib/libvkbasalt* /usr/local/lib/vkbasalt/ 2>/dev/null
+```
+
+Remove every vkBasalt manifest + library YOU installed by hand (old
+vkBasalt-overlay and previous builds of this fork). Two copies of the same
+layer name make the loader pick one at random -- tests are meaningless until
+only ONE is left:
+
+```sh
+rm -f ~/.local/share/vulkan/implicit_layer.d/vkBasalt*.json
+rm -f ~/.local/lib/libvkbasalt*.so; rm -rf ~/.local/lib/vkbasalt
+sudo rm -f /usr/local/share/vulkan/implicit_layer.d/vkBasalt*.json
+sudo rm -f /usr/local/lib/libvkbasalt*.so; sudo rm -rf /usr/local/lib/vkbasalt
+```
+
+If `/usr/share/vulkan/implicit_layer.d/` has a vkBasalt json, check who owns
+it first -- `pacman -Qo /usr/share/vulkan/implicit_layer.d/vkBasalt.json` --
+and remove the PACKAGE (`sudo pacman -R vkbasalt`) rather than the file.
+
+## 1. Build dependencies (CachyOS / Arch)
+
+```sh
+sudo pacman -S --needed base-devel meson ninja glslang libx11 libxi \
+  wayland wayland-protocols libxkbcommon vulkan-headers
+```
+
+## 2. Build + install this branch (to your user, no sudo)
+
+```sh
+git clone https://github.com/Daaboulex/vkBasalt_overlay_wayland.git
+cd vkBasalt_overlay_wayland
+git switch lsfg-order-testing
+meson setup build --prefix="$HOME/.local" --buildtype=debugoptimized
+ninja -C build install
+```
+
+Verify exactly one manifest is present and the loader sees the layer:
+
+```sh
+ls ~/.local/share/vulkan/implicit_layer.d/
+vulkaninfo 2>/dev/null | grep -i -E 'VKBASALT|LSFGVK'
+```
+
+## 3. Test runs
+
+Use the SAME game and settings you used when you saw the black screen, and
+the other game that crashed. Keep your usual LSFG profile (x2). Turn MangoHud
+OFF for all runs -- one variable at a time; we add it back after this works.
+
+`VK_INSTANCE_LAYERS` pins the layer order deterministically: the FIRST name
+is closest to the game.
+
+### Run A -- the order we are fixing (vkBasalt processes real frames)
+
+```sh
+export ENABLE_VKBASALT=1
+export VKBASALT_LOG_LEVEL=debug
+export VKBASALT_LOG_FILE=/tmp/vkb-A.log
+export VK_LOADER_DEBUG=error,warn,layer
+export VK_INSTANCE_LAYERS="VK_LAYER_VKBASALT_OVERLAY_post_processing:VK_LAYER_LSFGVK_frame_generation"
+<start the game exactly as you normally do> &> /tmp/loader-A.log
+```
+
+### Run B -- today's working order (regression check, nothing should break)
+
+Same block, but:
+
+```sh
+export VKBASALT_LOG_FILE=/tmp/vkb-B.log
+export VK_INSTANCE_LAYERS="VK_LAYER_LSFGVK_frame_generation:VK_LAYER_VKBASALT_OVERLAY_post_processing"
+<game> &> /tmp/loader-B.log
+```
+
+Repeat A and B for the second (crashing) game with file names
+`/tmp/vkb-A2.log`, `/tmp/loader-A2.log`, `/tmp/vkb-B2.log`,
+`/tmp/loader-B2.log`.
+
+For Steam games, run the same exports in a terminal and start the game from
+that terminal (`steam steam://rungameid/<id>`), or put the variables in front
+of `%command%` in the launch options -- but the terminal way captures the
+loader log properly.
+
+## 4. What success looks like
+
+- Run A: game plays, display shows the generated FPS (e.g. 120), and
+  `/tmp/vkb-A.log` shows `present cycle N` lines ticking at the REAL fps
+  (e.g. 60) -- that is the proof vkBasalt now processes only real frames.
+- Run B: behaves exactly like your current setup (nothing regressed).
+
+## 5. Send back (success or failure, always)
+
+1. The 8 files: `/tmp/vkb-A.log`, `/tmp/vkb-B.log`, `/tmp/vkb-A2.log`,
+   `/tmp/vkb-B2.log`, `/tmp/loader-A.log`, `/tmp/loader-B.log`,
+   `/tmp/loader-A2.log`, `/tmp/loader-B2.log`
+2. One line per run: worked / black screen (sound on or off?) / crash
+3. `vulkaninfo --summary &> /tmp/vkinfo.txt` and send that too
+
+If a run freezes, wait ~10 seconds, then grab the logs before killing it --
+the last lines in `vkb-*.log` are the diagnosis.
+
+## 6. Going back to your previous build
+
+```sh
+rm -f ~/.local/share/vulkan/implicit_layer.d/vkBasalt-overlay.json
+rm -f ~/.local/lib/libvkbasalt-overlay.so
+```
+
+then reinstall whichever build you used before.
