@@ -1062,9 +1062,10 @@ namespace vkBasalt
 
         modifiedCreateInfo.imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
-        Logger::debug("swapchain create: app usage=0x" + convertToString(pCreateInfo->imageUsage)
-                      + " our usage=0x" + convertToString(modifiedCreateInfo.imageUsage)
-                      + " flags=0x" + convertToString(modifiedCreateInfo.flags)
+        Logger::debug("swapchain create: app usage=" + convertToString(pCreateInfo->imageUsage)
+                      + " our usage=" + convertToString(modifiedCreateInfo.imageUsage)
+                      + " flags=" + convertToString(modifiedCreateInfo.flags)
+                      + " (decimal bit values)"
                       + " minImageCount=" + std::to_string(modifiedCreateInfo.minImageCount)
                       + " presentMode=" + std::to_string(modifiedCreateInfo.presentMode)
                       + " extent=" + std::to_string(modifiedCreateInfo.imageExtent.width) + "x"
