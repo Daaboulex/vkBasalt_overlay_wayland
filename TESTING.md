@@ -71,34 +71,27 @@ ls ~/.local/share/vulkan/implicit_layer.d/
 vulkaninfo 2>/dev/null | grep -i -E 'VKBASALT|LSFGVK'
 ```
 
-## 3. How the layer ORDER is actually controlled (important)
+## 3. How the layer ORDER is controlled
 
-`VK_INSTANCE_LAYERS` does NOT reorder implicit layers -- I tested it here and
-both layers still load in the loader's own order regardless of what you name.
-What DOES control it (verified locally against a frame-generation mock):
+`VK_INSTANCE_LAYERS` is the lever, and **the FIRST name is closest to the
+game**. Measured here against a frame-generation mock (counting vkBasalt's
+presents per generated frame: 1 = vkBasalt above it, 2 = below it):
 
-**the manifest DIRECTORY order in `XDG_DATA_DIRS` -- the earlier directory's
-layer ends up closer to the game.**
+| VK_INSTANCE_LAYERS | who is closer to the game |
+|---|---|
+| `...VKBASALT...:...LSFGVK...` | vkBasalt (the efficient order: real frames only) |
+| `...LSFGVK...:...VKBASALT...` | LSFG (vkBasalt then also processes generated frames) |
 
-So put each manifest in its own directory once, and then a single env var
-picks the order. Find your two manifests and split them:
+Two rules that bite:
 
-```sh
-mkdir -p ~/layers/basalt/vulkan/implicit_layer.d ~/layers/lsfg/vulkan/implicit_layer.d
+- A layer you do NOT name still loads if it is enabled implicitly. So to keep
+  a layer out of the run, set its own off-switch: `MANGOHUD=0`,
+  `DISABLE_LSFGVK=1`, or leave `ENABLE_VKBASALT` unset.
+- Naming a layer in `VK_INSTANCE_LAYERS` enables it EVEN IF its disable
+  variable is set -- `DISABLE_LSFGVK=1` plus naming LSFG still loads LSFG.
 
-# vkBasalt (installed by step 2)
-mv ~/.local/share/vulkan/implicit_layer.d/vkBasalt-overlay.json \
-   ~/layers/basalt/vulkan/implicit_layer.d/
-
-# LSFG-VK -- find where yours lives, then move it (adjust the path it prints)
-find / -name 'VkLayer_LSFGVK*' 2>/dev/null
-# e.g.: sudo mv /usr/share/vulkan/implicit_layer.d/VkLayer_LSFGVK_frame_generation.json \
-#              ~/layers/lsfg/vulkan/implicit_layer.d/
-```
-
-(If the LSFG manifest is package-owned, copy it instead of moving, and make
-sure the original directory is NOT in `XDG_DATA_DIRS` during the tests --
-otherwise the layer loads twice.)
+The ordering works whether or not `ENABLE_VKBASALT=1` is also set (both
+verified), so keep `ENABLE_VKBASALT=1` for the runs below.
 
 ## 4. Test runs
 
@@ -110,20 +103,21 @@ OFF for all runs -- one variable at a time; we add it back after this works.
 
 ```sh
 export ENABLE_VKBASALT=1
+export MANGOHUD=0
 export VKBASALT_LOG_LEVEL=debug
 export VKBASALT_LOG_FILE=/tmp/vkb-A.log
 export VK_LOADER_DEBUG=error,warn,layer
-export XDG_DATA_DIRS="$HOME/layers/basalt:$HOME/layers/lsfg:$XDG_DATA_DIRS"
+export VK_INSTANCE_LAYERS=VK_LAYER_VKBASALT_OVERLAY_post_processing:VK_LAYER_LSFGVK_frame_generation
 <start the game exactly as you normally do> &> /tmp/loader-A.log
 ```
 
 ### Run B -- today's working order (regression check, nothing should break)
 
-Same block, but swap the two directories:
+Same block, but swap the two names:
 
 ```sh
 export VKBASALT_LOG_FILE=/tmp/vkb-B.log
-export XDG_DATA_DIRS="$HOME/layers/lsfg:$HOME/layers/basalt:$XDG_DATA_DIRS"
+export VK_INSTANCE_LAYERS=VK_LAYER_LSFGVK_frame_generation:VK_LAYER_VKBASALT_OVERLAY_post_processing
 <game> &> /tmp/loader-B.log
 ```
 

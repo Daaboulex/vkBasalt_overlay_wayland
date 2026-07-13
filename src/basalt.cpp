@@ -1471,6 +1471,10 @@ namespace vkBasalt
         // them silently.
         static std::atomic<uint64_t> presentCycles{0};
         uint64_t cycle = ++presentCycles;
+        // trace: every cycle (so a counted rate is a REAL rate, not a sampled
+        // one); debug: a bounded sample, because a per-frame log at debug would
+        // be its own overhead.
+        Logger::trace("present cycle " + std::to_string(cycle) + " -> result " + std::to_string(presentResult));
         if (cycle <= 5 || cycle % 600 == 0)
             Logger::debug("present cycle " + std::to_string(cycle) + " -> result " + std::to_string(presentResult));
         if (presentResult != VK_SUCCESS && presentResult != VK_SUBOPTIMAL_KHR)

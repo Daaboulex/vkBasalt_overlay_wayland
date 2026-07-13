@@ -68,10 +68,13 @@ ICD="${VK_DRIVER_FILES:-/run/opengl-driver/share/vulkan/icd.d/lvp_icd.x86_64.jso
 fail=0
 
 run_case() { # run_case <name> <xdg_data_dirs> <expected_cycles_per_frame>
-    local name="$1" xdg="$2" want="$3" log="$WORK/$1.log"
+    local name="$1" layers="$2" want="$3" log="$WORK/$1.log"
     (
-        export VK_DRIVER_FILES="$ICD" XDG_DATA_DIRS="$xdg"
-        export ENABLE_VKBASALT=1 VKBASALT_LOG_LEVEL=debug
+        export VK_DRIVER_FILES="$ICD" XDG_DATA_DIRS="$BASALT_SHARE:$WORK/mock:${XDG_DATA_DIRS:-/usr/share}"
+        export ENABLE_VKBASALT=1 VK_INSTANCE_LAYERS="$layers"
+        # trace: EVERY present is logged, so the counts below are real counts,
+        # not a sampled rate (debug logs only a bounded sample).
+        export VKBASALT_LOG_LEVEL=trace
         vkcube >/dev/null 2>"$log" &
         local pid=$!
         sleep 8
@@ -79,31 +82,36 @@ run_case() { # run_case <name> <xdg_data_dirs> <expected_cycles_per_frame>
         wait "$pid" 2>/dev/null || true
     )
 
-    # vkBasalt cycles between consecutive mock frames: 1 = vkBasalt above,
-    # 2 = framegen above. Read from the first mock frames -- both logs are
-    # rate-limited, and that early window establishes the pattern.
-    local ratio anomalies hooked
-    ratio=$({ grep -E 'present cycle|mock_framegen: frame' "$log" || true; } |
-        awk '/present cycle/ { c++ } /mock_framegen: frame/ { if (++f <= 3) { print c; c = 0 } }' |
-        sort -n | tail -1)
-    ratio="${ratio:-0}"
-    anomalies=$({ grep -cE 'mock_framegen: .*failed|down-chain present returned|Vulkan Loader.*ERROR' "$log" || true; })
+    # Real counts: vkBasalt presents vs mock generated frames. 1 = vkBasalt
+    # above the framegen layer (it sees only real frames), 2 = below it.
+    local presents frames ratio anomalies hooked
+    presents=$({ grep -c 'present cycle' "$log" || true; })
+    frames=$({ grep -cE 'mock_framegen: frame [0-9]+ ok' "$log" || true; })
     hooked=$({ grep -c 'mock_framegen: device hooked' "$log" || true; })
-
-    if [ "$ratio" = "$want" ] && [ "$anomalies" -eq 0 ] && [ "$hooked" -ge 1 ]; then
-        echo "$name: PASS (cycles-per-frame=$ratio as expected, mock hooked, no anomalies)"
+    anomalies=$({ grep -cE 'mock_framegen: .*(failed|STALL|TIMEOUT)|down-chain present returned|Vulkan Loader.*ERROR' "$log" || true; })
+    if [ "$frames" -gt 0 ]; then
+        ratio=$(awk -v p="$presents" -v f="$frames" 'BEGIN { printf "%.0f", p / f }')
     else
-        echo "$name: FAIL (cycles-per-frame=$ratio want=$want, mock-hooked=$hooked, anomalies=$anomalies)"
-        { grep -E 'mock_framegen: .*failed|down-chain present returned|ERROR' "$log" || true; } | head -4 | sed 's/^/    /'
+        ratio=0
+    fi
+
+    if [ "$ratio" = "$want" ] && [ "$anomalies" -eq 0 ] && [ "$hooked" -ge 1 ] && [ "$frames" -gt 20 ]; then
+        echo "$name: PASS (presents=$presents generated=$frames ratio=$ratio, no anomalies)"
+    else
+        echo "$name: FAIL (presents=$presents generated=$frames ratio=$ratio want=$want, hooked=$hooked, anomalies=$anomalies)"
+        { grep -E 'mock_framegen: .*(failed|STALL|TIMEOUT)|down-chain present returned|ERROR' "$log" || true; } | head -4 | sed 's/^/    /'
         fail=1
     fi
 }
 
+BASALT=VK_LAYER_VKBASALT_OVERLAY_post_processing
+MOCK=VK_LAYER_MOCK_framegen
+
 echo "=== A: vkBasalt ABOVE framegen -- the efficient order (vkBasalt sees only real frames) ==="
-run_case A "$BASALT_SHARE:$WORK/mock:${XDG_DATA_DIRS:-/usr/share}" 1
+run_case A "$BASALT:$MOCK" 1
 
 echo "=== B: framegen ABOVE vkBasalt -- today's wasteful order (vkBasalt sees generated frames too) ==="
-run_case B "$WORK/mock:$BASALT_SHARE:${XDG_DATA_DIRS:-/usr/share}" 2
+run_case B "$MOCK:$BASALT" 2
 
 if [ "$fail" -eq 0 ]; then
     echo "MATRIX PASS -- both orders stable; the efficient order runs vkBasalt on real frames only"
