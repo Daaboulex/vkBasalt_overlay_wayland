@@ -71,14 +71,40 @@ ls ~/.local/share/vulkan/implicit_layer.d/
 vulkaninfo 2>/dev/null | grep -i -E 'VKBASALT|LSFGVK'
 ```
 
-## 3. Test runs
+## 3. How the layer ORDER is actually controlled (important)
+
+`VK_INSTANCE_LAYERS` does NOT reorder implicit layers -- I tested it here and
+both layers still load in the loader's own order regardless of what you name.
+What DOES control it (verified locally against a frame-generation mock):
+
+**the manifest DIRECTORY order in `XDG_DATA_DIRS` -- the earlier directory's
+layer ends up closer to the game.**
+
+So put each manifest in its own directory once, and then a single env var
+picks the order. Find your two manifests and split them:
+
+```sh
+mkdir -p ~/layers/basalt/vulkan/implicit_layer.d ~/layers/lsfg/vulkan/implicit_layer.d
+
+# vkBasalt (installed by step 2)
+mv ~/.local/share/vulkan/implicit_layer.d/vkBasalt-overlay.json \
+   ~/layers/basalt/vulkan/implicit_layer.d/
+
+# LSFG-VK -- find where yours lives, then move it (adjust the path it prints)
+find / -name 'VkLayer_LSFGVK*' 2>/dev/null
+# e.g.: sudo mv /usr/share/vulkan/implicit_layer.d/VkLayer_LSFGVK_frame_generation.json \
+#              ~/layers/lsfg/vulkan/implicit_layer.d/
+```
+
+(If the LSFG manifest is package-owned, copy it instead of moving, and make
+sure the original directory is NOT in `XDG_DATA_DIRS` during the tests --
+otherwise the layer loads twice.)
+
+## 4. Test runs
 
 Use the SAME game and settings you used when you saw the black screen, and
 the other game that crashed. Keep your usual LSFG profile (x2). Turn MangoHud
 OFF for all runs -- one variable at a time; we add it back after this works.
-
-`VK_INSTANCE_LAYERS` pins the layer order deterministically: the FIRST name
-is closest to the game.
 
 ### Run A -- the order we are fixing (vkBasalt processes real frames)
 
@@ -87,17 +113,17 @@ export ENABLE_VKBASALT=1
 export VKBASALT_LOG_LEVEL=debug
 export VKBASALT_LOG_FILE=/tmp/vkb-A.log
 export VK_LOADER_DEBUG=error,warn,layer
-export VK_INSTANCE_LAYERS="VK_LAYER_VKBASALT_OVERLAY_post_processing:VK_LAYER_LSFGVK_frame_generation"
+export XDG_DATA_DIRS="$HOME/layers/basalt:$HOME/layers/lsfg:$XDG_DATA_DIRS"
 <start the game exactly as you normally do> &> /tmp/loader-A.log
 ```
 
 ### Run B -- today's working order (regression check, nothing should break)
 
-Same block, but:
+Same block, but swap the two directories:
 
 ```sh
 export VKBASALT_LOG_FILE=/tmp/vkb-B.log
-export VK_INSTANCE_LAYERS="VK_LAYER_LSFGVK_frame_generation:VK_LAYER_VKBASALT_OVERLAY_post_processing"
+export XDG_DATA_DIRS="$HOME/layers/lsfg:$HOME/layers/basalt:$XDG_DATA_DIRS"
 <game> &> /tmp/loader-B.log
 ```
 
@@ -110,14 +136,19 @@ that terminal (`steam steam://rungameid/<id>`), or put the variables in front
 of `%command%` in the launch options -- but the terminal way captures the
 loader log properly.
 
-## 4. What success looks like
+## 5. What success looks like
 
 - Run A: game plays, display shows the generated FPS (e.g. 120), and
   `/tmp/vkb-A.log` shows `present cycle N` lines ticking at the REAL fps
   (e.g. 60) -- that is the proof vkBasalt now processes only real frames.
-- Run B: behaves exactly like your current setup (nothing regressed).
+- Run B: behaves exactly like your current setup (nothing regressed), and its
+  `present cycle` lines tick at the GENERATED fps (120) -- the waste we are
+  removing.
 
-## 5. Send back (success or failure, always)
+The two cycle rates are also how you (and I) confirm the order actually took
+effect: same number in both runs would mean the order did not change.
+
+## 6. Send back (success or failure, always)
 
 1. The 8 files: `/tmp/vkb-A.log`, `/tmp/vkb-B.log`, `/tmp/vkb-A2.log`,
    `/tmp/vkb-B2.log`, `/tmp/loader-A.log`, `/tmp/loader-B.log`,
@@ -128,7 +159,7 @@ loader log properly.
 If a run freezes, wait ~10 seconds, then grab the logs before killing it --
 the last lines in `vkb-*.log` are the diagnosis.
 
-## 6. Going back to your previous build
+## 7. Going back to your previous build
 
 ```sh
 rm -f ~/.local/share/vulkan/implicit_layer.d/vkBasalt-overlay.json
