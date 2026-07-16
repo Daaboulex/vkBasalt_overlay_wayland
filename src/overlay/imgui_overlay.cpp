@@ -218,7 +218,6 @@ namespace vkBasalt
         if (!pEffectRegistry)
             return;
 
-        ShaderManagerConfig smConfig = ConfigSerializer::loadShaderManagerConfig();
         const auto& selectedEffects = pEffectRegistry->getSelectedEffects();
 
         for (const auto& effectName : selectedEffects)
@@ -228,8 +227,10 @@ namespace vkBasalt
                 continue;
 
             bool usesDepth = depthShaders.count(effectName) > 0;
-            if (!usesDepth && !shaderTestComplete)
+            if (!usesDepth && !shaderTestComplete && !checkedShaders.count(effectName))
             {
+                checkedShaders.insert(effectName);
+                ShaderManagerConfig smConfig = ConfigSerializer::loadShaderManagerConfig();
                 if (checkShaderUsesDepth(effectName, it->second, smConfig.discoveredShaderPaths))
                 {
                     depthShaders.insert(effectName);
