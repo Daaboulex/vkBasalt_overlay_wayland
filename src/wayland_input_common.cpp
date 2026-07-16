@@ -61,7 +61,7 @@ namespace vkBasalt
         seat = (wl_seat*)wl_registry_bind(reg, name, &wl_seat_interface,
                                             version < 5 ? version : 5);
         wl_seat_add_listener(seat, &sharedSeatListener, nullptr);
-        Logger::debug("Wayland: shared seat bound");
+        Logger::info("Wayland: seat bound");
     }
 
     static void registryGlobalRemove(void* /*data*/, wl_registry* /*registry*/, uint32_t /*name*/)
@@ -88,8 +88,8 @@ namespace vkBasalt
         if (commonInitialized)
             return seat != nullptr;
 
-        commonInitialized = true;
-
+        // Not latched until the registry exists, so a failed early attempt
+        // (display not yet captured) is retried on the next call.
         wl_display* display = getWaylandDisplay();
         if (!display)
             return false;
@@ -111,14 +111,16 @@ namespace vkBasalt
         registry = wl_display_get_registry(displayWrapper);
         wl_registry_add_listener(registry, &registryListener, nullptr);
 
+        commonInitialized = true;
+
         // Two roundtrips: the first delivers the globals, the second the seat capabilities.
-        wl_display_roundtrip_queue(display, queue);
-        wl_display_roundtrip_queue(display, queue);
+        if (wl_display_roundtrip_queue(display, queue) < 0 || wl_display_roundtrip_queue(display, queue) < 0)
+            Logger::warn("Wayland: registry roundtrip failed (display error " + std::to_string(wl_display_get_error(display)) + ")");
 
         if (seat)
             Logger::info("Wayland: shared input resources initialized");
         else
-            Logger::warn("Wayland: no seat found");
+            Logger::warn("Wayland: no seat found, binding it if it appears");
 
         return seat != nullptr;
     }

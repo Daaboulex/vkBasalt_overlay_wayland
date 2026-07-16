@@ -36,7 +36,8 @@ namespace vkBasalt
     static bool homePressed = false;
     static bool endPressed = false;
 
-    static bool initialized = false;
+    static bool keyboardLogged = false;
+    static bool noKeyboardWarned = false;
 
     static void processWaylandKey(uint32_t keycode, uint32_t state)
     {
@@ -197,27 +198,30 @@ namespace vkBasalt
 
     bool initWaylandKeyboard()
     {
-        if (initialized)
-            return wlKeyboard != nullptr;
-
-        initialized = true;
-
-        xkbCtx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
         if (!xkbCtx)
         {
-            Logger::err("Wayland: failed to create XKB context");
-            return false;
+            xkbCtx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+            if (!xkbCtx)
+            {
+                Logger::err("Wayland: failed to create XKB context");
+                return false;
+            }
+            setKeyboardBindCallback(bindKeyboard);
         }
-
-        setKeyboardBindCallback(bindKeyboard);
 
         if (!initWaylandInputCommon())
             return false;
 
-        if (wlKeyboard)
+        if (wlKeyboard && !keyboardLogged)
+        {
+            keyboardLogged = true;
             Logger::info("Wayland keyboard input initialized");
-        else
+        }
+        else if (!wlKeyboard && !noKeyboardWarned)
+        {
+            noKeyboardWarned = true;
             Logger::warn("Wayland: no keyboard found on seat");
+        }
 
         return wlKeyboard != nullptr;
     }
@@ -248,7 +252,8 @@ namespace vkBasalt
 
         pressedKeys.clear();
         keyPressEvents.clear();
-        initialized = false;
+        keyboardLogged = false;
+        noKeyboardWarned = false;
 
         cleanupWaylandInputCommon();
     }
@@ -268,10 +273,13 @@ namespace vkBasalt
 
     bool isKeyPressedWayland(uint32_t ks)
     {
-        if (!initWaylandKeyboard())
-            return false;
+        bool ready = initWaylandKeyboard();
 
+        // Dispatch even while unbound: this is what delivers a late wl_seat.
         dispatchWaylandInputEvents();
+
+        if (!ready)
+            return false;
 
         if (keyPressEvents.count(ks))
         {
@@ -296,10 +304,10 @@ namespace vkBasalt
     {
         KeyboardState state;
 
-        if (!initWaylandKeyboard())
-            return state;
-
+        bool ready = initWaylandKeyboard();
         dispatchWaylandInputEvents();
+        if (!ready)
+            return state;
 
         state.typedChars = std::move(typedCharsAccumulator);
         state.lastKeyName = std::move(lastKeyNameAccumulator);

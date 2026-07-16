@@ -35,7 +35,9 @@ namespace vkBasalt
     static bool motionSinceLastPoll = false;
     static Clock::time_point lastMotionTime{};
 
-    static bool mouseInitialized = false;
+    static bool bindCallbackSet = false;
+    static bool mouseLogged = false;
+    static bool noPointerWarned = false;
 
     static void pointerEnter(void* /*data*/, wl_pointer* /*pointer*/,
                              uint32_t /*serial*/, wl_surface* /*surface*/,
@@ -170,20 +172,25 @@ namespace vkBasalt
 
     bool initWaylandMouse()
     {
-        if (mouseInitialized)
-            return wlPointer != nullptr;
-
-        mouseInitialized = true;
-
-        setPointerBindCallback(bindPointer);
+        if (!bindCallbackSet)
+        {
+            setPointerBindCallback(bindPointer);
+            bindCallbackSet = true;
+        }
 
         if (!initWaylandInputCommon())
             return false;
 
-        if (wlPointer)
+        if (wlPointer && !mouseLogged)
+        {
+            mouseLogged = true;
             Logger::info("Wayland mouse input initialized");
-        else
+        }
+        else if (!wlPointer && !noPointerWarned)
+        {
+            noPointerWarned = true;
             Logger::warn("Wayland: no pointer found on seat");
+        }
 
         return wlPointer != nullptr;
     }
@@ -197,7 +204,9 @@ namespace vkBasalt
             wlPointer = nullptr;
         }
 
-        mouseInitialized = false;
+        bindCallbackSet = false;
+        mouseLogged = false;
+        noPointerWarned = false;
 
         cleanupWaylandInputCommon();
     }
@@ -226,10 +235,10 @@ namespace vkBasalt
     {
         MouseState state;
 
-        if (!initWaylandMouse())
-            return state;
-
+        bool ready = initWaylandMouse();
         dispatchWaylandInputEvents();
+        if (!ready)
+            return state;
 
         // While the pointer moves, buttons stay held (a drag); once motion stops
         // and no release arrives within AUTO_RELEASE_MS, release them.
