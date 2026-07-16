@@ -131,6 +131,24 @@ nixpkgs.overlays = [ inputs.vkBasalt_overlay_wayland.overlays.default ];
 
 <!-- END generated:installation -->
 
+### 32-bit games
+
+The layer only applies to games whose architecture it was built for. For 32-bit
+games (many older titles under Proton/Wine without WoW64), add the 32-bit build
+alongside the 64-bit one:
+
+```nix
+hardware.graphics = {
+  enable = true;
+  enable32Bit = true;
+  extraPackages = [ pkgs.vkbasalt-overlay ];
+  extraPackages32 = [ inputs.vkBasalt_overlay_wayland.packages.x86_64-linux.vkbasalt-overlay-i686 ];
+};
+```
+
+The layer manifests carry `library_arch`, so the Vulkan loader picks the right
+build per process.
+
 ## Usage
 
 ### Test

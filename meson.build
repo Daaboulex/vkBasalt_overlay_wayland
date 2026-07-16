@@ -2,6 +2,8 @@ project('vkBasalt-overlay', ['c', 'cpp'], default_options: ['c_std=c11', 'cpp_st
 
 cpp = meson.get_compiler('cpp')
 
+library_arch = cpp.sizeof('void*') == 8 ? '64' : '32'
+
 vkBasalt_include_path = ''
 
 lib_dir = get_option('libdir')
