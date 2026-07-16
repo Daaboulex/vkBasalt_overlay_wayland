@@ -22,8 +22,19 @@ namespace vkBasalt
             }
             else
             {
-                m_outStream = std::unique_ptr<std::ostream, std::function<void(std::ostream*)>>(new std::ofstream(filename),
-                                                                                                [](std::ostream* os) { delete os; });
+                // Append: a game launch is several Vulkan processes (launcher, wine
+                // preloader, game), and truncating would keep only the last one's log.
+                auto* file = new std::ofstream(filename, std::ios::app);
+                if (file->is_open())
+                {
+                    m_outStream = std::unique_ptr<std::ostream, std::function<void(std::ostream*)>>(file, [](std::ostream* os) { delete os; });
+                }
+                else
+                {
+                    delete file;
+                    std::cerr << "vkBasalt warn:  cannot open VKBASALT_LOG_FILE " << filename << ", logging to stderr" << std::endl;
+                    m_outStream = std::unique_ptr<std::ostream, std::function<void(std::ostream*)>>(&std::cerr, [](std::ostream*) {});
+                }
             }
         }
     }
