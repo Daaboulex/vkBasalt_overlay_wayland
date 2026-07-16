@@ -43,7 +43,6 @@ namespace vkBasalt
         debandOptions.reverseScreenWidth  = 1.0f / imageExtent.width;
         debandOptions.reverseScreenHeight = 1.0f / imageExtent.height;
 
-        // get Options
         debandOptions.debandAvgdiff = pConfig->getOption<float>("debandAvgdiff", 3.4f);
         debandOptions.debandMaxdiff = pConfig->getOption<float>("debandMaxdiff", 6.8f);
         debandOptions.debandMiddiff = pConfig->getOption<float>("debandMiddiff", 3.3f);

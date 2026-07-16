@@ -12,7 +12,6 @@ namespace vkBasalt
 {
     void ImGuiOverlay::renderSettingsView(const KeyboardState& keyboard)
     {
-        // Helper to save settings to file
         auto saveSettings = [&]() {
             settingsManager.save();
             settingsSaved = true;
@@ -24,8 +23,6 @@ namespace vkBasalt
         ImGui::Separator();
         ImGui::TextDisabled("Click a button and press any key to set binding");
 
-        // Helper lambda to render a keybind button
-        // Uses local char buffer for display, updates settingsManager on change
         auto renderKeyBind = [&](const char* label, const char* tooltip,
                                  const std::string& currentKey,
                                  std::function<void(const std::string&)> setter,
@@ -47,7 +44,6 @@ namespace vkBasalt
             if (isListening)
                 ImGui::PopStyleColor();
 
-            // Capture key if listening
             if (isListening && !keyboard.lastKeyName.empty())
             {
                 setter(keyboard.lastKeyName);
@@ -105,7 +101,6 @@ namespace vkBasalt
             saveSettings();
         }
 
-        // Show VRAM estimate based on current resolution (2 images per slot, 4 bytes per pixel)
         float bytesPerSlot = 2.0f * currentWidth * currentHeight * 4.0f;
         int estimatedVramMB = static_cast<int>((maxEffectsVal * bytesPerSlot) / (1024.0f * 1024.0f));
         ImGui::SameLine();

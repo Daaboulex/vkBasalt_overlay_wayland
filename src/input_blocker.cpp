@@ -17,8 +17,6 @@
 namespace vkBasalt
 {
     static bool blockingEnabled = false;
-    // Atomic: written by overlay thread (setInputBlocked), read by game thread
-    // (isInputBlocked via Wayland interpose wrapper callbacks)
     static std::atomic<bool> blocked{false};
 
 #if VKBASALT_X11
@@ -81,9 +79,8 @@ namespace vkBasalt
 
         if (isWayland())
         {
-            // Wayland doesn't support global input grabs
-            // Input events are delivered to our private event queue
-            // and consumed by the overlay when visible
+            // Wayland has no global input grabs; blocking works by suppressing
+            // events in the interposed game listeners.
             Logger::debug(std::string("Input blocking ") + (enabled ? "enabled (Wayland: event consumption mode)" : "disabled"));
             return;
         }
@@ -111,19 +108,13 @@ namespace vkBasalt
 
         if (isWayland())
         {
-            // On Wayland, interposed wl_proxy_add_listener wrapper callbacks
-            // check isInputBlocked() and suppress events to the game.
-            // NOTE: This does NOT work for Wine Wayland games — Wine loads
-            // winewayland.so via dlopen(RTLD_LOCAL), so libwayland-client
-            // resolves in Wine's local scope, bypassing our LD_PRELOAD
-            // interposition entirely. No workaround exists without LD_AUDIT
-            // or a wrapper libwayland-client.so. X11 grabs are NOT used as
-            // fallback because Wine Wayland games don't use XWayland for input,
-            // and stale X11 grabs cause compositor focus issues.
+            // Wine loads winewayland.so via dlopen(RTLD_LOCAL), which bypasses the
+            // wl_proxy_add_listener interpose; libvkbasalt-audit (LD_AUDIT, set by
+            // vkbasalt-run) covers that case. X11 grabs are not used as fallback:
+            // Wine Wayland games do not take input through XWayland, and stale
+            // grabs cause compositor focus issues.
             Logger::debug(std::string("Wayland input blocking: ") + (shouldBlock ? "suppressing game events" : "forwarding game events"));
-            // Send synthetic leave/enter to game keyboards so held keys
-            // are released when overlay opens (prevents stuck movement/actions).
-            // Only works when wl_proxy_add_listener interposition is active.
+            // Synthetic leave/enter releases keys the game held when the overlay opened.
             notifyGameKeyboardFocus(!shouldBlock);
             return;
         }

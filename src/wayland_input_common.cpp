@@ -13,20 +13,15 @@ namespace vkBasalt
     static wl_seat* seat = nullptr;
     static bool commonInitialized = false;
 
-    // Frame-level dispatch deduplication — tracks a monotonic counter so
-    // multiple callers (getMouseState, getKeyboardState, isKeyPressed×N)
-    // within the same frame only do one real dispatch.
     static uint64_t dispatchFrameId = 0;
     static uint64_t lastDispatchedFrame = 0;
 
-    // Device bind callbacks — set by keyboard/mouse modules before init
     static KeyboardBindCallback keyboardBind = nullptr;
     static PointerBindCallback pointerBind = nullptr;
 
     void setKeyboardBindCallback(KeyboardBindCallback cb)
     {
         keyboardBind = cb;
-        // If seat already bound, invoke callback immediately for late registration
         if (seat && cb)
             cb(seat);
     }
@@ -34,12 +29,10 @@ namespace vkBasalt
     void setPointerBindCallback(PointerBindCallback cb)
     {
         pointerBind = cb;
-        // If seat already bound, invoke callback immediately for late registration
         if (seat && cb)
             cb(seat);
     }
 
-    // Single seat listener that handles both keyboard and pointer capabilities
     static void seatCapabilities(void* /*data*/, wl_seat* s, uint32_t caps)
     {
         if ((caps & WL_SEAT_CAPABILITY_KEYBOARD) && keyboardBind)
@@ -118,9 +111,8 @@ namespace vkBasalt
         registry = wl_display_get_registry(displayWrapper);
         wl_registry_add_listener(registry, &registryListener, nullptr);
 
-        // Roundtrip to discover globals (seat)
+        // Two roundtrips: the first delivers the globals, the second the seat capabilities.
         wl_display_roundtrip_queue(display, queue);
-        // Second roundtrip to get seat capabilities (keyboard + pointer)
         wl_display_roundtrip_queue(display, queue);
 
         if (seat)
@@ -138,7 +130,6 @@ namespace vkBasalt
 
     void dispatchWaylandInputEvents()
     {
-        // Skip if already dispatched this frame
         if (lastDispatchedFrame == dispatchFrameId)
             return;
         lastDispatchedFrame = dispatchFrameId;
@@ -150,14 +141,12 @@ namespace vkBasalt
         if (!display)
             return;
 
-        // Drain any already-queued events first (prepare_read requires empty queue)
+        // wl_display_prepare_read_queue requires an empty queue.
         while (wl_display_prepare_read_queue(display, queue) != 0)
             wl_display_dispatch_queue_pending(display, queue);
 
-        // Non-blocking socket read — many games only call
-        // wl_display_dispatch_pending() in their render loop, which does
-        // NOT read from the socket.  Without this, button release and
-        // other events stay stuck in the kernel buffer.
+        // Read the socket ourselves: many games only call wl_display_dispatch_pending
+        // in their render loop, which never reads it.
         wl_display_flush(display);
         struct pollfd pfd = { wl_display_get_fd(display), POLLIN, 0 };
         if (poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLIN))

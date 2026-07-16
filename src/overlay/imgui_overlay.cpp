@@ -22,16 +22,12 @@
 
 namespace vkBasalt
 {
-    // No-op dummy for Vulkan functions ImGui requests but vkBasalt doesn't intercept.
-    // ImGui's LoadFunctions treats nullptr returns as failures, so we need a valid pointer.
     static void VKAPI_CALL dummyVulkanFunc() {}
 
-    // Function loader using vkBasalt's dispatch tables
     static PFN_vkVoidFunction imguiVulkanLoaderDummy(const char* function_name, void* user_data)
     {
         LogicalDevice* device = static_cast<LogicalDevice*>(user_data);
 
-        // Device functions from vkBasalt's dispatch table
         #define CHECK_FUNC(name) if (strcmp(function_name, "vk" #name) == 0) return (PFN_vkVoidFunction)device->vkd.name
 
         CHECK_FUNC(AllocateCommandBuffers);
@@ -102,16 +98,13 @@ namespace vkBasalt
 
         #undef CHECK_FUNC
 
-        // Instance functions from vkBasalt's dispatch
         #define CHECK_IFUNC(name) if (strcmp(function_name, "vk" #name) == 0) return (PFN_vkVoidFunction)device->vki.name
         CHECK_IFUNC(GetPhysicalDeviceMemoryProperties);
         CHECK_IFUNC(GetPhysicalDeviceProperties);
         CHECK_IFUNC(GetPhysicalDeviceQueueFamilyProperties);
         #undef CHECK_IFUNC
 
-        // Return a no-op dummy for unknown functions. ImGui's LoadFunctions treats
-        // nullptr as a load failure, so we must return a valid function pointer.
-        // These functions are never actually called by ImGui in our usage.
+        // ImGui's LoadFunctions treats a nullptr return as a load failure.
         return (PFN_vkVoidFunction)dummyVulkanFunc;
     }
 
@@ -133,14 +126,12 @@ namespace vkBasalt
 
         ImGui::StyleColorsDark();
 
-        // Make it semi-transparent
         ImGuiStyle& style = ImGui::GetStyle();
         style.Alpha = 0.9f;
         style.WindowRounding = 5.0f;
 
         initVulkanBackend(swapchainFormat, imageCount);
 
-        // Restore UI preferences from persistent state
         if (pPersistentState)
             visible = pPersistentState->visible;
 
@@ -152,13 +143,11 @@ namespace vkBasalt
     {
         if (!initialized) return;
 
-        // Auto-save profile on shutdown (before GPU cleanup)
         if (profileDirty && !activeProfilePath.empty())
             autoSaveProfile();
 
         pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
 
-        // Clean up Wayland resources before destroying the event queue
         if (isWayland())
             cleanupPointerConstraints();
 
@@ -194,9 +183,6 @@ namespace vkBasalt
         visible = !visible;
         setInputBlocked(visible);
 
-        // Pointer confinement was removed: the overlay renders inside the game's
-        // surface, so confining the pointer doesn't prevent the compositor from
-        // interpreting clicks as window-move grabs.
 
         saveToPersistentState();
     }
@@ -206,7 +192,6 @@ namespace vkBasalt
         if (!pPersistentState)
             return;
 
-        // Only save UI preferences - effect state is in the registry, settings in settingsManager
         pPersistentState->visible = visible;
     }
 
@@ -217,17 +202,13 @@ namespace vkBasalt
         if (!pEffectRegistry)
             return;
 
-        // Registry is already initialized from config at swapchain creation
-        // Just ensure any newly added effects are in the registry
         const auto& selectedEffects = pEffectRegistry->getSelectedEffects();
         for (const auto& effectName : selectedEffects)
         {
             if (!pEffectRegistry->hasEffect(effectName))
                 pEffectRegistry->ensureEffect(effectName);
         }
-        // No editableParams merging needed - Registry IS the source of truth
 
-        // If Safe Anti-Cheat is active, disable any depth-using effects in the selection
         if (profileSafeAntiCheat)
             disableDepthEffects();
     }
@@ -386,10 +367,8 @@ namespace vkBasalt
 
         pEffectRegistry->setSelectedEffects(effects);
 
-        // Build set of disabled effects for quick lookup
         std::set<std::string> disabledSet(disabledEffects.begin(), disabledEffects.end());
 
-        // Set enabled states in registry: disabled if in disabledEffects, enabled otherwise
         for (const auto& effectName : effects)
         {
             bool enabled = (disabledSet.find(effectName) == disabledSet.end());
@@ -399,7 +378,6 @@ namespace vkBasalt
 
     void ImGuiOverlay::initVulkanBackend(VkFormat swapchainFormat, uint32_t imageCount)
     {
-        // Load Vulkan functions for ImGui using vkBasalt's dispatch tables
         bool loaded = ImGui_ImplVulkan_LoadFunctions(VK_API_VERSION_1_3, imguiVulkanLoaderDummy, pLogicalDevice);
         if (!loaded)
         {
@@ -408,7 +386,6 @@ namespace vkBasalt
         }
         Logger::debug("ImGui Vulkan functions loaded");
 
-        // Create descriptor pool for ImGui
         VkDescriptorPoolSize poolSizes[] = {
             { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 }
         };
@@ -427,7 +404,6 @@ namespace vkBasalt
             return;
         }
 
-        // Create render pass for ImGui
         VkAttachmentDescription attachment = {};
         attachment.format = swapchainFormat;
         attachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -447,7 +423,6 @@ namespace vkBasalt
         subpass.colorAttachmentCount = 1;
         subpass.pColorAttachments = &colorRef;
 
-        // Dependency for incoming: wait for prior color writes before overlay renders
         VkSubpassDependency dependencies[2] = {};
         dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
         dependencies[0].dstSubpass = 0;
@@ -456,10 +431,8 @@ namespace vkBasalt
         dependencies[0].srcAccessMask = 0;
         dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-        // Dependency for outgoing: ensure overlay writes + layout transition complete
-        // and are VISIBLE to presentation engine and DMA-BUF screen capture readers.
-        // VK_ACCESS_MEMORY_READ_BIT is critical — without it, GPU caches may not be
-        // flushed before PipeWire/compositor reads the image via DMA-BUF.
+        // VK_ACCESS_MEMORY_READ_BIT on the outgoing dependency: without it, GPU
+        // caches may not be flushed before PipeWire/compositor DMA-BUF readers see the image.
         dependencies[1].srcSubpass = 0;
         dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
         dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -483,7 +456,6 @@ namespace vkBasalt
             return;
         }
 
-        // Initialize ImGui Vulkan backend
         ImGui_ImplVulkan_InitInfo initInfo = {};
         initInfo.ApiVersion = VK_API_VERSION_1_3;
         initInfo.Instance = pLogicalDevice->instance;
@@ -502,7 +474,6 @@ namespace vkBasalt
         this->swapchainFormat = swapchainFormat;
         this->imageCount = imageCount;
 
-        // Create command pool
         VkCommandPoolCreateInfo poolCreateInfo = {};
         poolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
         poolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -514,7 +485,6 @@ namespace vkBasalt
             return;
         }
 
-        // Allocate command buffers
         commandBuffers.resize(imageCount);
         VkCommandBufferAllocateInfo allocInfo = {};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -528,7 +498,6 @@ namespace vkBasalt
             return;
         }
 
-        // Create fences for command buffer synchronization (signaled initially so first frame doesn't wait)
         commandBufferFences.resize(imageCount);
         VkFenceCreateInfo fenceInfo = {};
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -548,15 +517,12 @@ namespace vkBasalt
         if (!backendInitialized || !visible)
             return VK_NULL_HANDLE;
 
-        // Store current resolution for VRAM estimates in settings
         currentWidth = width;
         currentHeight = height;
 
-        // Wait for previous use of this command buffer to complete.
-        // Adaptive timeout: 4x the measured frame time (generous margin for GPU
-        // scheduling jitter), clamped to [2ms, 50ms].  With triple buffering the
-        // fence was submitted 2-3 frames ago and is almost always already signaled.
-        static float avgFrameTimeMs = 8.0f;  // Seed at ~120 FPS
+        // The fence was submitted 2-3 frames ago and is almost always already
+        // signaled; the timeout scales with the measured frame time.
+        static float avgFrameTimeMs = 8.0f;
         VkFence fence = commandBufferFences[imageIndex];
         uint64_t timeoutNs = static_cast<uint64_t>(
             std::clamp(avgFrameTimeMs * 4.0f, 2.0f, 50.0f) * 1'000'000.0f);
@@ -580,7 +546,6 @@ namespace vkBasalt
 
         VkCommandBuffer cmd = commandBuffers[imageIndex];
 
-        // Begin command buffer
         VkCommandBufferBeginInfo beginInfo = {};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -591,8 +556,6 @@ namespace vkBasalt
             return VK_NULL_HANDLE;
         }
 
-        // Ensure framebuffer exists for this image index.
-        // Recreate if the image view or dimensions changed (swapchain recreation).
         if (framebuffers.size() <= imageIndex)
         {
             framebuffers.resize(imageIndex + 1, VK_NULL_HANDLE);
@@ -630,14 +593,11 @@ namespace vkBasalt
 
         VkFramebuffer framebuffer = framebuffers[imageIndex];
 
-        // Set display size and frame timing BEFORE NewFrame
         ImGuiIO& io = ImGui::GetIO();
         io.DisplaySize = ImVec2((float)width, (float)height);
 
-        // DeltaTime for ImGui's internal timing (drag thresholds, animations).
-        // Uses last known good value as fallback instead of hardcoded 1/60.
         static auto lastFrameTime = std::chrono::steady_clock::now();
-        static float lastGoodDt = 0.008f;  // Seed at ~120 FPS
+        static float lastGoodDt = 0.008f;
         auto now = std::chrono::steady_clock::now();
         float dt = std::chrono::duration<float>(now - lastFrameTime).count();
         lastFrameTime = now;
@@ -645,7 +605,6 @@ namespace vkBasalt
         {
             io.DeltaTime = dt;
             lastGoodDt = dt;
-            // Update adaptive fence timeout with exponential moving average
             avgFrameTimeMs = avgFrameTimeMs * 0.9f + (dt * 1000.0f) * 0.1f;
         }
         else
@@ -653,12 +612,8 @@ namespace vkBasalt
             io.DeltaTime = lastGoodDt;
         }
 
-        // Fresh input dispatch — keybinding checks earlier in the frame already
-        // dispatched once, but new mouse events may have arrived since then.
-        // This gives the overlay the latest cursor position for smooth tracking.
         beginWaylandInputFrame();
 
-        // Mouse input for interactivity
         MouseState mouse = getMouseState();
         io.MousePos = ImVec2((float)mouse.x, (float)mouse.y);
 
@@ -668,8 +623,6 @@ namespace vkBasalt
         io.MouseWheel = mouse.scrollDelta;
         io.MouseDrawCursor = true;  // Draw software cursor (games often hide the OS cursor)
 
-        // Keyboard input for text fields
-        // Keys are one-shot events, so we send press and release in same frame
         KeyboardState keyboard = getKeyboardState();
         for (char c : keyboard.typedChars)
             io.AddInputCharacter(c);
@@ -681,16 +634,13 @@ namespace vkBasalt
         if (keyboard.home) { io.AddKeyEvent(ImGuiKey_Home, true); io.AddKeyEvent(ImGuiKey_Home, false); }
         if (keyboard.end) { io.AddKeyEvent(ImGuiKey_End, true); io.AddKeyEvent(ImGuiKey_End, false); }
 
-        // ImGui frame
         ImGui_ImplVulkan_NewFrame();
         ImGui::NewFrame();
 
-        // Clamp overlay window to screen bounds so it can never go offscreen
         ImGuiViewport* viewport = ImGui::GetMainViewport();
         ImVec2 screenMin = viewport->WorkPos;
         ImVec2 screenMax = ImVec2(screenMin.x + viewport->WorkSize.x, screenMin.y + viewport->WorkSize.y);
 
-        // Set default size/position on first appearance
         ImGui::SetNextWindowSizeConstraints(ImVec2(300, 200), ImVec2(screenMax.x - screenMin.x, screenMax.y - screenMin.y));
         if (resetLayoutRequested)
         {
@@ -706,7 +656,6 @@ namespace vkBasalt
 
         ImGui::Begin("vkBasalt Overlay", nullptr, ImGuiWindowFlags_NoCollapse);
 
-        // Clamp position after the window is created (prevents dragging offscreen)
         ImVec2 winPos = ImGui::GetWindowPos();
         ImVec2 winSize = ImGui::GetWindowSize();
         bool clamped = false;
@@ -717,7 +666,6 @@ namespace vkBasalt
         if (clamped)
             ImGui::SetWindowPos(winPos);
 
-        // Process shader test (one per frame) regardless of active tab
         processShaderTest();
 
         if (ImGui::BeginTabBar("OverlayTabs"))
@@ -756,10 +704,8 @@ namespace vkBasalt
 
         ImGui::End();  // vkBasalt Overlay
 
-        // Debug window (separate, controlled by setting)
         renderDebugWindow();
 
-        // Global auto-apply check (runs regardless of which tab is active)
         if (settingsManager.getAutoApply() && paramsDirty)
         {
             auto now = std::chrono::steady_clock::now();
@@ -768,15 +714,13 @@ namespace vkBasalt
             {
                 applyRequested = true;
                 paramsDirty = false;
-                profileDirty = true;  // Mark for auto-save to profile
+                profileDirty = true;
             }
         }
 
-        // Auto-save profile when changes are applied
         if (profileDirty && !paramsDirty && !activeProfilePath.empty())
             autoSaveProfile();
 
-        // Focus Effects window on first frame of the session
         static bool firstFrame = true;
         if (firstFrame)
         {
@@ -786,7 +730,6 @@ namespace vkBasalt
 
         ImGui::Render();
 
-        // Begin render pass
         VkRenderPassBeginInfo rpBegin = {};
         rpBegin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         rpBegin.renderPass = renderPass;

@@ -20,14 +20,12 @@ namespace vkBasalt
 
 namespace vkBasalt
 {
-    // Static file browser for adding directories
     static ImGui::FileBrowser dirBrowser(
         ImGuiFileBrowserFlags_SelectDirectory |
         ImGuiFileBrowserFlags_HideRegularFiles |
         ImGuiFileBrowserFlags_CloseOnEsc |
         ImGuiFileBrowserFlags_CreateNewDir);
 
-    // Case-insensitive string comparison
     static bool equalsIgnoreCase(const std::string& a, const std::string& b)
     {
         if (a.size() != b.size())
@@ -41,7 +39,6 @@ namespace vkBasalt
         return true;
     }
 
-    // Recursively scan directory for Shaders/ and Textures/ subdirectories
     static void scanDirectory(
         const std::filesystem::path& dir,
         std::set<std::string>& shaderPaths,
@@ -70,7 +67,6 @@ namespace vkBasalt
 
     void ImGuiOverlay::renderShaderManagerView()
     {
-        // Load config on first open
         if (!shaderMgrInitialized)
         {
             ShaderManagerConfig config = ConfigSerializer::loadShaderManagerConfig();
@@ -80,7 +76,6 @@ namespace vkBasalt
             shaderMgrInitialized = true;
         }
 
-        // Helper to save config (auto-save on any change)
         auto saveConfig = [&]() {
             ShaderManagerConfig config;
             config.parentDirectories = shaderMgrParentDirs;
@@ -92,7 +87,6 @@ namespace vkBasalt
 
         ImGui::BeginChild("ShaderMgrContent", ImVec2(0, 0), false);
 
-        // Parent Directories section
         ImGui::Text("Parent Directories");
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Add directories containing ReShade shader packs.\nThey will be scanned for Shaders/ and Textures/ subdirectories.");
@@ -105,7 +99,6 @@ namespace vkBasalt
             dirBrowser.Open();
         }
 
-        // List parent directories with remove buttons
         ImGui::BeginChild("ParentDirList", ImVec2(0, 120), true);
         int removeIdx = -1;
         for (size_t i = 0; i < shaderMgrParentDirs.size(); i++)
@@ -127,7 +120,6 @@ namespace vkBasalt
             saveConfig();
         }
 
-        // Rescan button and stats
         ImGui::Spacing();
         if (ImGui::Button("Rescan All"))
         {
@@ -147,12 +139,10 @@ namespace vkBasalt
         ImGui::TextDisabled("(%zu shader paths, %zu texture paths)",
             shaderMgrShaderPaths.size(), shaderMgrTexturePaths.size());
 
-        // Shader test button and progress (implemented in view_shader_test.cpp)
         renderShaderTestSection();
 
         ImGui::Separator();
 
-        // Discovered Shader Paths (collapsible)
         if (ImGui::TreeNode("Discovered Shader Paths"))
         {
             if (shaderMgrShaderPaths.empty())
@@ -178,7 +168,6 @@ namespace vkBasalt
             ImGui::TreePop();
         }
 
-        // Discovered Texture Paths (collapsible)
         if (ImGui::TreeNode("Discovered Texture Paths"))
         {
             if (shaderMgrTexturePaths.empty())
@@ -204,7 +193,6 @@ namespace vkBasalt
             ImGui::TreePop();
         }
 
-        // Test Results (collapsible, show after test completes)
         if (shaderTestComplete)
             renderShaderTestResultsUI(shaderTestResults, depthShaders);
 
@@ -215,7 +203,6 @@ namespace vkBasalt
         if (dirBrowser.HasSelected())
         {
             std::string selectedPath = dirBrowser.GetSelected().string();
-            // Avoid duplicates
             bool exists = false;
             for (const auto& dir : shaderMgrParentDirs)
             {

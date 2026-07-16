@@ -20,7 +20,6 @@ namespace vkBasalt
                 changed = true;
             }
 
-            // Right-click context menu to reset
             if (ImGui::BeginPopupContextItem("##reset"))
             {
                 if (ImGui::MenuItem("Reset to default"))

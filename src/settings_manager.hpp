@@ -7,26 +7,15 @@
 
 namespace vkBasalt
 {
-    // Single source of truth for all vkBasalt settings.
-    // Similar to EffectRegistry for effect parameters.
-    //
-    // Usage:
-    // - Call initialize() once at startup to load from config
-    // - Read/write settings directly via getters/setters
-    // - Call save() to persist changes to vkBasalt.conf
     class SettingsManager
     {
     public:
-        // Initialize from vkBasalt.conf (call once at startup)
         void initialize();
 
-        // Check if already initialized
         bool isInitialized() const { return initialized; }
 
-        // Save current settings to vkBasalt.conf
         bool save();
 
-        // Getters
         int getMaxEffects() const { return settings.maxEffects; }
         bool getOverlayBlockInput() const { return settings.overlayBlockInput; }
         const std::string& getToggleKey() const { return settings.toggleKey; }
@@ -39,7 +28,6 @@ namespace vkBasalt
         bool getShowDebugWindow() const { return settings.showDebugWindow; }
         bool getSafeAntiCheat() const { return safeAntiCheat; }
 
-        // Setters (update in-memory state, call save() to persist)
         void setMaxEffects(int value) { settings.maxEffects = value; }
         void setOverlayBlockInput(bool value) { settings.overlayBlockInput = value; }
         void setToggleKey(const std::string& value) { settings.toggleKey = value; }
@@ -52,16 +40,14 @@ namespace vkBasalt
         void setShowDebugWindow(bool value) { settings.showDebugWindow = value; }
         void setSafeAntiCheat(bool value) { safeAntiCheat = value; }
 
-        // Get raw settings struct (for bulk operations)
         const VkBasaltSettings& getSettings() const { return settings; }
 
     private:
         VkBasaltSettings settings;
         bool initialized = false;
-        bool safeAntiCheat = false; // Runtime flag: layer hiding active
+        bool safeAntiCheat = false;
     };
 
-    // Global settings manager instance (like effectRegistry)
     extern SettingsManager settingsManager;
 
 } // namespace vkBasalt

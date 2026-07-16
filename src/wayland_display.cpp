@@ -42,7 +42,7 @@ namespace vkBasalt
     void setX11Surface()
     {
         if (waylandChecked == 1)
-            return; // a Wayland surface/display already won the tie
+            return;
 
         waylandChecked = 0;
         Logger::info("detected X11 (Xlib/Xcb) client -> X11 input backend");
@@ -50,17 +50,12 @@ namespace vkBasalt
 
     bool isWayland()
     {
-        // Authoritative: the windowing backend the app actually uses, set once by
-        // setWaylandDisplay (from vkCreateWaylandSurfaceKHR) or setX11Surface
-        // (from the enabled instance surface extension). Never from the env.
         if (waylandChecked >= 0)
             return waylandChecked == 1;
 
-        // Not yet determined: fall back to the environment, but do NOT cache it,
-        // so a later setX11Surface()/setWaylandDisplay() still sets the real
-        // backend. Under XWayland both WAYLAND_DISPLAY and DISPLAY are set, so
-        // WAYLAND_DISPLAY alone is not proof of a Wayland client -- that case is
-        // resolved by setX11Surface() at instance creation before input is routed.
+        // Undetermined: fall back to the environment without caching it, so a later
+        // setX11Surface()/setWaylandDisplay() still decides. XWayland clients have
+        // both WAYLAND_DISPLAY and DISPLAY set, so the env var alone is not proof.
         const char* wlDisplay = getenv("WAYLAND_DISPLAY");
         return wlDisplay && *wlDisplay;
     }

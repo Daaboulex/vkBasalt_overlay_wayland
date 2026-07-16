@@ -20,7 +20,6 @@ namespace vkBasalt
 {
     namespace
     {
-        // Helper to find annotation by name
         template<typename T>
         auto findAnnotation(const T& annotations, const std::string& name)
         {
@@ -28,14 +27,12 @@ namespace vkBasalt
                 [&name](const auto& a) { return a.name == name; });
         }
 
-        // Helper to check if annotation exists
         template<typename T>
         bool hasAnnotation(const T& annotations, const std::string& name)
         {
             return findAnnotation(annotations, name) != annotations.end();
         }
 
-        // Helper to get float value from annotation (handles int->float conversion)
         template<typename T>
         float getAnnotationFloat(const T& annotation)
         {
@@ -44,7 +41,6 @@ namespace vkBasalt
                 : static_cast<float>(annotation.value.as_int[0]);
         }
 
-        // Helper to get int value from annotation (handles float->int conversion)
         template<typename T>
         int getAnnotationInt(const T& annotation)
         {
@@ -53,7 +49,6 @@ namespace vkBasalt
                 : static_cast<int>(annotation.value.as_float[0]);
         }
 
-        // Parse null-separated string into vector
         std::vector<std::string> parseNullSeparatedString(const std::string& str)
         {
             std::vector<std::string> items;
@@ -85,15 +80,15 @@ namespace vkBasalt
             pp.add_macro_definition("BUFFER_COLOR_DEPTH", "8");
             pp.add_macro_definition("BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH");
 
-            // Component-specific texture gather shorthands (missing from this reshadefx version)
-            // Must use append_string — raw macro structs lack parameter substitution markers
+            // Shorthands missing from this reshadefx version; append_string because
+            // add_macro_definition cannot express function-like macros.
             pp.append_string(
                 "#define tex2DgatherR(s, coords) tex2Dgather(s, coords, 0)\n"
                 "#define tex2DgatherG(s, coords) tex2Dgather(s, coords, 1)\n"
                 "#define tex2DgatherB(s, coords) tex2Dgather(s, coords, 2)\n"
                 "#define tex2DgatherA(s, coords) tex2Dgather(s, coords, 3)\n"
 
-                // Non-square matrix types — map to matrix<> template syntax
+                // Non-square matrix types map to matrix<> template syntax
                 "#define float2x3 matrix<float, 2, 3>\n"
                 "#define float2x4 matrix<float, 2, 4>\n"
                 "#define float3x2 matrix<float, 3, 2>\n"
@@ -101,13 +96,13 @@ namespace vkBasalt
                 "#define float4x2 matrix<float, 4, 2>\n"
                 "#define float4x3 matrix<float, 4, 3>\n"
 
-                // High-precision derivative variants — map to standard derivatives
+                // High-precision derivative variants map to standard derivatives
                 "#define ddx_fine(x) ddx(x)\n"
                 "#define ddy_fine(x) ddy(x)\n"
                 "#define ddx_coarse(x) ddx(x)\n"
                 "#define ddy_coarse(x) ddy(x)\n"
 
-                // Atomic operation stubs — no-op for fragment pipeline (compute shader feature)
+                // Atomic ops are compute-shader features; no-op stubs for the fragment-only pipeline
                 "#define atomicAdd(d, v) (v)\n"
                 "#define atomicMax(d, v) (v)\n"
                 "#define atomicMin(d, v) (v)\n"
@@ -117,7 +112,7 @@ namespace vkBasalt
                 "#define atomicExchange(d, v) (v)\n"
                 "#define atomicCompSwap(d, c, v) (v)\n"
 
-                // Compute shader stubs — expand to valid no-op expressions for fragment-only pipeline
+                // Compute shader stubs expand to valid no-op expressions for the fragment-only pipeline
                 "#define tex2Dstore(s, c, v) (0)\n"
                 "#define barrier() (0)\n"
                 "#define memoryBarrier() (0)\n"
@@ -135,13 +130,11 @@ namespace vkBasalt
         {
             addStandardMacros(pp);
 
-            // Add all discovered shader paths from shader manager
             ShaderManagerConfig shaderMgrConfig = ConfigSerializer::loadShaderManagerConfig();
             for (const auto& path : shaderMgrConfig.discoveredShaderPaths)
                 pp.add_include_path(path);
         }
 
-        // Overload with pre-cached include paths (avoids re-reading config from disk)
         void setupPreprocessor(reshadefx::preprocessor& pp,
                                const std::vector<std::string>& includePaths)
         {
@@ -177,19 +170,15 @@ namespace vkBasalt
             const std::string& effectName,
             Config* pConfig)
         {
-            // Label (common to all types)
             auto labelIt = findAnnotation(spec.annotations, "ui_label");
             std::string label = (labelIt != spec.annotations.end()) ? labelIt->value.string_data : spec.name;
 
-            // Tooltip (common to all types)
             auto tooltipIt = findAnnotation(spec.annotations, "ui_tooltip");
             std::string tooltip = (tooltipIt != spec.annotations.end()) ? tooltipIt->value.string_data : "";
 
-            // UI type (common to all types)
             auto typeIt = findAnnotation(spec.annotations, "ui_type");
             std::string uiType = (typeIt != spec.annotations.end()) ? typeIt->value.string_data : "";
 
-            // Helper lambda to populate float vector parameters
             auto populateFloatVector = [&](FloatVecParam& p, uint32_t componentCount) {
                 p.effectName = effectName;
                 p.name = spec.name;
@@ -216,7 +205,6 @@ namespace vkBasalt
                     p.step = getAnnotationFloat(*stepIt);
             };
 
-            // Helper lambda to populate int vector parameters
             auto populateIntVector = [&](IntVecParam& p, uint32_t componentCount) {
                 p.effectName = effectName;
                 p.name = spec.name;
@@ -243,7 +231,6 @@ namespace vkBasalt
                     p.step = getAnnotationFloat(*stepIt);
             };
 
-            // Helper lambda to populate uint vector parameters
             auto populateUintVector = [&](UintVecParam& p, uint32_t componentCount) {
                 p.effectName = effectName;
                 p.name = spec.name;
@@ -270,17 +257,14 @@ namespace vkBasalt
                     p.step = getAnnotationFloat(*stepIt);
             };
 
-            // Create appropriate subclass based on spec type
             if (spec.type.is_floating_point() && spec.type.rows >= 2 && spec.type.rows <= 4)
             {
-                // float2/float3/float4 vector types
                 auto p = std::make_unique<FloatVecParam>();
                 populateFloatVector(*p, spec.type.rows);
                 return p;
             }
             else if (spec.type.is_floating_point() && spec.type.rows == 1)
             {
-                // scalar float
                 auto p = std::make_unique<FloatParam>();
                 p->effectName = effectName;
                 p->name = spec.name;
@@ -311,14 +295,12 @@ namespace vkBasalt
             }
             else if (spec.type.is_integral() && spec.type.is_signed() && spec.type.rows >= 2 && spec.type.rows <= 4)
             {
-                // int2/int3/int4 vector types
                 auto p = std::make_unique<IntVecParam>();
                 populateIntVector(*p, spec.type.rows);
                 return p;
             }
             else if (spec.type.is_integral() && spec.type.is_signed() && spec.type.rows == 1)
             {
-                // Scalar signed int
                 auto p = std::make_unique<IntParam>();
                 p->effectName = effectName;
                 p->name = spec.name;
@@ -341,14 +323,12 @@ namespace vkBasalt
             }
             else if (spec.type.is_integral() && !spec.type.is_signed() && spec.type.rows >= 2 && spec.type.rows <= 4)
             {
-                // uint2/uint3/uint4 vector types
                 auto p = std::make_unique<UintVecParam>();
                 populateUintVector(*p, spec.type.rows);
                 return p;
             }
             else if (spec.type.is_integral() && !spec.type.is_signed() && spec.type.rows == 1)
             {
-                // Scalar unsigned int
                 auto p = std::make_unique<UintParam>();
                 p->effectName = effectName;
                 p->name = spec.name;
@@ -385,7 +365,6 @@ namespace vkBasalt
         }
     } // anonymous namespace
 
-    // Signal-safe crash recovery for SIGFPE/SIGABRT from embedded reshadefx compiler
     static thread_local sigjmp_buf parserSignalJmpBuf;
     static thread_local volatile sig_atomic_t parserSignalJmpActive = 0;
     static thread_local volatile sig_atomic_t parserCaughtSignal = 0;
@@ -422,7 +401,6 @@ namespace vkBasalt
     {
         std::vector<std::unique_ptr<EffectParam>> params;
 
-        // Protect against SIGFPE/SIGABRT from reshadefx compiler
         installParserCrashHandlers();
         if (sigsetjmp(parserSignalJmpBuf, 1) != 0)
         {
@@ -435,7 +413,6 @@ namespace vkBasalt
         try
         {
 
-        // Setup preprocessor
         reshadefx::preprocessor preprocessor;
         setupPreprocessor(preprocessor);
 
@@ -449,7 +426,6 @@ namespace vkBasalt
         if (!errors.empty())
             Logger::err("reshade_parser preprocessor errors: " + errors);
 
-        // Parse
         reshadefx::parser parser;
         auto codegen = std::unique_ptr<reshadefx::codegen>(
             reshadefx::create_codegen_spirv(true, true, true, true));
@@ -466,13 +442,10 @@ namespace vkBasalt
         if (!errors.empty())
             Logger::err("reshade_parser parse errors: " + errors);
 
-        // Extract module and convert uniforms to parameters
         reshadefx::module module;
         codegen->write_result(module);
 
-        // Process spec_constants
-        // Note: float2/float3/float4 are split into multiple scalar spec_constants with the same name
-        // We need to detect and combine them
+        // float2/3/4 arrive as consecutive same-named scalar spec_constants; combine them.
         for (size_t i = 0; i < module.spec_constants.size(); i++)
         {
             const auto& spec = module.spec_constants[i];
@@ -480,7 +453,6 @@ namespace vkBasalt
             if (shouldSkipSpecConstant(spec))
                 continue;
 
-            // Check if this is part of a vector (same name appears multiple times consecutively)
             size_t componentCount = 1;
             while (i + componentCount < module.spec_constants.size() &&
                    module.spec_constants[i + componentCount].name == spec.name)
@@ -490,7 +462,6 @@ namespace vkBasalt
 
             if (componentCount >= 2 && componentCount <= 4)
             {
-                // Vector type - combine multiple scalar spec_constants with same name
                 auto labelIt = findAnnotation(spec.annotations, "ui_label");
                 std::string label = (labelIt != spec.annotations.end()) ? labelIt->value.string_data : spec.name;
 
@@ -506,7 +477,6 @@ namespace vkBasalt
 
                 if (spec.type.is_floating_point())
                 {
-                    // float2/float3/float4
                     auto p = std::make_unique<FloatVecParam>();
                     p->effectName = effectName;
                     p->name = spec.name;
@@ -532,7 +502,6 @@ namespace vkBasalt
                 }
                 else if (spec.type.is_integral() && spec.type.is_signed())
                 {
-                    // int2/int3/int4
                     auto p = std::make_unique<IntVecParam>();
                     p->effectName = effectName;
                     p->name = spec.name;
@@ -558,7 +527,6 @@ namespace vkBasalt
                 }
                 else if (spec.type.is_integral() && !spec.type.is_signed())
                 {
-                    // uint2/uint3/uint4
                     auto p = std::make_unique<UintVecParam>();
                     p->effectName = effectName;
                     p->name = spec.name;
@@ -583,19 +551,16 @@ namespace vkBasalt
                     params.push_back(std::move(p));
                 }
 
-                // Skip the remaining components since we've already processed them
                 i += componentCount - 1;
             }
             else
             {
-                // Regular scalar parameter
                 auto param = convertSpecConstant(spec, effectName, pConfig);
                 if (param)
                     params.push_back(std::move(param));
             }
         }
 
-        // Process uniforms (runtime-changeable values)
         for (const auto& uniform : module.uniforms)
         {
             if (shouldSkipSpecConstant(uniform))
@@ -624,7 +589,6 @@ namespace vkBasalt
         const std::string& effectName,
         const std::string& effectPath)
     {
-        // Convenience overload — loads include paths from shader_manager.conf
         ShaderManagerConfig smConfig = ConfigSerializer::loadShaderManagerConfig();
         return testShaderCompilation(effectName, effectPath, smConfig.discoveredShaderPaths);
     }
@@ -638,7 +602,6 @@ namespace vkBasalt
         result.effectName = effectName;
         result.filePath = effectPath;
 
-        // Install signal handlers for SIGFPE/SIGABRT from reshadefx compiler
         installParserCrashHandlers();
         if (sigsetjmp(parserSignalJmpBuf, 1) != 0)
         {
@@ -652,11 +615,9 @@ namespace vkBasalt
 
         try
         {
-            // Setup preprocessor with pre-cached include paths
             reshadefx::preprocessor preprocessor;
             setupPreprocessor(preprocessor, includePaths);
 
-            // Try to load and preprocess the file
             if (!preprocessor.append_file(effectPath))
             {
                 result.success = false;
@@ -667,7 +628,7 @@ namespace vkBasalt
                 return result;
             }
 
-            // Check for preprocessor errors (skip warnings — e.g. unknown pragma)
+            // errors() mixes warnings in; only "preprocessor error:" is fatal.
             std::string ppErrors = preprocessor.errors();
             if (!ppErrors.empty() && ppErrors.find("preprocessor error:") != std::string::npos)
             {
@@ -676,10 +637,8 @@ namespace vkBasalt
                 return result;
             }
 
-            // Save preprocessed source for depth check (parser takes ownership via move)
             std::string ppSource = preprocessor.output();
 
-            // Try to parse the shader
             reshadefx::parser parser;
             auto codegen = std::unique_ptr<reshadefx::codegen>(
                 reshadefx::create_codegen_spirv(true, true, true, true));
@@ -691,24 +650,16 @@ namespace vkBasalt
                 return result;
             }
 
-            // Check for parse warnings/errors
             std::string parseErrors = parser.errors();
             if (!parseErrors.empty())
                 result.errorMessage = "Warnings: " + parseErrors;
 
-            // Try to generate code
             reshadefx::module module;
             codegen->write_result(module);
 
-            // Check if shader actually uses the depth buffer at runtime.
-            // ReShade.fxh always declares a DEPTH texture + "DepthBuffer" sampler +
-            // GetLinearizedDepth function, but most shaders never call them.
-            // Libraries like qUINT_common.fxh also declare depth samplers that
-            // may go unused (e.g. qUINT_bloom includes the header but never uses depth).
-            //
-            // Strategy: find depth samplers, then verify they're actually used
-            // in the compiled SPIR-V code (not just declared). A sampler that is
-            // declared but never loaded/sampled in any entry point is dead code.
+            // ReShade.fxh and qUINT_common.fxh declare DEPTH textures and samplers
+            // most shaders never call; a shader counts as depth-using only when an
+            // entry point actually reaches the sampler in the compiled SPIR-V.
             {
                 std::string depthTexName;
                 for (const auto& tex : module.textures)
@@ -722,20 +673,13 @@ namespace vkBasalt
 
                 if (!depthTexName.empty())
                 {
-                    // Check if any entry point transitively uses the depth sampler.
-                    //
-                    // ReShade.fxh/qUINT_common.fxh declare depth functions that
-                    // compile into the SPIR-V even when unreachable from entry
-                    // points. A raw OpLoad scan would produce false positives.
-                    //
-                    // Algorithm: build a per-function call graph from the SPIR-V,
-                    // then BFS from entry points to check reachability.
+                    // Call-graph reachability from entry points; a raw OpLoad scan
+                    // false-positives on unreachable helper functions.
                     auto isSamplerUsedInSpirv = [&](uint32_t samplerId) -> bool {
                         const auto& code = module.spirv;
                         if (code.size() < 5)
                             return false;
 
-                        // Pass 1: collect entry point function IDs
                         std::set<uint32_t> entryFuncIds;
                         size_t i = 5;  // Skip SPIR-V header
                         while (i < code.size())
@@ -750,7 +694,6 @@ namespace vkBasalt
                             i += wc;
                         }
 
-                        // Pass 2: scan function bodies for depth sampler loads and call edges
                         struct FuncInfo
                         {
                             bool loadsDepthSampler = false;
@@ -789,7 +732,6 @@ namespace vkBasalt
                             i += wc;
                         }
 
-                        // BFS from entry points through call graph
                         std::queue<uint32_t> worklist;
                         std::set<uint32_t> visited;
                         for (uint32_t ep : entryFuncIds)
@@ -821,7 +763,7 @@ namespace vkBasalt
                         if (samp.texture_name != depthTexName)
                             continue;
                         if (!isSamplerUsedInSpirv(samp.id))
-                            continue;  // Declared but never used — dead code
+                            continue;
                         depthUsed = true;
                         break;
                     }
@@ -855,7 +797,6 @@ namespace vkBasalt
         return result.usesDepth;
     }
 
-    // Built-in macros that should not be exposed to users
     static const std::set<std::string> builtInMacros = {
         "__RESHADE__",
         "__RESHADE_PERFORMANCE_MODE__",
@@ -893,7 +834,6 @@ namespace vkBasalt
 
         try
         {
-            // Setup preprocessor
             reshadefx::preprocessor preprocessor;
             setupPreprocessor(preprocessor);
 
@@ -903,16 +843,13 @@ namespace vkBasalt
                 return defs;
             }
 
-            // Get all macros that were actually used in the shader
             auto usedMacros = preprocessor.used_macro_definitions();
 
             for (const auto& [name, value] : usedMacros)
             {
-                // Skip built-in macros
                 if (builtInMacros.count(name))
                     continue;
 
-                // Skip macros that start with underscore (internal/compiler)
                 if (!name.empty() && name[0] == '_')
                     continue;
 

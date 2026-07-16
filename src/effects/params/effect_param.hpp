@@ -23,25 +23,24 @@ namespace vkBasalt
     enum class ParamType
     {
         Float,
-        FloatVec,   // float2, float3, float4 - uses componentCount
+        FloatVec,
         Int,
-        IntVec,     // int2, int3, int4 - uses componentCount
-        Uint,       // scalar unsigned int
-        UintVec,    // uint2, uint3, uint4 - uses componentCount
+        IntVec,
+        Uint,
+        UintVec,
         Bool
     };
 
-    // Base class for effect parameters
     class EffectParam
     {
     public:
         virtual ~EffectParam() = default;
 
-        std::string effectName;  // Which effect this belongs to (e.g., "cas", "Clarity.fx")
-        std::string name;        // Parameter name (e.g., "casSharpness")
-        std::string label;       // Display label (from ui_label or name)
-        std::string tooltip;     // ui_tooltip - hover description
-        std::string uiType;      // ui_type - "slider", "drag", "combo", etc.
+        std::string effectName;
+        std::string name;
+        std::string label;
+        std::string tooltip;
+        std::string uiType;
 
         virtual ParamType getType() const = 0;
         virtual const char* getTypeName() const = 0;
@@ -51,7 +50,6 @@ namespace vkBasalt
         virtual std::unique_ptr<EffectParam> clone() const = 0;
     };
 
-    // Float parameter (scalar)
     class FloatParam : public EffectParam
     {
     public:
@@ -90,11 +88,10 @@ namespace vkBasalt
         }
     };
 
-    // Float vector parameter (float2, float3, float4)
     class FloatVecParam : public EffectParam
     {
     public:
-        uint32_t componentCount = 2;  // 2, 3, or 4
+        uint32_t componentCount = 2;
         float value[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         float defaultValue[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         float minValue[4] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -154,7 +151,6 @@ namespace vkBasalt
         }
     };
 
-    // Int parameter (scalar)
     class IntParam : public EffectParam
     {
     public:
@@ -163,7 +159,7 @@ namespace vkBasalt
         int minValue = 0;
         int maxValue = 100;
         float step = 0.0f;
-        std::vector<std::string> items;  // ui_items - combo box options
+        std::vector<std::string> items;
 
         ParamType getType() const override { return ParamType::Int; }
         const char* getTypeName() const override { return "INT"; }
@@ -195,11 +191,10 @@ namespace vkBasalt
         }
     };
 
-    // Int vector parameter (int2, int3, int4)
     class IntVecParam : public EffectParam
     {
     public:
-        uint32_t componentCount = 2;  // 2, 3, or 4
+        uint32_t componentCount = 2;
         int value[4] = {0, 0, 0, 0};
         int defaultValue[4] = {0, 0, 0, 0};
         int minValue[4] = {0, 0, 0, 0};
@@ -259,7 +254,6 @@ namespace vkBasalt
         }
     };
 
-    // Uint parameter (scalar unsigned int)
     class UintParam : public EffectParam
     {
     public:
@@ -298,11 +292,10 @@ namespace vkBasalt
         }
     };
 
-    // Uint vector parameter (uint2, uint3, uint4)
     class UintVecParam : public EffectParam
     {
     public:
-        uint32_t componentCount = 2;  // 2, 3, or 4
+        uint32_t componentCount = 2;
         uint32_t value[4] = {0, 0, 0, 0};
         uint32_t defaultValue[4] = {0, 0, 0, 0};
         uint32_t minValue[4] = {0, 0, 0, 0};
@@ -362,7 +355,6 @@ namespace vkBasalt
         }
     };
 
-    // Bool parameter
     class BoolParam : public EffectParam
     {
     public:
@@ -395,7 +387,6 @@ namespace vkBasalt
         }
     };
 
-    // Helper to clone a vector of params
     inline std::vector<std::unique_ptr<EffectParam>> cloneParams(const std::vector<std::unique_ptr<EffectParam>>& params)
     {
         std::vector<std::unique_ptr<EffectParam>> result;

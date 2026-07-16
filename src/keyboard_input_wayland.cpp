@@ -15,23 +15,17 @@
 
 namespace vkBasalt
 {
-    // Keyboard-specific state (seat/queue come from wayland_input_common)
     static wl_keyboard* wlKeyboard = nullptr;
 
-    // XKB state for key translation
     static xkb_context* xkbCtx = nullptr;
     static xkb_keymap* xkbKeymap = nullptr;
     static xkb_state* xkbState = nullptr;
 
-    // Tracking pressed keys (Wayland keycodes)
     static std::unordered_set<uint32_t> pressedKeys;
 
-    // Accumulated key press events (keysyms) — survives press+release within a single frame
-    // so that isKeyPressedWayland can detect rapid key taps even when the key is already
-    // released by the time the check runs.
+    // Press events kept until polled, so a press+release within one frame is still seen.
     static std::unordered_set<uint32_t> keyPressEvents;
 
-    // Accumulated state between getKeyboardState calls
     static std::string typedCharsAccumulator;
     static std::string lastKeyNameAccumulator;
     static bool backspacePressed = false;
@@ -44,13 +38,12 @@ namespace vkBasalt
 
     static bool initialized = false;
 
-    // Process a key press event
     static void processWaylandKey(uint32_t keycode, uint32_t state)
     {
         if (!xkbState)
             return;
 
-        // Wayland keycodes are evdev codes, XKB expects evdev + 8
+        // Wayland keycodes are evdev codes; XKB expects evdev + 8.
         uint32_t xkbKeycode = keycode + 8;
 
         if (state == WL_KEYBOARD_KEY_STATE_RELEASED)
@@ -60,16 +53,13 @@ namespace vkBasalt
             return;
         }
 
-        // Key press
         pressedKeys.insert(keycode);
         xkb_state_update_key(xkbState, xkbKeycode, XKB_KEY_DOWN);
 
         xkb_keysym_t keysym = xkb_state_key_get_one_sym(xkbState, xkbKeycode);
 
-        // Track press event for edge detection (survives same-frame release)
         keyPressEvents.insert((uint32_t)keysym);
 
-        // Capture key name for keybind editor (skip modifiers)
         if (keysym != XKB_KEY_Shift_L && keysym != XKB_KEY_Shift_R &&
             keysym != XKB_KEY_Control_L && keysym != XKB_KEY_Control_R &&
             keysym != XKB_KEY_Alt_L && keysym != XKB_KEY_Alt_R &&
@@ -80,7 +70,6 @@ namespace vkBasalt
                 lastKeyNameAccumulator = nameBuf;
         }
 
-        // Handle special keys
         if (keysym == XKB_KEY_BackSpace)
             backspacePressed = true;
         else if (keysym == XKB_KEY_Delete)
@@ -97,15 +86,13 @@ namespace vkBasalt
             endPressed = true;
         else
         {
-            // Get UTF-8 text for the key
             char buf[8];
             int len = xkb_state_key_get_utf8(xkbState, xkbKeycode, buf, sizeof(buf));
-            if (len > 0 && buf[0] >= 0x20) // Skip control characters
+            if (len > 0 && buf[0] >= 0x20)
                 typedCharsAccumulator += std::string(buf, len);
         }
     }
 
-    // Wayland keyboard listener callbacks
     static void keyboardKeymap(void* /*data*/, wl_keyboard* /*keyboard*/,
                                uint32_t format, int32_t fd, uint32_t size)
     {
@@ -123,7 +110,6 @@ namespace vkBasalt
             return;
         }
 
-        // Clean up old keymap/state
         if (xkbState)
         {
             xkb_state_unref(xkbState);
@@ -164,7 +150,7 @@ namespace vkBasalt
                               uint32_t /*serial*/, wl_surface* /*surface*/)
     {
         pressedKeys.clear();
-        keyPressEvents.clear();  // Prevent stale keysyms surviving focus loss
+        keyPressEvents.clear();
     }
 
     static void keyboardKey(void* /*data*/, wl_keyboard* /*keyboard*/,
@@ -197,15 +183,13 @@ namespace vkBasalt
         .repeat_info = keyboardRepeatInfo,
     };
 
-    // Called by shared seat listener when keyboard capability is available
     static void bindKeyboard(wl_seat* seat)
     {
         if (wlKeyboard)
             return;
 
         wlKeyboard = wl_seat_get_keyboard(seat);
-        // Register as overlay proxy BEFORE add_listener so the interposition
-        // layer passes this through without wrapping
+        // Register before add_listener so the interpose layer passes it through unwrapped.
         registerOverlayProxy((wl_proxy*)wlKeyboard);
         wl_keyboard_add_listener(wlKeyboard, &keyboardListener, nullptr);
         Logger::debug("Wayland: keyboard bound from shared seat");
@@ -218,7 +202,6 @@ namespace vkBasalt
 
         initialized = true;
 
-        // Create XKB context
         xkbCtx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
         if (!xkbCtx)
         {
@@ -226,10 +209,8 @@ namespace vkBasalt
             return false;
         }
 
-        // Register our callback before initializing shared resources
         setKeyboardBindCallback(bindKeyboard);
 
-        // Initialize shared seat/queue/registry (triggers seat capability callbacks)
         if (!initWaylandInputCommon())
             return false;
 
@@ -269,17 +250,14 @@ namespace vkBasalt
         keyPressEvents.clear();
         initialized = false;
 
-        // Clean up shared resources (idempotent)
         cleanupWaylandInputCommon();
     }
 
     uint32_t convertToKeySymWayland(std::string key)
     {
-        // XKB keysym names are the same as X11 keysym names
         xkb_keysym_t sym = xkb_keysym_from_name(key.c_str(), XKB_KEYSYM_NO_FLAGS);
         if (sym == XKB_KEY_NoSymbol)
         {
-            // Try case-insensitive
             sym = xkb_keysym_from_name(key.c_str(), XKB_KEYSYM_CASE_INSENSITIVE);
         }
         if (sym == XKB_KEY_NoSymbol)
@@ -295,15 +273,12 @@ namespace vkBasalt
 
         dispatchWaylandInputEvents();
 
-        // Check accumulated press events first — catches rapid taps where
-        // press+release both arrive in the same dispatch cycle
         if (keyPressEvents.count(ks))
         {
             keyPressEvents.erase(ks);
             return true;
         }
 
-        // Check if any currently-held key maps to this keysym
         if (!xkbKeymap)
             return false;
 
@@ -336,7 +311,6 @@ namespace vkBasalt
         state.home = homePressed;
         state.end = endPressed;
 
-        // Reset accumulators (moved-from strings are already empty or valid-but-unspecified)
         typedCharsAccumulator.clear();
         lastKeyNameAccumulator.clear();
         backspacePressed = false;

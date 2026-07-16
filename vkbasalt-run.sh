@@ -1,5 +1,5 @@
 #!/bin/sh
-# vkbasalt-run — launch a game with vkBasalt overlay enabled.
+# vkbasalt-run: launch a game with the vkBasalt overlay enabled.
 # Sets ENABLE_VKBASALT=1 and LD_AUDIT for Wine Wayland input interposition.
 
 if [ $# -eq 0 ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; then

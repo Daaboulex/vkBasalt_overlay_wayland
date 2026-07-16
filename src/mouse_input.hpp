@@ -12,7 +12,7 @@ namespace vkBasalt
         bool leftButton = false;
         bool rightButton = false;
         bool middleButton = false;
-        float scrollDelta = 0.0f;  // Positive = up, negative = down
+        float scrollDelta = 0.0f; // positive = up
     };
 
     MouseState getMouseState();

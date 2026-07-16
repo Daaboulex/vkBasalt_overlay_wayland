@@ -14,7 +14,6 @@ namespace vkBasalt
 
             if (!p.items.empty())
             {
-                // Combo box mode
                 std::string itemsStr;
                 for (const auto& item : p.items)
                     itemsStr += item + '\0';
@@ -25,7 +24,6 @@ namespace vkBasalt
             }
             else
             {
-                // Slider mode
                 if (ImGui::SliderInt(p.label.c_str(), &p.value, p.minValue, p.maxValue))
                 {
                     if (p.step > 0.0f)
@@ -38,7 +36,6 @@ namespace vkBasalt
                 }
             }
 
-            // Right-click context menu to reset
             if (ImGui::BeginPopupContextItem("##reset"))
             {
                 if (ImGui::MenuItem("Reset to default"))

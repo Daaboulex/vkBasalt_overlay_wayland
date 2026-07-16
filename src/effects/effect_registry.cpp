@@ -15,7 +15,6 @@ namespace vkBasalt
 
     namespace
     {
-        // Helper to create a float parameter
         std::unique_ptr<FloatParam> makeFloatParam(
             const std::string& effectName,
             const std::string& name,
@@ -36,7 +35,6 @@ namespace vkBasalt
             return p;
         }
 
-        // Helper to create an int parameter
         std::unique_ptr<IntParam> makeIntParam(
             const std::string& effectName,
             const std::string& name,
@@ -57,7 +55,6 @@ namespace vkBasalt
             return p;
         }
 
-        // Search a list of directories for an effect file by name
         std::string searchDirsForEffect(const std::string& name,
                                         const std::vector<std::string>& dirs)
         {
@@ -74,15 +71,12 @@ namespace vkBasalt
             return "";
         }
 
-        // Try to find effect file path
         std::string findEffectPath(const std::string& name, Config* pConfig)
         {
-            // First check if path is directly configured (e.g. "Vibrance = /path/to/Vibrance.fx")
             std::string path = pConfig->getOption<std::string>(name, "");
             if (!path.empty() && std::filesystem::exists(path))
                 return path;
 
-            // Search in reshadeIncludePath from config (colon-separated list)
             std::string includePath = pConfig->getOption<std::string>("reshadeIncludePath", "");
             if (!includePath.empty())
             {
@@ -99,7 +93,6 @@ namespace vkBasalt
                     return path;
             }
 
-            // Search in shader manager discovered paths
             ShaderManagerConfig shaderMgrConfig = ConfigSerializer::loadShaderManagerConfig();
             path = searchDirsForEffect(name, shaderMgrConfig.discoveredShaderPaths);
             if (!path.empty())
@@ -128,23 +121,18 @@ namespace vkBasalt
 
         for (const auto& name : effectNames)
         {
-            // Check if there's a stored effect type/path for this effect
-            // Format: "cas.2 = cas" (built-in) or "Clarity = /path/to/Clarity.fx" (ReShade)
             std::string storedValue = pConfig->getOption<std::string>(name, "");
 
             if (!storedValue.empty() && isBuiltInEffect(storedValue))
             {
-                // Stored value is a built-in type name (e.g., "cas.2 = cas")
                 initBuiltInEffect(name, storedValue);
             }
             else if (isBuiltInEffect(name))
             {
-                // Effect name itself is a built-in (e.g., "cas")
                 initBuiltInEffect(name, name);
             }
             else
             {
-                // Try to find as ReShade effect
                 std::string effectPath = findEffectPath(name, pConfig);
                 if (effectPath.empty())
                 {
@@ -154,7 +142,6 @@ namespace vkBasalt
                 initReshadeEffect(name, effectPath);
             }
 
-            // Set enabled state based on disabledEffects list
             if (!effects.empty() && disabledSet.count(name))
                 effects.back().enabled = false;
         }
@@ -177,7 +164,6 @@ namespace vkBasalt
         config.type = EffectType::BuiltIn;
         config.enabled = true;
 
-        // Create parameters from centralized definitions
         for (const auto& paramDef : def->params)
         {
             if (paramDef.type == ParamType::Float)
@@ -205,15 +191,12 @@ namespace vkBasalt
         config.type = EffectType::ReShade;
         config.enabled = true;
 
-        // Record file modification time for change detection
         std::error_code ec;
         config.fileModTime = std::filesystem::last_write_time(path, ec);
 
-        // Extract effectType from filename (e.g., "/path/to/Clarity.fx" -> "Clarity")
         std::filesystem::path p(path);
         config.effectType = p.stem().string();
 
-        // Test shader compilation first to catch errors
         ShaderTestResult testResult = testShaderCompilation(name, path);
         if (!testResult.success)
         {
@@ -223,14 +206,10 @@ namespace vkBasalt
         }
         else
         {
-            // Only parse parameters if compilation succeeded
             config.parameters = parseReshadeEffect(name, path, pConfig);
 
-            // Extract preprocessor definitions (user-configurable macros)
             config.preprocessorDefs = extractPreprocessorDefinitions(name, path);
 
-            // Override default values with any saved values from config
-            // Config format: effectName@MACRO = value
             for (auto& def : config.preprocessorDefs)
             {
                 std::string configKey = name + "@" + def.name;
@@ -278,7 +257,6 @@ namespace vkBasalt
         return params;
     }
 
-    // Internal helper to find effect by name (assumes mutex is held)
     EffectConfig* EffectRegistry::findEffect(const std::string& effectName)
     {
         for (auto& effect : effects)
@@ -299,7 +277,6 @@ namespace vkBasalt
         return nullptr;
     }
 
-    // Internal helper to find parameter within an effect (assumes mutex is held)
     EffectParam* EffectRegistry::findParam(EffectConfig& effect, const std::string& paramName)
     {
         for (auto& param : effect.parameters)
@@ -471,16 +448,14 @@ namespace vkBasalt
         if (effect)
         {
             effect->compileError = error;
-            effect->enabled = false;  // Disable failed effects
+            effect->enabled = false;
         }
     }
 
     void EffectRegistry::ensureEffect(const std::string& instanceName, const std::string& effectType)
     {
-        // If effectType not provided, assume instanceName is the effect type
         std::string type = effectType.empty() ? instanceName : effectType;
 
-        // Do path lookup outside mutex (filesystem I/O can be slow)
         std::string path;
         bool isBuiltIn = isBuiltInEffect(type);
         if (!isBuiltIn)
@@ -493,13 +468,11 @@ namespace vkBasalt
             }
         }
 
-        // Lock for the check-and-mutate as a single critical section
         std::lock_guard<std::mutex> lock(mutex);
 
         EffectConfig* existing = findEffect(instanceName);
         if (existing)
         {
-            // For ReShade effects, check if the file changed on disk since we last parsed it
             if (!isBuiltIn && !path.empty())
             {
                 std::error_code ec;
@@ -507,7 +480,6 @@ namespace vkBasalt
                 if (!ec && currentModTime != existing->fileModTime)
                 {
                     Logger::info("EffectRegistry: shader file changed on disk, re-parsing: " + instanceName);
-                    // Remove the stale entry so we re-parse below
                     effects.erase(
                         std::remove_if(effects.begin(), effects.end(),
                             [&](const EffectConfig& e) { return e.name == instanceName; }),
@@ -515,12 +487,12 @@ namespace vkBasalt
                 }
                 else
                 {
-                    return;  // File unchanged, keep existing
+                    return;
                 }
             }
             else
             {
-                return;  // Built-in or no path change
+                return;
             }
         }
 
@@ -539,7 +511,6 @@ namespace vkBasalt
             effects.end());
     }
 
-    // Per-instance empty vector for returning when effect not found (avoids shared mutable static)
     std::vector<PreprocessorDefinition>& EffectRegistry::getPreprocessorDefs(const std::string& effectName)
     {
         std::lock_guard<std::mutex> lock(mutex);
@@ -598,24 +569,19 @@ namespace vkBasalt
                 return;
         }
 
-        // Read effects list from config
         std::vector<std::string> configEffects = pConfig->getOption<std::vector<std::string>>("effects", {});
         std::vector<std::string> disabledEffects = pConfig->getOption<std::vector<std::string>>("disabledEffects", {});
 
-        // Build set of disabled effects for quick lookup
         std::set<std::string> disabledSet(disabledEffects.begin(), disabledEffects.end());
 
-        // Set selected effects
         {
             std::lock_guard<std::mutex> lock(mutex);
             selectedEffects = configEffects;
         }
 
-        // Ensure effects exist in registry before setting enabled states
         for (const auto& effectName : configEffects)
             ensureEffect(effectName);
 
-        // Set enabled states (disabled if in disabledEffects list)
         for (const auto& effectName : configEffects)
         {
             bool enabled = (disabledSet.find(effectName) == disabledSet.end());

@@ -12,7 +12,6 @@ namespace vkBasalt
             auto& p = static_cast<UintParam&>(param);
             bool changed = false;
 
-            // Use SliderScalar for unsigned int
             if (ImGui::SliderScalar(p.label.c_str(), ImGuiDataType_U32, &p.value, &p.minValue, &p.maxValue))
             {
                 if (p.step > 0.0f)
@@ -24,7 +23,6 @@ namespace vkBasalt
                 changed = true;
             }
 
-            // Right-click context menu to reset
             if (ImGui::BeginPopupContextItem("##reset"))
             {
                 if (ImGui::MenuItem("Reset to default"))

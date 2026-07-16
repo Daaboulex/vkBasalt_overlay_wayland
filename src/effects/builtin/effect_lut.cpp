@@ -125,7 +125,6 @@ namespace vkBasalt
     }
     LutEffect::~LutEffect()
     {
-        // Skip cleanup if init() was never called (e.g., constructor threw exception)
         if (!pLogicalDevice)
             return;
 

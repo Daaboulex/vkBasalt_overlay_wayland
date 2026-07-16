@@ -4,14 +4,12 @@ struct wl_proxy;
 
 namespace vkBasalt
 {
-    // Register overlay-owned proxies so the interposition layer skips them.
-    // Call BEFORE wl_pointer_add_listener / wl_keyboard_add_listener.
+    // Register overlay-owned proxies before their add_listener call so the
+    // interpose layer passes them through unwrapped.
     void registerOverlayProxy(wl_proxy* proxy);
     void unregisterOverlayProxy(wl_proxy* proxy);
 
-    // Send synthetic keyboard leave/enter to wrapped game keyboards.
-    // Called when overlay blocking state changes — makes the game release
-    // all held keys (leave) or re-acquire focus (enter).
-    // Only works when wl_proxy_add_listener interposition is active.
+    // Synthetic keyboard leave/enter to wrapped game keyboards, so the game
+    // drops held keys when the overlay opens.
     void notifyGameKeyboardFocus(bool hasFocus);
 }

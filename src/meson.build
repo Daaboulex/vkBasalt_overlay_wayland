@@ -105,8 +105,7 @@ keyboard_input_x11_lib = static_library('keyboard_input_x11', 'keyboard_input_x1
 mouse_input_lib = static_library('mouse_input', 'mouse_input.cpp')
 input_blocker_lib = static_library('input_blocker', 'input_blocker.cpp')
 
-# Wayland input backends — built as static libs to isolate wayland-client headers.
-# wayland_input_common provides a shared seat/queue used by both keyboard and mouse.
+# Wayland input backends are static libs to isolate wayland-client headers.
 wayland_input_common_lib = static_library('wayland_input_common',
     'wayland_input_common.cpp', 'wayland_display.cpp',
     dependencies: [wayland_client_dep])
@@ -123,9 +122,7 @@ wayland_pointer_constraints_lib = static_library('wayland_pointer_constraints',
     pointer_constraints_client_h,
     link_with: [wayland_input_common_lib],
     dependencies: [wayland_client_dep])
-# Wayland event interposition — wraps game's pointer/keyboard listeners to
-# suppress events when overlay has input blocked. Needs default visibility
-# for the wl_proxy_add_listener symbol override.
+# Needs default visibility for the wl_proxy_add_listener symbol override.
 wayland_interpose_lib = static_library('wayland_interpose',
     'wayland_interpose.cpp',
     dependencies: [wayland_client_dep],

@@ -10,6 +10,5 @@ namespace vkBasalt
     bool     isKeyPressedX11(uint32_t ks);
     KeyboardState getKeyboardStateX11();
 
-    // For input blocking - returns the keyboard display connection
     void* getKeyboardDisplay();
 } // namespace vkBasalt

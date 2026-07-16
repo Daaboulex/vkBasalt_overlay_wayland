@@ -9,11 +9,8 @@
 
 namespace vkBasalt
 {
-    // TODO(issue-15): Keyboard and mouse each open their own X11 Display connection.
-    // Sharing a single connection would require a unified event dispatch loop since
-    // both use XInput2 raw events — XNextEvent drains the shared queue, so whichever
-    // polls first would consume the other's events. Keeping separate connections is
-    // correct for the current architecture where each input backend polls independently.
+    // Keyboard and mouse keep separate X11 connections: both use XInput2 raw
+    // events, and XNextEvent on a shared connection would drain the other's queue.
     static Display* display = nullptr;
     static int xiOpcode = 0;
     static float scrollAccumulator = 0.0f;
@@ -22,7 +19,6 @@ namespace vkBasalt
     {
         MouseState state;
 
-        // Initialize X11 and XInput2 once
         if (!display)
         {
             const char* disVar = getenv("DISPLAY");
@@ -48,7 +44,6 @@ namespace vkBasalt
             }
         }
 
-        // Process scroll events
         while (XPending(display) > 0)
         {
             XEvent ev;
@@ -66,7 +61,6 @@ namespace vkBasalt
             }
         }
 
-        // Get pointer state
         Window focused, root, child;
         int revertTo, rootX, rootY;
         unsigned int mask;

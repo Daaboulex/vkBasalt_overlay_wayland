@@ -17,8 +17,7 @@ namespace vkBasalt
 {
     uint32_t convertToKeySym(std::string key)
     {
-        // XKB keysym names are compatible with X11 names
-        // so both backends produce the same keysym values
+        // XKB keysym names match X11 keysym names, so both backends agree.
         if (isWayland())
             return convertToKeySymWayland(key);
 #if VKBASALT_X11

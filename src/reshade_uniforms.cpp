@@ -92,7 +92,6 @@ namespace vkBasalt
         return uniforms;
     }
 
-    //////////////////////////////////////////////////////////////////////////////////////////////////////////
     FrameTimeUniform::FrameTimeUniform(reshadefx::uniform_info uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
@@ -116,7 +115,6 @@ namespace vkBasalt
     {
     }
 
-    //////////////////////////////////////////////////////////////////////////////////////////////////////////
     FrameCountUniform::FrameCountUniform(reshadefx::uniform_info uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
@@ -136,7 +134,6 @@ namespace vkBasalt
     {
     }
 
-    //////////////////////////////////////////////////////////////////////////////////////////////////////////
     DateUniform::DateUniform(reshadefx::uniform_info uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
@@ -149,9 +146,7 @@ namespace vkBasalt
     }
     void DateUniform::update(void* mapedBuffer)
     {
-        // Date only changes once per second — cache the result and only
-        // recompute when the second changes. Saves ~234 localtime_r calls/sec
-        // at 235 FPS.
+        // localtime_r only when the second changes.
         static thread_local std::time_t lastSecond = 0;
         static thread_local float cachedDate[4] = {};
 
@@ -175,7 +170,6 @@ namespace vkBasalt
     {
     }
 
-    //////////////////////////////////////////////////////////////////////////////////////////////////////////
     TimerUniform::TimerUniform(reshadefx::uniform_info uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
@@ -198,7 +192,6 @@ namespace vkBasalt
     {
     }
 
-    //////////////////////////////////////////////////////////////////////////////////////////////////////////
     PingPongUniform::PingPongUniform(reshadefx::uniform_info uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
@@ -273,7 +266,6 @@ namespace vkBasalt
     {
     }
 
-    //////////////////////////////////////////////////////////////////////////////////////////////////////////
     RandomUniform::RandomUniform(reshadefx::uniform_info uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
@@ -307,7 +299,6 @@ namespace vkBasalt
     {
     }
 
-    //////////////////////////////////////////////////////////////////////////////////////////////////////////
     KeyUniform::KeyUniform(reshadefx::uniform_info uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
@@ -327,7 +318,6 @@ namespace vkBasalt
     {
     }
 
-    //////////////////////////////////////////////////////////////////////////////////////////////////////////
     MouseButtonUniform::MouseButtonUniform(reshadefx::uniform_info uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
@@ -347,7 +337,6 @@ namespace vkBasalt
     {
     }
 
-    //////////////////////////////////////////////////////////////////////////////////////////////////////////
     MousePointUniform::MousePointUniform(reshadefx::uniform_info uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
@@ -367,7 +356,6 @@ namespace vkBasalt
     {
     }
 
-    //////////////////////////////////////////////////////////////////////////////////////////////////////////
     MouseDeltaUniform::MouseDeltaUniform(reshadefx::uniform_info uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
@@ -387,7 +375,6 @@ namespace vkBasalt
     {
     }
 
-    //////////////////////////////////////////////////////////////////////////////////////////////////////////
     DepthUniform::DepthUniform(reshadefx::uniform_info uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });

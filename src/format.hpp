@@ -13,13 +13,9 @@
 
 namespace vkBasalt
 {
-    // Returns a matching sRGB format to a UNORM format if it exist, else returns format
     VkFormat convertToSRGB(VkFormat format);
-    // Returns a matching UNORM format to a sRGB format if it exist, else returns format
     VkFormat convertToUNORM(VkFormat format);
-    // Returns true if format is SRGB
     bool isSRGB(VkFormat format);
-    // Returns true if format is UNORM
     // TODO currently return false if format is UNORM and no matching sRGB format exist
     bool isUNORM(VkFormat format);
 

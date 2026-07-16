@@ -16,8 +16,6 @@ namespace vkBasalt
         ReShade   // .fx files
     };
 
-    // Preprocessor definition extracted from ReShade shader
-    // These are user-configurable compile-time constants (#define macros)
     struct PreprocessorDefinition
     {
         std::string name;           // Macro name, e.g., "ENABLE_SCANLINES"

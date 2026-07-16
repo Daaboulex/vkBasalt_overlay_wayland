@@ -9,7 +9,6 @@ namespace vkBasalt
 {
     Config::Config()
     {
-        // Find vkBasalt.conf in standard locations (vkBasalt-overlay fork)
         const char* homeEnv = std::getenv("HOME");
         std::string homePath = homeEnv ? homeEnv : "/tmp";
 
@@ -83,8 +82,6 @@ namespace vkBasalt
         if (configFilePath.empty())
             return false;
 
-        // Throttle stat() syscall to every 500ms instead of every frame.
-        // At 240 FPS this avoids ~479 syscalls/sec.
         auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastConfigCheckTime).count() < 500)
             return false;
@@ -109,7 +106,6 @@ namespace vkBasalt
             return;
         }
 
-        // Read into temporary map first, then swap — avoids data loss if read fails partway
         Logger::info("reloading config: " + configFilePath);
         auto oldOptions = std::move(options);
         options.clear();
@@ -211,7 +207,6 @@ namespace vkBasalt
                 return;
             }
 
-            // Check for trailing content (allow optional 'f' suffix)
             std::string rest;
             ss >> rest;
             if (!rest.empty() && rest != "f")

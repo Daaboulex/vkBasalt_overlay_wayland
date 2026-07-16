@@ -30,10 +30,8 @@ namespace vkBasalt
         std::vector<VkFormat>    depthFormats;
         std::vector<VkImageView> depthImageViews;
 
-        // Persistent overlay state that survives swapchain recreation
         std::unique_ptr<OverlayPersistentState> overlayPersistentState;
 
-        // ImGui overlay - lives at device level to survive swapchain recreation
         std::unique_ptr<ImGuiOverlay> imguiOverlay;
     };
 } // namespace vkBasalt

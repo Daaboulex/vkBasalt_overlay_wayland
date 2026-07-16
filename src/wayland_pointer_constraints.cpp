@@ -15,7 +15,6 @@ namespace vkBasalt
     static wl_pointer* pointer = nullptr;
     static bool constraintsInitialized = false;
 
-    // Confined pointer listener
     static void confinedPointerConfined(void* /*data*/, zwp_confined_pointer_v1* /*cp*/)
     {
         Logger::debug("Wayland: pointer confined to surface");
@@ -31,7 +30,6 @@ namespace vkBasalt
         .unconfined = confinedPointerUnconfined,
     };
 
-    // Registry listener to bind pointer constraints global
     static void constraintsRegistryGlobal(void* /*data*/, wl_registry* reg,
                                           uint32_t name, const char* interface, uint32_t version)
     {
@@ -64,15 +62,11 @@ namespace vkBasalt
         if (!display)
             return false;
 
-        // Ensure shared input is initialized first (creates the event queue)
         if (!initWaylandInputCommon())
             return false;
 
         constraintsInitialized = true;
 
-        // We need our own registry query on the shared queue to find the
-        // pointer constraints global. The shared input common registry
-        // only looks for wl_seat.
         wl_display* wrapper = (wl_display*)wl_proxy_create_wrapper(display);
         if (!wrapper)
             return false;
@@ -123,30 +117,26 @@ namespace vkBasalt
             return;
         }
 
-        // Get a pointer from the seat for confinement. We get our own
-        // because the mouse_input module's pointer is private.
         if (!pointer)
         {
             if (!initWaylandInputCommon())
             {
-                Logger::debug("Wayland: cannot confine pointer — no seat available");
+                Logger::debug("Wayland: cannot confine pointer - no seat available");
                 return;
             }
 
-            // The pointer bind callback is already claimed by mouse_input,
-            // so we get our own wl_pointer from the seat directly.
-            // This is safe because wl_seat_get_pointer returns a new proxy
-            // each time — we just won't add a listener (we don't need events).
+            // wl_seat_get_pointer returns a fresh proxy each call; this one gets
+            // no listener because only the confinement needs it.
             wl_seat* seat = getWaylandSeat();
             if (!seat)
             {
-                Logger::debug("Wayland: cannot confine pointer — seat not available");
+                Logger::debug("Wayland: cannot confine pointer - seat not available");
                 return;
             }
             pointer = wl_seat_get_pointer(seat);
             if (!pointer)
             {
-                Logger::debug("Wayland: cannot confine pointer — seat has no pointer capability");
+                Logger::debug("Wayland: cannot confine pointer - seat has no pointer capability");
                 return;
             }
             Logger::debug("Wayland: obtained pointer from seat for confinement");
@@ -158,15 +148,14 @@ namespace vkBasalt
 
         if (!confinedPointer)
         {
-            // The compositor may return NULL if the surface already has a
-            // constraint (e.g., the game locked the pointer). This is not fatal.
-            Logger::debug("Wayland: confine_pointer returned NULL — surface may already be constrained");
+            // The compositor returns NULL when the surface already has a
+            // constraint, e.g. the game locked the pointer.
+            Logger::debug("Wayland: confine_pointer returned NULL - surface may already be constrained");
             return;
         }
 
         zwp_confined_pointer_v1_add_listener(confinedPointer, &confinedPointerListener, nullptr);
 
-        // Flush to apply immediately
         wl_display* display = getWaylandDisplay();
         if (display)
             wl_display_flush(display);
@@ -182,7 +171,6 @@ namespace vkBasalt
         zwp_confined_pointer_v1_destroy(confinedPointer);
         confinedPointer = nullptr;
 
-        // Flush to apply immediately
         wl_display* display = getWaylandDisplay();
         if (display)
             wl_display_flush(display);

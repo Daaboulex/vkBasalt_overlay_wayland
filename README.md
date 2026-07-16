@@ -86,7 +86,7 @@ Per-profile toggle (`safeAntiCheat = true`) that:
 - Blocks shaders that use depth at runtime (hidden in Add Effects, shows tooltip explaining why)
 - Auto-tests all shaders on first Add Effects open (one per frame, progress bar shown)
 
-**Depth detection** uses SPIR-V call graph analysis: builds a per-function call graph from the compiled shader bytecode, then BFS from entry points to check if any reachable function loads the depth sampler. This correctly distinguishes shaders that merely *include* depth declarations (via `ReShade.fxh`) from those that actually *use* depth at runtime. Zero false positives, zero false negatives.
+**Depth detection** uses SPIR-V call graph analysis: builds a per-function call graph from the compiled shader bytecode, then BFS from entry points to check if any reachable function loads the depth sampler. This distinguishes shaders that merely *include* depth declarations (via `ReShade.fxh`) from those that actually *use* depth at runtime.
 
 ### ReShade Shader Support
 

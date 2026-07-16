@@ -7,7 +7,7 @@
 #include <set>
 
 #ifdef __linux__
-#include <malloc.h>  // malloc_trim — reclaim fragmented heap memory
+#include <malloc.h>
 #endif
 
 #include "imgui/imgui.h"
@@ -19,7 +19,6 @@ namespace vkBasalt
         if (shaderTestRunning || shaderTestComplete)
             return;
 
-        // Ensure shader manager paths are loaded
         if (!shaderMgrInitialized)
         {
             ShaderManagerConfig config = ConfigSerializer::loadShaderManagerConfig();
@@ -29,14 +28,12 @@ namespace vkBasalt
             shaderMgrInitialized = true;
         }
 
-        // Build test queue from all .fx files in discovered shader paths
         shaderTestQueue.clear();
         shaderTestResults.clear();
         shaderTestCurrentIndex = 0;
         shaderTestComplete = false;
         shaderTestDuplicateCount = 0;
 
-        // Cache include paths once — avoids re-reading shader_manager.conf per shader
         ShaderManagerConfig smConfig = ConfigSerializer::loadShaderManagerConfig();
         shaderTestIncludePaths = smConfig.discoveredShaderPaths;
 
@@ -53,8 +50,7 @@ namespace vkBasalt
                     if (ext != ".fx" && ext != ".FX")
                         continue;
 
-                    // Deduplicate by canonical path — catches symlinks pointing
-                    // to the same nix store file across shader packs
+                    // Canonical-path dedup catches symlinks to the same file across packs.
                     std::string filePath = entry.path().string();
                     std::string canonical = filePath;
                     try { canonical = std::filesystem::canonical(entry.path()).string(); }
@@ -72,7 +68,6 @@ namespace vkBasalt
             }
             catch (const std::filesystem::filesystem_error&)
             {
-                // Skip inaccessible directories
             }
         }
 
@@ -98,8 +93,7 @@ namespace vkBasalt
                 depthShaders.insert(result.effectName);
             shaderTestCurrentIndex++;
 
-            // Reclaim fragmented heap memory every 25 shaders to prevent
-            // OOM from accumulating freed-but-unreturned allocations
+            // Return freed-but-unreturned heap to the OS; a full pack sweep can OOM without it.
 #ifdef __linux__
             if (shaderTestCurrentIndex % 25 == 0)
                 malloc_trim(0);
@@ -110,7 +104,7 @@ namespace vkBasalt
             shaderTestRunning = false;
             shaderTestComplete = true;
 #ifdef __linux__
-            malloc_trim(0);  // Final cleanup after all tests
+            malloc_trim(0);
 #endif
             Logger::info("Shader test complete: tested " +
                 std::to_string(shaderTestResults.size()) + " shaders");
@@ -119,11 +113,9 @@ namespace vkBasalt
 
     void ImGuiOverlay::renderShaderTestSection()
     {
-        // Test All Shaders button
         ImGui::Spacing();
         if (shaderTestRunning)
         {
-            // Show progress while testing
             float progress = shaderTestQueue.empty() ? 1.0f :
                 static_cast<float>(shaderTestCurrentIndex) / static_cast<float>(shaderTestQueue.size());
             ImGui::ProgressBar(progress, ImVec2(-1, 0),
@@ -138,7 +130,6 @@ namespace vkBasalt
                 ImGui::SetTooltip("Test all .fx shaders for compilation errors");
         }
 
-        // Show test results summary if complete
         if (shaderTestComplete && !shaderTestResults.empty())
         {
             ImGui::SameLine();
@@ -163,7 +154,6 @@ namespace vkBasalt
                     ImGui::SetTooltip("These shaders require depth buffer access.\nBlocked when Safe Anti-Cheat is enabled.");
             }
 
-            // Show duplicate warning if any were skipped
             if (shaderTestDuplicateCount > 0)
             {
                 ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "(%d duplicates skipped)", shaderTestDuplicateCount);
@@ -173,8 +163,6 @@ namespace vkBasalt
         }
     }
 
-    // Render detailed test results in collapsible sections
-    // Call this separately after the main shader manager content
     static void renderShaderTestResults(
         const std::vector<std::tuple<std::string, std::string, bool, std::string>>& results,
         const std::set<std::string>& depthShaderNames)
@@ -182,7 +170,6 @@ namespace vkBasalt
         if (results.empty())
             return;
 
-        // Count failures and depth shaders for headers
         int failCount = 0;
         int depthCount = 0;
         for (const auto& [name, path, success, error] : results)
@@ -193,7 +180,6 @@ namespace vkBasalt
                 depthCount++;
         }
 
-        // Show failed shaders first (if any)
         if (failCount > 0)
         {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.5f, 0.3f, 1.0f));
@@ -227,7 +213,6 @@ namespace vkBasalt
             }
         }
 
-        // Show depth shaders (if any)
         if (depthCount > 0)
         {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.7f, 1.0f, 1.0f));
@@ -259,7 +244,6 @@ namespace vkBasalt
                 ImGui::SetTooltip("These shaders require depth buffer access.\nBlocked when Safe Anti-Cheat is enabled.");
         }
 
-        // Show passed shaders (excluding depth shaders — they have their own section)
         int safeCount = static_cast<int>(results.size()) - failCount - depthCount;
         if (safeCount > 0)
         {
@@ -278,7 +262,6 @@ namespace vkBasalt
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip("%s", path.c_str());
 
-                    // Show warnings if any
                     if (!error.empty())
                     {
                         ImGui::SameLine();
@@ -294,7 +277,6 @@ namespace vkBasalt
 
 } // namespace vkBasalt
 
-// Expose renderShaderTestResults for use by view_shader_manager.cpp
 namespace vkBasalt
 {
     void renderShaderTestResultsUI(

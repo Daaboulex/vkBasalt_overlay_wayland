@@ -6,7 +6,6 @@ namespace vkBasalt
     {
         if (imageCount > 0)
         {
-            // Wait for GPU to finish before destroying resources
             pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
 
             effects.clear();
@@ -32,14 +31,12 @@ namespace vkBasalt
             }
             Logger::debug("after DestroySemaphore");
 
-            // Destroy image views for overlay
             for (auto& view : imageViews)
             {
                 pLogicalDevice->vkd.DestroyImageView(pLogicalDevice->device, view, nullptr);
             }
             imageViews.clear();
 
-            // Note: ImGui overlay is now at device level, not destroyed here
         }
     }
 } // namespace vkBasalt

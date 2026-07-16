@@ -3,7 +3,6 @@
 
 namespace vkBasalt
 {
-    // Global instance
     SettingsManager settingsManager;
 
     void SettingsManager::initialize()

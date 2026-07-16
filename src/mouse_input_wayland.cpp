@@ -11,10 +11,8 @@
 
 namespace vkBasalt
 {
-    // Mouse-specific state (seat/queue come from wayland_input_common)
     static wl_pointer* wlPointer = nullptr;
 
-    // Mouse state
     static int pointerX = 0;
     static int pointerY = 0;
     static bool leftButton = false;
@@ -22,28 +20,23 @@ namespace vkBasalt
     static bool middleButton = false;
     static float scrollAccumulator = 0.0f;
 
-    // Per-frame flag: true when axis_discrete or axis_value120 fired for this
-    // pointer frame, so we skip the continuous axis event to avoid double-counting.
+    // Set when axis_discrete/axis_value120 fired this pointer frame, so the
+    // continuous axis event is not double-counted.
     static bool discreteScrollReceived = false;
 
-    // Time-based auto-release. When a button release is consumed by the
-    // compositor (or never arrives), we synthesize a release after the button
-    // has been idle (no pointer motion) for AUTO_RELEASE_MS milliseconds.
-    // Time-based instead of frame-based so it works at any framerate.
+    // A compositor grab (e.g. Alt+drag) can consume a button release; synthesize
+    // one after the pointer has been idle with the button held.
     using Clock = std::chrono::steady_clock;
     static Clock::time_point leftPressTime{};
     static Clock::time_point rightPressTime{};
     static Clock::time_point middlePressTime{};
-    static constexpr int AUTO_RELEASE_MS = 200; // 200ms idle = stuck button
+    static constexpr int AUTO_RELEASE_MS = 200;
 
-    // Track whether motion occurred since last getMouseStateWayland() poll
     static bool motionSinceLastPoll = false;
-    // Last time we saw motion — used to measure idle duration
     static Clock::time_point lastMotionTime{};
 
     static bool mouseInitialized = false;
 
-    // Pointer listener callbacks
     static void pointerEnter(void* /*data*/, wl_pointer* /*pointer*/,
                              uint32_t /*serial*/, wl_surface* /*surface*/,
                              wl_fixed_t sx, wl_fixed_t sy)
@@ -51,11 +44,8 @@ namespace vkBasalt
         pointerX = wl_fixed_to_int(sx);
         pointerY = wl_fixed_to_int(sy);
 
-        // Do NOT clear button state here. Surface reconfigurations (swapchain
-        // resize) cause rapid leave/enter cycles while the user is dragging.
-        // Clearing buttons on enter breaks ImGui drag operations. Button state
-        // is tracked purely from wl_pointer.button events. If a compositor grab
-        // (Alt+drag) consumes a release, the next user click naturally clears it.
+        // Button state is not cleared here: swapchain resizes cause rapid
+        // leave/enter cycles mid-drag, and clearing would break the drag.
 
         Logger::trace("Wayland: pointer enter at " + std::to_string(pointerX) + "," + std::to_string(pointerY));
     }
@@ -81,7 +71,7 @@ namespace vkBasalt
         bool pressed = (state == WL_POINTER_BUTTON_STATE_PRESSED);
         Logger::trace("Wayland: pointer button " + std::to_string(button) + " " + (pressed ? "pressed" : "released"));
 
-        // Linux evdev button codes: BTN_LEFT=0x110, BTN_RIGHT=0x111, BTN_MIDDLE=0x112
+        // evdev button codes: BTN_LEFT=0x110, BTN_RIGHT=0x111, BTN_MIDDLE=0x112.
         auto now = Clock::now();
         switch (button)
         {
@@ -103,22 +93,17 @@ namespace vkBasalt
     static void pointerAxis(void* /*data*/, wl_pointer* /*pointer*/,
                             uint32_t /*time*/, uint32_t axis, wl_fixed_t value)
     {
-        // Only use continuous axis as fallback when discrete events are not sent.
-        // When both fire for the same pointer frame, discrete/value120 takes priority.
         if (axis != 0)
             return;
         if (discreteScrollReceived)
             return;
 
-        // Negative value = scroll up, positive = scroll down
-        // Normalize: typical step is 10.0 fixed-point
         float scroll = wl_fixed_to_double(value);
         scrollAccumulator -= scroll / 10.0f;
     }
 
     static void pointerFrame(void* /*data*/, wl_pointer* /*pointer*/)
     {
-        // Reset per-frame discrete flag at the end of each pointer frame
         discreteScrollReceived = false;
     }
 
@@ -134,19 +119,17 @@ namespace vkBasalt
     static void pointerAxisDiscrete(void* /*data*/, wl_pointer* /*pointer*/,
                                     uint32_t axis, int32_t discrete)
     {
-        // Discrete scroll events (wheel clicks) — preferred over continuous axis
         if (axis != 0)
             return;
 
         discreteScrollReceived = true;
-        scrollAccumulator -= (float)discrete; // Wayland: positive = scroll down, ImGui: positive = scroll up
+        scrollAccumulator -= (float)discrete;
     }
 
     static void pointerAxisValue120(void* /*data*/, wl_pointer* /*pointer*/,
                                     uint32_t axis, int32_t value120)
     {
-        // High-resolution scroll (wl_pointer v8+). 120 units = one wheel click.
-        // Preferred over both axis and axis_discrete when available.
+        // wl_pointer v8+ high-resolution scroll: 120 units = one wheel click.
         if (axis != 0)
             return;
 
@@ -173,15 +156,13 @@ namespace vkBasalt
         .axis_relative_direction = pointerAxisRelativeDirection,
     };
 
-    // Called by shared seat listener when pointer capability is available
     static void bindPointer(wl_seat* seat)
     {
         if (wlPointer)
             return;
 
         wlPointer = wl_seat_get_pointer(seat);
-        // Register as overlay proxy BEFORE add_listener so the interposition
-        // layer passes this through without wrapping
+        // Register before add_listener so the interpose layer passes it through unwrapped.
         registerOverlayProxy((wl_proxy*)wlPointer);
         wl_pointer_add_listener(wlPointer, &pointerListener, nullptr);
         Logger::debug("Wayland: pointer bound from shared seat");
@@ -194,10 +175,8 @@ namespace vkBasalt
 
         mouseInitialized = true;
 
-        // Register our callback before initializing shared resources
         setPointerBindCallback(bindPointer);
 
-        // Initialize shared seat/queue/registry (triggers seat capability callbacks)
         if (!initWaylandInputCommon())
             return false;
 
@@ -220,7 +199,6 @@ namespace vkBasalt
 
         mouseInitialized = false;
 
-        // Clean up shared resources (idempotent)
         cleanupWaylandInputCommon();
     }
 
@@ -253,10 +231,8 @@ namespace vkBasalt
 
         dispatchWaylandInputEvents();
 
-        // Time-based auto-release for stuck buttons.
-        // While the pointer is moving, keep buttons held (user is dragging).
-        // When motion stops and no release arrives within AUTO_RELEASE_MS,
-        // synthesize the release. Time-based so it works at any framerate.
+        // While the pointer moves, buttons stay held (a drag); once motion stops
+        // and no release arrives within AUTO_RELEASE_MS, release them.
         auto now = Clock::now();
         if (motionSinceLastPoll)
         {

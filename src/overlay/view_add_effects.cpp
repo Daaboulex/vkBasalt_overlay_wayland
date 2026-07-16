@@ -12,7 +12,6 @@
 
 namespace vkBasalt
 {
-    // Case-insensitive substring match
     static bool matchesSearch(const std::string& text, const char* search)
     {
         if (!search || !search[0])
@@ -29,21 +28,17 @@ namespace vkBasalt
         if (!pEffectRegistry)
             return;
 
-        // Auto-start shader test when safe anti-cheat is on — pre-compiles all
-        // shaders so depth detection is instant instead of lagging per-effect
+        // Pre-compile all shaders so depth detection does not lag per effect.
         if (profileSafeAntiCheat && !shaderTestComplete && !shaderTestRunning)
             startShaderTest();
 
-        // Get a mutable copy of selected effects
         std::vector<std::string> selectedEffects = pEffectRegistry->getSelectedEffects();
 
-        // Handle ESC to clear search
         if (ImGui::IsKeyPressed(ImGuiKey_Escape) && addEffectsSearch[0] != '\0')
         {
             addEffectsSearch[0] = '\0';
         }
 
-        // Capture keyboard input for seamless search (only when no widget is active)
         if (!ImGui::IsAnyItemActive())
         {
             ImGuiIO& io = ImGui::GetIO();
@@ -60,7 +55,6 @@ namespace vkBasalt
                     }
                 }
             }
-            // Handle backspace
             if (ImGui::IsKeyPressed(ImGuiKey_Backspace) && addEffectsSearch[0] != '\0')
             {
                 size_t len = strlen(addEffectsSearch);
@@ -69,13 +63,11 @@ namespace vkBasalt
             }
         }
 
-        // Add Effects mode - two column layout
         size_t maxEffectsLimit = static_cast<size_t>(settingsManager.getMaxEffects());
         if (insertPosition >= 0)
             ImGui::Text("Insert Effects at position %d (max %zu)", insertPosition, maxEffectsLimit);
         else
             ImGui::Text("Add Effects (max %zu)", maxEffectsLimit);
-        // Show shader pre-compilation progress when safe anti-cheat auto-triggered it
         if (shaderTestRunning && profileSafeAntiCheat)
         {
             float progress = shaderTestQueue.empty() ? 1.0f :
@@ -90,10 +82,8 @@ namespace vkBasalt
         size_t pendingCount = pendingAddEffects.size();
         size_t totalCount = currentCount + pendingCount;
 
-        // Built-in effects
         std::vector<std::string> builtinEffects = {"cas", "dls", "fxaa", "smaa", "deband", "lut"};
 
-        // Helper to check if instance name is used
         auto isNameUsed = [&](const std::string& name) {
             if (std::find(selectedEffects.begin(), selectedEffects.end(), name) != selectedEffects.end())
                 return true;
@@ -103,7 +93,6 @@ namespace vkBasalt
             return false;
         };
 
-        // Helper to get next instance name for an effect type
         auto getNextInstanceName = [&](const std::string& effectType) -> std::string {
             if (!isNameUsed(effectType))
                 return effectType;
@@ -116,26 +105,20 @@ namespace vkBasalt
             return effectType + ".99";
         };
 
-        // Check if an effect uses depth — only relevant when safe anti-cheat is on
         auto isDepthEffect = [&](const std::string& effectType) -> bool {
-            // No need to check if safe anti-cheat is off
             if (!profileSafeAntiCheat)
                 return false;
 
-            // Built-in effects never use depth
             static const std::set<std::string> safeBuiltins = {"cas", "dls", "fxaa", "smaa", "deband", "lut"};
             if (safeBuiltins.count(effectType))
                 return false;
 
-            // Check cached results from shader test or previous lazy checks
             if (depthShaders.count(effectType))
                 return true;
 
-            // If already checked or shader test completed, it's safe
             if (checkedShaders.count(effectType) || shaderTestComplete)
                 return false;
 
-            // Lazy check: compile shader once to determine depth usage (cached in checkedShaders)
             auto it = state.effectPaths.find(effectType);
             if (it == state.effectPaths.end())
                 return false;
@@ -150,7 +133,6 @@ namespace vkBasalt
             return false;
         };
 
-        // Helper to render add button for an effect
         auto renderAddButton = [&](const std::string& effectType, const std::string& tooltip = "") {
             bool atLimit = totalCount >= maxEffectsLimit;
             bool depthBlocked = profileSafeAntiCheat && isDepthEffect(effectType);
@@ -164,7 +146,6 @@ namespace vkBasalt
                 pendingAddEffects.push_back({instanceName, effectType});
             }
 
-            // Show tooltip with shader path on hover
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             {
                 if (depthBlocked)
@@ -177,17 +158,14 @@ namespace vkBasalt
                 ImGui::EndDisabled();
         };
 
-        // Two column layout
         float footerHeight = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y;
         float contentHeight = -footerHeight;
         float columnWidth = ImGui::GetContentRegionAvail().x * 0.5f - ImGui::GetStyle().ItemSpacing.x * 0.5f;
 
-        // Left column: Available effects
         ImGui::BeginChild("EffectList", ImVec2(columnWidth, contentHeight), true);
 
         bool hasSearch = addEffectsSearch[0] != '\0';
 
-        // Show search bar only when searching
         if (hasSearch)
         {
             ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.2f, 0.2f, 0.3f, 1.0f));
@@ -204,13 +182,11 @@ namespace vkBasalt
             ImGui::Separator();
         }
 
-        // Sort effects for each category
         std::vector<std::string> sortedCurrentConfig = state.currentConfigEffects;
         std::vector<std::string> sortedDefaultConfig = state.defaultConfigEffects;
         std::sort(sortedCurrentConfig.begin(), sortedCurrentConfig.end());
         std::sort(sortedDefaultConfig.begin(), sortedDefaultConfig.end());
 
-        // Built-in effects (filtered)
         bool hasBuiltinMatches = false;
         for (const auto& effectType : builtinEffects)
         {
@@ -231,7 +207,6 @@ namespace vkBasalt
             }
         }
 
-        // ReShade effects from current config (filtered)
         bool hasCurrentMatches = false;
         for (const auto& effectType : sortedCurrentConfig)
         {
@@ -257,7 +232,6 @@ namespace vkBasalt
             }
         }
 
-        // ReShade effects from default config (filtered)
         bool hasDefaultMatches = false;
         for (const auto& effectType : sortedDefaultConfig)
         {
@@ -283,7 +257,6 @@ namespace vkBasalt
             }
         }
 
-        // Show "no results" if searching and nothing matches
         if (hasSearch && !hasBuiltinMatches && !hasCurrentMatches && !hasDefaultMatches)
             ImGui::TextDisabled("No effects match '%s'", addEffectsSearch);
 
@@ -291,7 +264,6 @@ namespace vkBasalt
 
         ImGui::SameLine();
 
-        // Right column: Pending effects
         ImGui::BeginChild("PendingList", ImVec2(columnWidth, contentHeight), true);
         ImGui::Text("Will add (%zu):", pendingCount);
         ImGui::Separator();
@@ -306,7 +278,6 @@ namespace vkBasalt
                 continue;
             }
             ImGui::SameLine();
-            // Show instanceName (effectType) if they differ
             const auto& [instanceName, effectType] = pendingAddEffects[i];
             if (instanceName != effectType)
                 ImGui::Text("%s (%s)", instanceName.c_str(), effectType.c_str());
@@ -324,7 +295,6 @@ namespace vkBasalt
 
         if (ImGui::Button("Done"))
         {
-            // Apply pending effects - insert at position or append
             int pos = (insertPosition >= 0 && insertPosition <= static_cast<int>(selectedEffects.size()))
                       ? insertPosition : static_cast<int>(selectedEffects.size());
             for (const auto& [instanceName, effectType] : pendingAddEffects)

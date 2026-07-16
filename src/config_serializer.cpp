@@ -156,7 +156,6 @@ namespace vkBasalt
     {
         VkBasaltSettings settings;
 
-        // Check user config first, then fall back to system paths (same order as Config)
         std::string userConfig = getBaseConfigDir() + "/vkBasalt.conf";
 
         const std::array<std::string, 3> configPaths = {
@@ -188,7 +187,6 @@ namespace vkBasalt
         std::string line;
         while (std::getline(file, line))
         {
-            // Skip comments and empty lines
             size_t start = line.find_first_not_of(" \t");
             if (start == std::string::npos || line[start] == '#')
                 continue;
@@ -200,7 +198,6 @@ namespace vkBasalt
             std::string key = line.substr(0, eq);
             std::string value = line.substr(eq + 1);
 
-            // Trim whitespace
             auto trimWs = [](std::string& s) {
                 size_t start = s.find_first_not_of(" \t");
                 size_t end = s.find_last_not_of(" \t");
@@ -259,7 +256,6 @@ namespace vkBasalt
             return false;
         }
 
-        // Write settings with comments
         file << "# vkBasalt configuration\n\n";
 
         file << "# Overlay settings\n";
@@ -291,12 +287,10 @@ namespace vkBasalt
         if (baseDir.empty())
             return;
 
-        // Create directory if needed
         mkdir(baseDir.c_str(), 0755);
 
         std::string configPath = baseDir + "/vkBasalt.conf";
 
-        // Only create if no user config exists
         struct stat st;
         if (stat(configPath.c_str(), &st) == 0)
             return;
@@ -316,7 +310,6 @@ namespace vkBasalt
         buf[len] = '\0';
         std::string exePath(buf);
 
-        // Extract basename
         size_t lastSlash = exePath.rfind('/');
         if (lastSlash == std::string::npos)
             return exePath;
@@ -343,7 +336,6 @@ namespace vkBasalt
         return gameName;
     }
 
-    // Case-insensitive string comparison helper
     static bool equalsIgnoreCaseLocal(const std::string& a, const std::string& b)
     {
         if (a.size() != b.size())
@@ -357,7 +349,6 @@ namespace vkBasalt
         return true;
     }
 
-    // Scan a directory recursively for Shaders/ and Textures/ subdirectories
     static void scanDirectoryForShaders(
         const std::string& dir,
         std::vector<std::string>& shaderPaths,
@@ -392,31 +383,25 @@ namespace vkBasalt
         std::ifstream file(configPath);
         if (!file.is_open())
         {
-            // Config file doesn't exist - set up defaults
             std::string defaultReshadeDir = getBaseConfigDir() + "/reshade";
 
-            // Create directories if they don't exist
             mkdir(defaultReshadeDir.c_str(), 0755);
             mkdir((defaultReshadeDir + "/Shaders").c_str(), 0755);
             mkdir((defaultReshadeDir + "/Textures").c_str(), 0755);
 
             config.parentDirectories.push_back(defaultReshadeDir);
 
-            // Auto-scan to discover paths
             scanDirectoryForShaders(defaultReshadeDir,
                 config.discoveredShaderPaths, config.discoveredTexturePaths);
 
-            // Save the config so it persists
             saveShaderManagerConfig(config);
             Logger::info("Created default shader manager config with reshade directory");
             return config;
         }
 
-        // File exists - parse it (respect user's choices, even if empty)
         std::string line;
         while (std::getline(file, line))
         {
-            // Skip comments and empty lines
             size_t start = line.find_first_not_of(" \t");
             if (start == std::string::npos || line[start] == '#')
                 continue;
@@ -428,7 +413,6 @@ namespace vkBasalt
             std::string key = line.substr(0, eq);
             std::string value = line.substr(eq + 1);
 
-            // Trim whitespace
             auto trimWs = [](std::string& s) {
                 size_t start = s.find_first_not_of(" \t");
                 size_t end = s.find_last_not_of(" \t");
@@ -487,7 +471,6 @@ namespace vkBasalt
         return true;
     }
 
-    // --- Per-app profile system ---
 
     std::string ConfigSerializer::getProfilePath(const std::string& gameName,
                                                   const std::string& profileName)
@@ -522,7 +505,6 @@ namespace vkBasalt
             return profilePath;
         }
 
-        // Create default profile with empty effects
         std::ofstream file(profilePath);
         if (!file.is_open())
         {
@@ -537,7 +519,6 @@ namespace vkBasalt
         file.close();
         Logger::info("Created default profile for " + gameName + ": " + profilePath);
 
-        // Also set as active profile
         setActiveProfile(gameName, "default");
 
         return profilePath;
@@ -553,13 +534,11 @@ namespace vkBasalt
         if (configsDir.empty())
             return profiles;
 
-        // Check for default profile: <gameName>.conf
         struct stat st;
         std::string defaultPath = configsDir + "/" + gameName + ".conf";
         if (stat(defaultPath.c_str(), &st) == 0)
             profiles.push_back("default");
 
-        // Check for named profiles: <gameName>@<name>.conf
         std::string prefix = gameName + "@";
         DIR* d = opendir(configsDir.c_str());
         if (!d)
@@ -576,7 +555,6 @@ namespace vkBasalt
             if (name.substr(0, prefix.size()) != prefix)
                 continue;
 
-            // Extract profile name: <gameName>@<profileName>.conf
             std::string profileName = name.substr(prefix.size(), name.size() - prefix.size() - 5);
             if (!profileName.empty())
                 profiles.push_back(profileName);
@@ -619,7 +597,6 @@ namespace vkBasalt
 
         std::string activePath = getConfigsDir() + "/.active_profiles";
 
-        // Read existing entries
         std::map<std::string, std::string> entries;
         {
             std::ifstream file(activePath);
@@ -637,7 +614,6 @@ namespace vkBasalt
 
         entries[gameName] = profileName;
 
-        // Write back atomically
         std::string tmpPath = activePath + ".tmp";
         std::ofstream file(tmpPath);
         if (!file.is_open())
@@ -662,12 +638,10 @@ namespace vkBasalt
         if (newPath.empty())
             return false;
 
-        // Check if already exists
         struct stat st;
         if (stat(newPath.c_str(), &st) == 0)
             return false;  // Already exists
 
-        // Copy from source profile or create empty
         if (!copyFromProfile.empty())
         {
             std::string srcPath = getProfilePath(gameName, copyFromProfile);
@@ -681,7 +655,6 @@ namespace vkBasalt
             }
         }
 
-        // Create empty profile
         std::ofstream file(newPath);
         if (!file.is_open())
             return false;
@@ -697,7 +670,6 @@ namespace vkBasalt
     bool ConfigSerializer::deleteProfile(const std::string& gameName,
                                           const std::string& profileName)
     {
-        // Prevent deleting default profile
         if (profileName.empty() || profileName == "default")
             return false;
 
@@ -709,7 +681,6 @@ namespace vkBasalt
         {
             Logger::info("Deleted profile " + profileName + " for " + gameName);
 
-            // If this was the active profile, switch back to default
             if (getActiveProfile(gameName) == profileName)
                 setActiveProfile(gameName, "default");
 
@@ -729,12 +700,10 @@ namespace vkBasalt
         std::string line;
         while (std::getline(file, line))
         {
-            // Skip comments and empty lines
             size_t start = line.find_first_not_of(" \t");
             if (start == std::string::npos || line[start] == '#')
                 continue;
 
-            // Parse key = value
             size_t eq = line.find('=');
             if (eq == std::string::npos)
                 continue;
@@ -742,7 +711,6 @@ namespace vkBasalt
             std::string key = line.substr(0, eq);
             std::string value = line.substr(eq + 1);
 
-            // Trim whitespace
             auto trim = [](std::string& s) {
                 s.erase(0, s.find_first_not_of(" \t"));
                 s.erase(s.find_last_not_of(" \t") + 1);
@@ -766,7 +734,6 @@ namespace vkBasalt
         const std::vector<PreprocessorDefinition>& preprocessorDefs,
         const ProfileSettings& profileSettings)
     {
-        // Atomic write: write to temp file then rename to prevent corruption
         std::string tmpPath = filePath + ".tmp";
         std::ofstream file(tmpPath);
         if (!file.is_open())
@@ -775,21 +742,17 @@ namespace vkBasalt
             return false;
         }
 
-        // Write per-profile settings
         if (profileSettings.safeAntiCheat)
             file << "safeAntiCheat = true\n\n";
 
-        // Group params by effect
         std::map<std::string, std::vector<const ConfigParam*>> paramsByEffect;
         for (const auto& param : params)
             paramsByEffect[param.effectName].push_back(&param);
 
-        // Group preprocessor defs by effect
         std::map<std::string, std::vector<const PreprocessorDefinition*>> defsByEffect;
         for (const auto& def : preprocessorDefs)
             defsByEffect[def.effectName].push_back(&def);
 
-        // Write params grouped by effect
         for (const auto& [effectName, effectParams] : paramsByEffect)
         {
             file << "# " << effectName << "\n";
@@ -807,7 +770,6 @@ namespace vkBasalt
             file << "\n";
         }
 
-        // Write preprocessor defs for effects that have defs but no params
         for (const auto& [effectName, effectDefs] : defsByEffect)
         {
             if (paramsByEffect.find(effectName) != paramsByEffect.end())
@@ -821,7 +783,6 @@ namespace vkBasalt
             file << "\n";
         }
 
-        // Write paths for effects that have no params or defs
         for (const auto& [effectName, path] : effectPaths)
         {
             if (!path.empty() &&
@@ -833,7 +794,6 @@ namespace vkBasalt
             }
         }
 
-        // Write effects list
         file << "effects = " << joinEffects(effects) << "\n";
 
         if (!disabledEffects.empty())
@@ -848,7 +808,6 @@ namespace vkBasalt
             return false;
         }
 
-        // Atomic rename — if this fails, the original file is untouched
         if (std::rename(tmpPath.c_str(), filePath.c_str()) != 0)
         {
             Logger::err("Failed to rename temp config to: " + filePath);

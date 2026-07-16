@@ -25,7 +25,6 @@
 #include "input_blocker.hpp"
 #include "wayland_display.hpp"
 
-// Wayland surface interception for input capture
 #define VK_USE_PLATFORM_WAYLAND_KHR
 #include <wayland-client.h>
 #include "vulkan/vulkan_wayland.h"
@@ -66,13 +65,12 @@
 
 namespace vkBasalt
 {
-    std::shared_ptr<Config> pBaseConfig = nullptr;  // Always vkBasalt.conf
-    std::shared_ptr<Config> pConfig = nullptr;      // Current config (base + overlay)
-    EffectRegistry effectRegistry;                   // Single source of truth for effect configs
+    std::shared_ptr<Config> pBaseConfig = nullptr;
+    std::shared_ptr<Config> pConfig = nullptr;
+    EffectRegistry effectRegistry;
 
     Logger Logger::s_instance;
 
-    // layer book-keeping information, to store dispatch tables by key
     std::unordered_map<void*, InstanceDispatch>                           instanceDispatchMap;
     std::unordered_map<void*, VkInstance>                                 instanceMap;
     std::unordered_map<void*, uint32_t>                                   instanceVersionMap;
@@ -92,7 +90,6 @@ namespace vkBasalt
         return *(void**) inst;
     }
 
-    // Cached available effects data (to avoid re-parsing config every frame)
     struct CachedEffectsData
     {
         std::vector<std::string> currentConfigEffects;
@@ -103,17 +100,15 @@ namespace vkBasalt
     };
     CachedEffectsData cachedEffects;
 
-    // Cached parameters (to avoid re-parsing config every frame)
     struct CachedParametersData
     {
         std::vector<std::unique_ptr<EffectParam>> parameters;
-        std::vector<std::string> effectNames;  // Effects when params were collected
+        std::vector<std::string> effectNames;
         std::string configPath;
-        bool dirty = true;  // Set to true to force recollection
+        bool dirty = true;
     };
     CachedParametersData cachedParams;
 
-    // Debounce for resize - delays effect reload until resize stops
     struct ResizeDebounceState
     {
         std::chrono::steady_clock::time_point lastResizeTime;
@@ -122,8 +117,7 @@ namespace vkBasalt
     ResizeDebounceState resizeDebounce;
     constexpr int64_t RESIZE_DEBOUNCE_MS = 200;
 
-    // Signal-safe crash recovery for SIGFPE/SIGABRT from embedded reshadefx compiler.
-    // These signals cannot be caught by C++ try-catch — they require signal handlers.
+    // The embedded reshadefx compiler can raise SIGFPE/SIGABRT, which C++ try-catch cannot catch.
     static thread_local sigjmp_buf signalJmpBuf;
     static thread_local volatile sig_atomic_t signalJmpActive = 0;
     static thread_local volatile sig_atomic_t caughtSignal = 0;
@@ -135,14 +129,12 @@ namespace vkBasalt
             caughtSignal = sig;
             siglongjmp(signalJmpBuf, 1);
         }
-        // Print backtrace before crashing so we can find the source
         const char* sigName = (sig == SIGFPE) ? "SIGFPE" : (sig == SIGABRT) ? "SIGABRT" : "SIGNAL";
-        fprintf(stderr, "\nvkBasalt: caught %s — backtrace:\n", sigName);
+        fprintf(stderr, "\nvkBasalt: caught %s, backtrace:\n", sigName);
         void* frames[64];
         int count = backtrace(frames, 64);
-        backtrace_symbols_fd(frames, count, 2);  // fd 2 = stderr
+        backtrace_symbols_fd(frames, count, 2);
         fprintf(stderr, "\n");
-        // Restore default handler and re-raise
         signal(sig, SIG_DFL);
         raise(sig);
     }
@@ -161,7 +153,6 @@ namespace vkBasalt
         installed = true;
     }
 
-    // Helper for key press with debounce - returns true on key-down edge
     bool handleKeyPress(uint32_t keySymbol, bool& wasPressed)
     {
         if (isKeyPressed(keySymbol))
@@ -179,7 +170,6 @@ namespace vkBasalt
         return false;
     }
 
-    // Helper struct for depth image state
     struct DepthState
     {
         VkImageView imageView = VK_NULL_HANDLE;
@@ -187,7 +177,6 @@ namespace vkBasalt
         VkFormat format = VK_FORMAT_UNDEFINED;
     };
 
-    // Get depth state from logical device (returns null handles if no depth images)
     DepthState getDepthState(LogicalDevice* pLogicalDevice)
     {
         DepthState state;
@@ -200,13 +189,11 @@ namespace vkBasalt
         return state;
     }
 
-    // Helper to reallocate and rewrite command buffers for a swapchain
     void reallocateCommandBuffers(
         LogicalDevice* pLogicalDevice,
         LogicalSwapchain* pLogicalSwapchain,
         const DepthState& depth)
     {
-        // Free existing command buffers
         if (!pLogicalSwapchain->commandBuffersEffect.empty())
         {
             pLogicalDevice->vkd.FreeCommandBuffers(
@@ -222,63 +209,46 @@ namespace vkBasalt
                 pLogicalSwapchain->commandBuffersNoEffect.data());
         }
 
-        // Allocate and write effect command buffers
         pLogicalSwapchain->commandBuffersEffect = allocateCommandBuffer(pLogicalDevice, pLogicalSwapchain->imageCount);
         writeCommandBuffers(pLogicalDevice, pLogicalSwapchain->effects,
                            depth.image, depth.imageView, depth.format,
                            pLogicalSwapchain->commandBuffersEffect);
 
-        // Allocate and write no-effect command buffers
         pLogicalSwapchain->commandBuffersNoEffect = allocateCommandBuffer(pLogicalDevice, pLogicalSwapchain->imageCount);
         writeCommandBuffers(pLogicalDevice, {pLogicalSwapchain->defaultTransfer},
                            VK_NULL_HANDLE, VK_NULL_HANDLE, VK_FORMAT_UNDEFINED,
                            pLogicalSwapchain->commandBuffersNoEffect);
     }
 
-    // Apply modified parameters from overlay to config
     void applyOverlayParams(LogicalDevice* pLogicalDevice)
     {
-        // Parameters are already in EffectRegistry (the single source of truth)
-        // Effects read directly from the registry when recreated
-        // This function just logs for debugging
         if (!pLogicalDevice->imguiOverlay)
             return;
 
         Logger::info("Applying parameters from overlay - effects will read from EffectRegistry");
     }
 
-    // Detected game info (set once at init, used by overlay for profiles)
     static std::string detectedGameName;
     static std::string activeProfileName;
     static std::string activeProfilePath;
 
-    // Initialize configs: base (vkBasalt.conf) + current (from game profile / env / default)
     void initConfigs()
     {
         if (pBaseConfig != nullptr)
             return;  // Already initialized
 
-        // Ensure config directory exists for later saves
         {
             std::string baseDir = ConfigSerializer::getBaseConfigDir();
             if (!baseDir.empty())
                 mkdir(baseDir.c_str(), 0755);
         }
 
-        // Initialize settings manager (single source of truth for settings)
         settingsManager.initialize();
 
-        // Load base config (vkBasalt.conf) - used for paths, effect definitions
         pBaseConfig = std::make_shared<Config>();
 
-        // Detect the game executable
         detectedGameName = ConfigSerializer::detectGameName();
 
-        // Determine current config path (priority order):
-        // 1. VKBASALT_CONFIG_FILE env var (explicit override)
-        // 2. Per-game profile (auto-created if needed)
-        // 3. Legacy default_config file
-        // 4. Base vkBasalt.conf
         std::string currentConfigPath;
 
         const char* envConfig = std::getenv("VKBASALT_CONFIG_FILE");
@@ -289,15 +259,12 @@ namespace vkBasalt
         }
         else if (!detectedGameName.empty())
         {
-            // Auto-create profile for this game if needed, then load it
             activeProfileName = ConfigSerializer::getActiveProfile(detectedGameName);
             activeProfilePath = ConfigSerializer::getProfilePath(detectedGameName, activeProfileName);
 
-            // Ensure the profile file exists
             struct stat st;
             if (stat(activeProfilePath.c_str(), &st) != 0)
             {
-                // Profile doesn't exist yet — create it
                 activeProfilePath = ConfigSerializer::ensureGameProfile(detectedGameName);
             }
 
@@ -308,7 +275,6 @@ namespace vkBasalt
             }
         }
 
-        // Fallback: legacy default_config
         if (currentConfigPath.empty())
         {
             std::string defaultName = ConfigSerializer::getDefaultConfig();
@@ -316,7 +282,6 @@ namespace vkBasalt
                 currentConfigPath = ConfigSerializer::getConfigsDir() + "/" + defaultName + ".conf";
         }
 
-        // Load current config if specified, otherwise use base
         if (!currentConfigPath.empty())
         {
             std::ifstream file(currentConfigPath);
@@ -336,7 +301,6 @@ namespace vkBasalt
             pConfig = pBaseConfig;
         }
 
-        // Enforce per-profile safe anti-cheat: override global depthCapture + hide layer
         if (!activeProfilePath.empty())
         {
             ProfileSettings ps = ConfigSerializer::loadProfileSettings(activeProfilePath);
@@ -344,41 +308,34 @@ namespace vkBasalt
             {
                 settingsManager.setSafeAntiCheat(true);
                 settingsManager.setDepthCapture(false);
-                Logger::info("safeAntiCheat enabled — depth capture forced off, layer hidden");
+                Logger::info("safeAntiCheat enabled - depth capture forced off, layer hidden");
             }
         }
 
-        // Initialize effect registry with current config
         effectRegistry.initialize(pConfig.get());
     }
 
-    // Switch to a new config (called from overlay)
     void switchConfig(const std::string& configPath)
     {
         Logger::info("switching to config: " + configPath);
 
-        // Create new config from file (starts with no overrides)
         pConfig = std::make_shared<Config>(configPath);
         pConfig->setFallback(pBaseConfig.get());
 
-        // Also clear any overrides on the base config to avoid stale values
         if (pBaseConfig)
             pBaseConfig->clearOverrides();
 
-        // Re-initialize registry with new config
         effectRegistry.initialize(pConfig.get());
         cachedParams.dirty = true;
 
         Logger::info("switched to config: " + configPath);
     }
 
-    // Helper function to get available effects separated by source (uses cache)
     void getAvailableEffects(Config* pConfig,
                              std::vector<std::string>& currentConfigEffects,
                              std::vector<std::string>& defaultConfigEffects,
                              std::map<std::string, std::string>& effectPaths)
     {
-        // Use cache if available and config hasn't changed
         if (cachedEffects.initialized && cachedEffects.configPath == pConfig->getConfigFilePath())
         {
             currentConfigEffects = cachedEffects.currentConfigEffects;
@@ -391,10 +348,8 @@ namespace vkBasalt
         defaultConfigEffects.clear();
         effectPaths.clear();
 
-        // Collect all known effect names (to avoid duplicates)
         std::set<std::string> knownEffects;
 
-        // Get effect definitions from current config
         auto configEffects = pConfig->getEffectDefinitions();
         for (const auto& [name, path] : configEffects)
         {
@@ -403,7 +358,6 @@ namespace vkBasalt
             knownEffects.insert(name);
         }
 
-        // Also load effect definitions from the base config file (vkBasalt.conf)
         if (pBaseConfig && pBaseConfig->getConfigFilePath() != pConfig->getConfigFilePath())
         {
             auto defaultEffects = pBaseConfig->getEffectDefinitions();
@@ -418,7 +372,6 @@ namespace vkBasalt
             }
         }
 
-        // Auto-discover .fx files in all shader manager discovered paths
         ShaderManagerConfig shaderMgrConfig = ConfigSerializer::loadShaderManagerConfig();
         for (const auto& shaderPath : shaderMgrConfig.discoveredShaderPaths)
         {
@@ -433,10 +386,8 @@ namespace vkBasalt
                     if (filename.size() < 4 || filename.substr(filename.size() - 3) != ".fx")
                         continue;
 
-                    // Effect name is filename without .fx extension
                     std::string effectName = filename.substr(0, filename.size() - 3);
 
-                    // Skip if already known (from config definitions or other paths)
                     if (knownEffects.find(effectName) != knownEffects.end())
                         continue;
 
@@ -451,10 +402,8 @@ namespace vkBasalt
             }
         }
 
-        // Sort discovered effects alphabetically
         std::sort(defaultConfigEffects.begin(), defaultConfigEffects.end());
 
-        // Update cache
         cachedEffects.currentConfigEffects = currentConfigEffects;
         cachedEffects.defaultConfigEffects = defaultConfigEffects;
         cachedEffects.effectPaths = effectPaths;
@@ -462,8 +411,6 @@ namespace vkBasalt
         cachedEffects.initialized = true;
     }
 
-    // Helper function to create effects for a swapchain
-    // This centralizes the effect creation logic used by both initial swapchain setup and hot-reload
     void createEffectsForSwapchain(
         LogicalSwapchain* pLogicalSwapchain,
         LogicalDevice* pLogicalDevice,
@@ -474,7 +421,6 @@ namespace vkBasalt
         VkFormat unormFormat = convertToUNORM(pLogicalSwapchain->format);
         VkFormat srgbFormat = convertToSRGB(pLogicalSwapchain->format);
 
-        // If no effects, add pass-through so rendering still works
         if (effectStrings.empty())
         {
             std::vector<VkImage> firstImages(pLogicalSwapchain->fakeImages.begin(),
@@ -489,11 +435,9 @@ namespace vkBasalt
         {
             Logger::debug("creating effect " + std::to_string(i) + ": " + effectStrings[i]);
 
-            // Calculate input images for this effect
             std::vector<VkImage> firstImages(pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount * i,
                                              pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount * (i + 1));
 
-            // Calculate output images - last effect writes to swapchain or final fake images
             std::vector<VkImage> secondImages;
             if (i == effectStrings.size() - 1)
             {
@@ -508,7 +452,6 @@ namespace vkBasalt
                                                     pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount * (i + 2));
             }
 
-            // Check if effect should be skipped (disabled or failed)
             bool effectFailed = effectRegistry.hasEffectFailed(effectStrings[i]);
             bool effectDisabled = checkEnabledState && !effectRegistry.isEffectEnabled(effectStrings[i]);
 
@@ -520,17 +463,13 @@ namespace vkBasalt
                 continue;
             }
 
-            // Get effect type from registry (handles instance names like "cas.2")
             std::string effectType = effectRegistry.getEffectType(effectStrings[i]);
             if (effectType.empty())
                 effectType = effectStrings[i];
 
-            // Create the appropriate effect type
             const auto* def = BuiltInEffects::instance().getDef(effectType);
             if (def)
             {
-                // Sync registry parameter values to pConfig overrides so built-in
-                // effects (which read from pConfig) see the latest UI-modified values.
                 for (auto* param : effectRegistry.getParametersForEffect(effectStrings[i]))
                 {
                     auto serialized = param->serialize();
@@ -541,7 +480,6 @@ namespace vkBasalt
                     }
                 }
 
-                // Wrap built-in effect creation in try-catch to handle failures gracefully
                 try
                 {
                     VkFormat format = def->usesSrgbFormat ? srgbFormat : unormFormat;
@@ -558,8 +496,6 @@ namespace vkBasalt
             }
             else
             {
-                // ReShade effect - wrap in try-catch + signal handler to handle compilation failures gracefully
-                // The embedded reshadefx compiler can trigger SIGFPE/SIGABRT in edge cases
                 std::string effectPath = effectRegistry.getEffectFilePath(effectStrings[i]);
                 auto customDefs = effectRegistry.getPreprocessorDefs(effectStrings[i]);
 
@@ -567,7 +503,6 @@ namespace vkBasalt
                 bool signalCrash = false;
                 if (sigsetjmp(signalJmpBuf, 1) != 0)
                 {
-                    // Returned here from signal handler (SIGFPE/SIGABRT)
                     signalJmpActive = 0;
                     signalCrash = true;
                     std::string sigName = (caughtSignal == SIGFPE) ? "SIGFPE" : "SIGABRT";
@@ -598,7 +533,6 @@ namespace vkBasalt
             }
         }
 
-        // If device doesn't support mutable format, add final transfer to swapchain
         if (!pLogicalDevice->supportsMutableFormat)
         {
             pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new TransferEffect(
@@ -608,25 +542,18 @@ namespace vkBasalt
         }
     }
 
-    // Helper function to reload effects for a swapchain (for hot-reload)
     void reloadEffectsForSwapchain(LogicalSwapchain* pLogicalSwapchain, Config* pConfig,
                                    const std::vector<std::string>& activeEffects = {})
     {
         LogicalDevice* pLogicalDevice = pLogicalSwapchain->pLogicalDevice;
 
-        // Wait for GPU to finish
         pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
 
-        // Clear effects (command buffers will be freed by reallocateCommandBuffers)
         pLogicalSwapchain->effects.clear();
         pLogicalSwapchain->defaultTransfer.reset();
 
-        // Use provided active effects list directly - no fallback to config
-        // Registry is the single source of truth (initialized at first swapchain creation)
         std::vector<std::string> effectStrings = activeEffects;
 
-        // Check if we have enough fake images for the effects
-        // Fake images are allocated at swapchain creation based on maxEffectSlots
         if (effectStrings.size() > pLogicalSwapchain->maxEffectSlots)
         {
             Logger::warn("Cannot add more effects than maxEffectSlots (" +
@@ -637,10 +564,8 @@ namespace vkBasalt
 
         Logger::info("reloading " + std::to_string(effectStrings.size()) + " effects");
 
-        // Create effects using centralized helper
         createEffectsForSwapchain(pLogicalSwapchain, pLogicalDevice, pConfig, effectStrings, true);
 
-        // Create default transfer effect (needed for no-effect command buffers)
         pLogicalSwapchain->defaultTransfer = std::shared_ptr<Effect>(new TransferEffect(
             pLogicalDevice,
             pLogicalSwapchain->format,
@@ -649,14 +574,12 @@ namespace vkBasalt
             pLogicalSwapchain->images,
             pConfig));
 
-        // Free old command buffers and allocate/write new ones
         DepthState depth = getDepthState(pLogicalDevice);
         reallocateCommandBuffers(pLogicalDevice, pLogicalSwapchain, depth);
 
         Logger::info("effects reloaded successfully");
     }
 
-    // Reload effects for all swapchains belonging to a device
     void reloadAllSwapchains(LogicalDevice* pLogicalDevice, const std::vector<std::string>& activeEffects)
     {
         for (auto& [_, pLogicalSwapchain] : swapchainMap)
@@ -666,7 +589,6 @@ namespace vkBasalt
         }
     }
 
-    // Build and update overlay state for rendering
     void updateOverlayState(LogicalDevice* pLogicalDevice, bool effectsEnabled)
     {
         if (!pLogicalDevice->imguiOverlay || !pLogicalDevice->imguiOverlay->isVisible())
@@ -675,14 +597,11 @@ namespace vkBasalt
         OverlayState overlayState;
         overlayState.effectNames = pLogicalDevice->imguiOverlay->getActiveEffects();
 
-        // No fallback to config - registry is the single source of truth
-        // (initialized from config at first swapchain creation)
 
         getAvailableEffects(pConfig.get(), overlayState.currentConfigEffects,
                             overlayState.defaultConfigEffects, overlayState.effectPaths);
         overlayState.configPath = pConfig->getConfigFilePath();
 
-        // Cache the filename extraction — config path rarely changes
         static std::string cachedConfigPath;
         static std::string cachedConfigName;
         if (overlayState.configPath != cachedConfigPath)
@@ -693,7 +612,6 @@ namespace vkBasalt
         overlayState.configName = cachedConfigName;
         overlayState.effectsEnabled = effectsEnabled;
 
-        // Ensure all selected effects are in the registry
         for (const auto& effectName : pLogicalDevice->imguiOverlay->getSelectedEffects())
         {
             if (effectRegistry.hasEffect(effectName))
@@ -703,15 +621,13 @@ namespace vkBasalt
             effectRegistry.ensureEffect(effectName, effectPath);
         }
 
-        // Parameters now read directly from EffectRegistry, no need to pass via state
         pLogicalDevice->imguiOverlay->updateState(std::move(overlayState));
     }
 
-    // Submit overlay command buffer if visible, returns semaphore to wait on
     VkResult submitOverlayFrame(LogicalDevice* pLogicalDevice, LogicalSwapchain* pSwapchain,
                                 uint32_t index, VkSemaphore& outSemaphore)
     {
-        outSemaphore = pSwapchain->semaphores[index];  // Default: wait on effects semaphore
+        outSemaphore = pSwapchain->semaphores[index];
 
         if (!pLogicalDevice->imguiOverlay)
             return VK_SUCCESS;
@@ -734,7 +650,6 @@ namespace vkBasalt
         overlaySubmit.signalSemaphoreCount = 1;
         overlaySubmit.pSignalSemaphores = &pSwapchain->overlaySemaphores[index];
 
-        // Use fence to track command buffer completion (prevents reuse while in flight)
         VkFence overlayFence = pLogicalDevice->imguiOverlay->getCommandBufferFence(index);
         VkResult vr = pLogicalDevice->vkd.QueueSubmit(pLogicalDevice->queue, 1, &overlaySubmit, overlayFence);
         if (vr == VK_SUCCESS)
@@ -749,7 +664,6 @@ namespace vkBasalt
     {
         VkLayerInstanceCreateInfo* layerCreateInfo = (VkLayerInstanceCreateInfo*) pCreateInfo->pNext;
 
-        // step through the chain of pNext until we get to the link info
         while (layerCreateInfo
                && (layerCreateInfo->sType != VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO || layerCreateInfo->function != VK_LAYER_LINK_INFO))
         {
@@ -758,14 +672,10 @@ namespace vkBasalt
 
         Logger::trace("vkCreateInstance");
 
-        // Detect the windowing backend from the surface extension the app enables
-        // here -- the authoritative signal of a native-Wayland vs an X11 (incl.
-        // XWayland/Wine) client. Under a Wayland session XWayland clients inherit
-        // WAYLAND_DISPLAY, so the env var alone misroutes their input to the
-        // Wayland backend (issue #1); the enabled surface extension does not. A
-        // client enabling only an X11 surface extension is X11 even when
-        // WAYLAND_DISPLAY is set; if it also enables wayland_surface, the actual
-        // vkCreateWaylandSurfaceKHR call stays the tie-breaker.
+        // The enabled surface extension is the reliable backend signal: XWayland
+        // clients inherit WAYLAND_DISPLAY, so the env var alone misroutes them.
+        // A client enabling both extensions is resolved by the actual
+        // vkCreateWaylandSurfaceKHR call.
         {
             bool wantsWayland = false;
             bool wantsX11     = false;
@@ -785,12 +695,10 @@ namespace vkBasalt
 
         if (layerCreateInfo == nullptr)
         {
-            // No loader instance create info
             return VK_ERROR_INITIALIZATION_FAILED;
         }
 
         PFN_vkGetInstanceProcAddr gpa = layerCreateInfo->u.pLayerInfo->pfnNextGetInstanceProcAddr;
-        // move chain on for next layer
         layerCreateInfo->u.pLayerInfo = layerCreateInfo->u.pLayerInfo->pNext;
 
         PFN_vkCreateInstance createFunc = (PFN_vkCreateInstance) gpa(VK_NULL_HANDLE, "vkCreateInstance");
@@ -819,11 +727,9 @@ namespace vkBasalt
         modifiedCreateInfo.pApplicationInfo = &appInfo;
         VkResult ret                        = createFunc(&modifiedCreateInfo, pAllocator, pInstance);
 
-        // fetch our own dispatch table for the functions we need, into the next layer
         InstanceDispatch dispatchTable;
         fillDispatchTableInstance(*pInstance, gpa, &dispatchTable);
 
-        // store the table by key
         {
             scoped_lock l(globalLock);
             instanceDispatchMap[GetKey(*pInstance)] = dispatchTable;
@@ -861,7 +767,6 @@ namespace vkBasalt
         Logger::trace("vkCreateDevice");
         VkLayerDeviceCreateInfo* layerCreateInfo = (VkLayerDeviceCreateInfo*) pCreateInfo->pNext;
 
-        // step through the chain of pNext until we get to the link info
         while (layerCreateInfo
                && (layerCreateInfo->sType != VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO || layerCreateInfo->function != VK_LAYER_LINK_INFO))
         {
@@ -870,18 +775,15 @@ namespace vkBasalt
 
         if (layerCreateInfo == nullptr)
         {
-            // No loader instance create info
             return VK_ERROR_INITIALIZATION_FAILED;
         }
 
         PFN_vkGetInstanceProcAddr gipa = layerCreateInfo->u.pLayerInfo->pfnNextGetInstanceProcAddr;
         PFN_vkGetDeviceProcAddr   gdpa = layerCreateInfo->u.pLayerInfo->pfnNextGetDeviceProcAddr;
-        // move chain on for next layer
         layerCreateInfo->u.pLayerInfo = layerCreateInfo->u.pLayerInfo->pNext;
 
         PFN_vkCreateDevice createFunc = (PFN_vkCreateDevice) gipa(VK_NULL_HANDLE, "vkCreateDevice");
 
-        // check and activate extentions
         uint32_t extensionCount = 0;
 
         instanceDispatchMap[GetKey(physicalDevice)].EnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, nullptr);
@@ -923,7 +825,6 @@ namespace vkBasalt
         modifiedCreateInfo.ppEnabledExtensionNames = enabledExtensionNames.data();
         modifiedCreateInfo.enabledExtensionCount   = enabledExtensionNames.size();
 
-        // Active needed Features
         VkPhysicalDeviceFeatures deviceFeatures = {};
         if (modifiedCreateInfo.pEnabledFeatures)
         {
@@ -982,7 +883,6 @@ namespace vkBasalt
         if (!pLogicalDevice->queue)
         {
             Logger::err("Did not find a graphics queue! vkBasalt requires a graphics-capable queue.");
-            // Still register the device so destruction works, but effects won't function
         }
 
         deviceMap[GetKey(*pDevice)] = pLogicalDevice;
@@ -1001,10 +901,8 @@ namespace vkBasalt
 
         LogicalDevice* pLogicalDevice = deviceMap[GetKey(device)].get();
 
-        // Destroy ImGui overlay before device (it uses device resources)
         pLogicalDevice->imguiOverlay.reset();
 
-        // Clean up Wayland input resources (no-op if not initialized)
         cleanupWaylandKeyboard();
         cleanupWaylandMouse();
 
@@ -1090,7 +988,6 @@ namespace vkBasalt
 
         LogicalSwapchain* pLogicalSwapchain = swapchainMap[swapchain].get();
 
-        // If the images got already requested once, return them again instead of creating new images
         if (pLogicalSwapchain->fakeImages.size())
         {
             *pCount = std::min<uint32_t>(*pCount, pLogicalSwapchain->imageCount);
@@ -1102,7 +999,6 @@ namespace vkBasalt
         pLogicalSwapchain->images.resize(pLogicalSwapchain->imageCount);
         pLogicalDevice->vkd.GetSwapchainImagesKHR(device, swapchain, &pLogicalSwapchain->imageCount, pLogicalSwapchain->images.data());
 
-        // Create image views for overlay rendering
         pLogicalSwapchain->imageViews.resize(pLogicalSwapchain->imageCount);
         for (uint32_t i = 0; i < pLogicalSwapchain->imageCount; i++)
         {
@@ -1121,20 +1017,16 @@ namespace vkBasalt
                 Logger::err("Failed to create swapchain image view " + std::to_string(i) + ": " + std::to_string(viewResult));
         }
 
-        // Initialize registry from config on first run (before calculating effect slots)
         bool isFirstRun = !effectRegistry.isInitializedFromConfig();
         if (isFirstRun)
             effectRegistry.initializeSelectedEffectsFromConfig();
 
         const auto& selectedEffects = effectRegistry.getSelectedEffects();
 
-        // Allow dynamic effect loading by allocating for more effects than configured
-        // maxEffects defaults to 10, allowing users to enable additional effects at runtime
         int32_t maxEffects = settingsManager.getMaxEffects();
         size_t effectSlots = std::max(selectedEffects.size(), (size_t)maxEffects);
         pLogicalSwapchain->maxEffectSlots = effectSlots;
 
-        // create 1 more set of images when we can't use the swapchain it self
         uint32_t fakeImageCount = pLogicalSwapchain->imageCount * (effectSlots + !pLogicalDevice->supportsMutableFormat);
 
         pLogicalSwapchain->fakeImages =
@@ -1143,7 +1035,6 @@ namespace vkBasalt
 
         if (!isFirstRun && !selectedEffects.empty())
         {
-            // Resize with effects - use pass-through and debounce for smooth resize
             Logger::debug("using pass-through during resize, will restore effects after debounce");
             std::vector<VkImage> firstImages(pLogicalSwapchain->fakeImages.begin(),
                                              pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount);
@@ -1156,7 +1047,6 @@ namespace vkBasalt
         }
         else
         {
-            // First run OR empty effects - create effects from registry
             createEffectsForSwapchain(pLogicalSwapchain, pLogicalDevice, pConfig.get(), selectedEffects, true);
         }
 
@@ -1204,8 +1094,6 @@ namespace vkBasalt
             Logger::debug(std::to_string(i) + " written commandbuffer " + convertToString(pLogicalSwapchain->commandBuffersNoEffect[i]));
         }
 
-        // Create ImGui overlay at device level (if not already created)
-        // This survives swapchain recreation during resize
         if (!pLogicalDevice->imguiOverlay)
         {
             if (!pLogicalDevice->overlayPersistentState)
@@ -1213,13 +1101,10 @@ namespace vkBasalt
             pLogicalDevice->imguiOverlay = std::make_unique<ImGuiOverlay>(
                 pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageCount,
                 pLogicalDevice->overlayPersistentState.get());
-            // Set the effect registry pointer (single source of truth for enabled states)
             pLogicalDevice->imguiOverlay->setEffectRegistry(&effectRegistry);
 
-            // Set game/profile info for auto-save
             pLogicalDevice->imguiOverlay->setGameProfile(detectedGameName, activeProfileName, activeProfilePath);
 
-            // Initialize input blocking (grabs all input when overlay is visible)
             static bool inputBlockerInited = false;
             if (!inputBlockerInited)
             {
@@ -1247,7 +1132,6 @@ namespace vkBasalt
         if (!devIt->second->queue)
             return devIt->second->vkd.QueuePresentKHR(queue, pPresentInfo);
 
-        // Keybindings - read from settingsManager (can be updated when settings are saved)
         static uint32_t keySymbol = convertToKeySym(settingsManager.getToggleKey());
         static uint32_t reloadKeySymbol = convertToKeySym(settingsManager.getReloadKey());
         static uint32_t overlayKeySymbol = convertToKeySym(settingsManager.getOverlayKey());
@@ -1258,11 +1142,9 @@ namespace vkBasalt
         static bool reloadPressed = false;
         static bool overlayPressed = false;
 
-        // Check if settings were saved (re-read from settingsManager which is already updated by UI)
         LogicalDevice* pDeviceForSettings = devIt->second.get();
         if (pDeviceForSettings && pDeviceForSettings->imguiOverlay && pDeviceForSettings->imguiOverlay->hasSettingsSaved())
         {
-            // settingsManager is already updated by the UI, just re-read the values
             keySymbol = convertToKeySym(settingsManager.getToggleKey());
             reloadKeySymbol = convertToKeySym(settingsManager.getReloadKey());
             overlayKeySymbol = convertToKeySym(settingsManager.getOverlayKey());
@@ -1271,7 +1153,6 @@ namespace vkBasalt
             Logger::info("Settings reloaded from SettingsManager");
         }
 
-        // Check if shader paths were changed (refresh available effects list)
         if (pDeviceForSettings && pDeviceForSettings->imguiOverlay && pDeviceForSettings->imguiOverlay->hasShaderPathsChanged())
         {
             cachedEffects.initialized = false;  // Force re-scan of available effects
@@ -1285,11 +1166,9 @@ namespace vkBasalt
             initLogged = true;
         }
 
-        // Toggle effect on/off (keyboard)
         if (handleKeyPress(keySymbol, pressed))
             presentEffect = !presentEffect;
 
-        // Hot-reload: check for key press or config file change
         bool shouldReload = false;
         if (handleKeyPress(reloadKeySymbol, reloadPressed))
         {
@@ -1302,7 +1181,6 @@ namespace vkBasalt
             shouldReload = true;
         }
 
-        // Toggle overlay on/off
         if (handleKeyPress(overlayKeySymbol, overlayPressed))
         {
             LogicalDevice* pDevice = deviceMap[GetKey(queue)].get();
@@ -1310,10 +1188,8 @@ namespace vkBasalt
                 pDevice->imguiOverlay->toggle();
         }
 
-        // Check for Apply button press in overlay (overlay is at device level)
         LogicalDevice* pLogicalDevice = deviceMap[GetKey(queue)].get();
 
-        // Toggle effects on/off via overlay checkbox
         if (pLogicalDevice->imguiOverlay && pLogicalDevice->imguiOverlay->hasToggleEffectsRequest())
         {
             presentEffect = !presentEffect;
@@ -1322,7 +1198,6 @@ namespace vkBasalt
 
         if (pLogicalDevice->imguiOverlay && pLogicalDevice->imguiOverlay->hasModifiedParams())
         {
-            // If we're loading a new config, don't apply old params - just trigger reload
             if (!pLogicalDevice->imguiOverlay->hasPendingConfig())
                 applyOverlayParams(pLogicalDevice);
 
@@ -1334,12 +1209,10 @@ namespace vkBasalt
         {
             Logger::info("hot-reloading config and effects...");
 
-            // Check if overlay wants to load a different config
             if (pLogicalDevice->imguiOverlay && pLogicalDevice->imguiOverlay->hasPendingConfig())
             {
                 std::string newConfigPath = pLogicalDevice->imguiOverlay->getPendingConfigPath();
                 switchConfig(newConfigPath);
-                // Update overlay with effects from the new config
                 std::vector<std::string> newEffects = pConfig->getOption<std::vector<std::string>>("effects", {});
                 std::vector<std::string> disabledEffects = pConfig->getOption<std::vector<std::string>>("disabledEffects", {});
                 pLogicalDevice->imguiOverlay->setSelectedEffects(newEffects, disabledEffects);
@@ -1360,8 +1233,6 @@ namespace vkBasalt
             }
         }
 
-        // Check for debounced resize reload (separate from config reload)
-        // Only call steady_clock::now() when a resize is actually pending
         if (resizeDebounce.pending)
         {
             auto resizeElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1372,7 +1243,6 @@ namespace vkBasalt
                 Logger::info("debounced resize reload after " + std::to_string(resizeElapsed) + "ms");
                 resizeDebounce.pending = false;
 
-                // Get selected effects from registry (single source of truth)
                 const auto& selectedEffects = effectRegistry.getSelectedEffects();
                 for (auto& [_, pSwapchain] : swapchainMap)
                 {
@@ -1383,7 +1253,6 @@ namespace vkBasalt
             }
         }
 
-        // Reuse static buffers to avoid per-frame heap allocations
         static thread_local std::vector<VkSemaphore> presentSemaphores;
         static thread_local std::vector<VkPipelineStageFlags> waitStages;
         presentSemaphores.clear();
@@ -1396,14 +1265,12 @@ namespace vkBasalt
             VkSwapchainKHR    swapchain         = pPresentInfo->pSwapchains[i];
             LogicalSwapchain* pLogicalSwapchain = swapchainMap[swapchain].get();
 
-            // Update effect uniforms only when effects are active (saves CPU+GPU when off)
             if (presentEffect)
             {
                 for (auto& effect : pLogicalSwapchain->effects)
                     effect->updateEffect();
             }
 
-            // Submit effect command buffer
             VkSubmitInfo submitInfo = {};
             submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
             submitInfo.waitSemaphoreCount = i == 0 ? pPresentInfo->waitSemaphoreCount : 0;
@@ -1420,7 +1287,6 @@ namespace vkBasalt
             if (vr != VK_SUCCESS)
                 return vr;
 
-            // Update and render overlay
             updateOverlayState(pLogicalDevice, presentEffect);
 
             VkSemaphore finalSemaphore;
@@ -1444,7 +1310,6 @@ namespace vkBasalt
             return;
 
         scoped_lock l(globalLock);
-        // we need to delete the infos of the oldswapchain
 
         Logger::trace("vkDestroySwapchainKHR " + convertToString(swapchain));
         swapchainMap[swapchain]->destroy();
@@ -1495,7 +1360,6 @@ namespace vkBasalt
         if (pLogicalDevice->depthImages.empty() || image != pLogicalDevice->depthImages.back())
             return result;
 
-        // Create depth image view for the newly bound depth image
         Logger::debug("before creating depth image view");
         VkFormat depthFormat = pLogicalDevice->depthFormats[pLogicalDevice->depthImages.size() - 1];
         VkImageView depthImageView = createImageViews(pLogicalDevice, depthFormat, {image},
@@ -1503,11 +1367,9 @@ namespace vkBasalt
         Logger::debug("created depth image view");
         pLogicalDevice->depthImageViews.push_back(depthImageView);
 
-        // Only update command buffers for the first depth image
         if (pLogicalDevice->depthImageViews.size() > 1)
             return result;
 
-        // Update all swapchains for this device with the new depth state
         DepthState depth = getDepthState(pLogicalDevice);
         for (auto& [swapchainHandle, pLogicalSwapchain] : swapchainMap)
         {
@@ -1532,13 +1394,11 @@ namespace vkBasalt
 
         LogicalDevice* pLogicalDevice = deviceMap[GetKey(device)].get();
 
-        // Check if this is a tracked depth image
         auto it = std::find(pLogicalDevice->depthImages.begin(), pLogicalDevice->depthImages.end(), image);
         if (it != pLogicalDevice->depthImages.end())
         {
             size_t i = std::distance(pLogicalDevice->depthImages.begin(), it);
 
-            // Remove from tracking lists
             pLogicalDevice->depthImages.erase(it);
             // TODO what if an image gets destroyed before binding memory?
             if (i < pLogicalDevice->depthImageViews.size())
@@ -1549,7 +1409,6 @@ namespace vkBasalt
             if (i < pLogicalDevice->depthFormats.size())
                 pLogicalDevice->depthFormats.erase(pLogicalDevice->depthFormats.begin() + i);
 
-            // Update all swapchains with new depth state
             DepthState depth = getDepthState(pLogicalDevice);
             for (auto& [swapchainHandle, pLogicalSwapchain] : swapchainMap)
             {
@@ -1566,9 +1425,6 @@ namespace vkBasalt
         pLogicalDevice->vkd.DestroyImage(pLogicalDevice->device, image, pAllocator);
     }
 
-    ///////////////////////////////////////////////////////////////////////////////////////////
-    // Wayland surface interception — capture wl_display for input
-
     VKAPI_ATTR VkResult VKAPI_CALL vkBasalt_CreateWaylandSurfaceKHR(
         VkInstance                              instance,
         const VkWaylandSurfaceCreateInfoKHR*    pCreateInfo,
@@ -1579,13 +1435,11 @@ namespace vkBasalt
 
         Logger::trace("vkCreateWaylandSurfaceKHR");
 
-        // Capture the wl_display and wl_surface for Wayland input
         if (pCreateInfo && pCreateInfo->display)
             setWaylandDisplay(pCreateInfo->display);
         if (pCreateInfo && pCreateInfo->surface)
             setWaylandSurface(pCreateInfo->surface);
 
-        // Forward to the real implementation via the next layer
         auto nextFunc = (PFN_vkCreateWaylandSurfaceKHR)
             instanceDispatchMap[GetKey(instance)].GetInstanceProcAddr(
                 instanceMap[GetKey(instance)], "vkCreateWaylandSurfaceKHR");
@@ -1595,12 +1449,9 @@ namespace vkBasalt
         return nextFunc(instance, pCreateInfo, pAllocator, pSurface);
     }
 
-    ///////////////////////////////////////////////////////////////////////////////////////////
-    // Enumeration function
 
     VkResult VKAPI_CALL vkBasalt_EnumerateInstanceLayerProperties(uint32_t* pPropertyCount, VkLayerProperties* pProperties)
     {
-        // When safe anti-cheat is active, hide the layer from enumeration
         if (settingsManager.getSafeAntiCheat())
         {
             if (pPropertyCount)
@@ -1638,7 +1489,6 @@ namespace vkBasalt
             return VK_ERROR_LAYER_NOT_PRESENT;
         }
 
-        // don't expose any extensions
         if (pPropertyCount)
         {
             *pPropertyCount = 0;
@@ -1651,7 +1501,6 @@ namespace vkBasalt
                                                                     uint32_t*              pPropertyCount,
                                                                     VkExtensionProperties* pProperties)
     {
-        // pass through any queries that aren't to us
         if (pLayerName == NULL || std::strcmp(pLayerName, VKBASALT_NAME))
         {
             if (physicalDevice == VK_NULL_HANDLE)
@@ -1664,7 +1513,6 @@ namespace vkBasalt
                 physicalDevice, pLayerName, pPropertyCount, pProperties);
         }
 
-        // don't expose any extensions
         if (pPropertyCount)
         {
             *pPropertyCount = 0;
@@ -1674,7 +1522,7 @@ namespace vkBasalt
 } // namespace vkBasalt
 
 extern "C"
-{ // these are the entry points for the layer, so they need to be c-linkeable
+{
 
     VK_BASALT_EXPORT PFN_vkVoidFunction VKAPI_CALL vkBasalt_GetDeviceProcAddr(VkDevice device, const char* pName);
     VK_BASALT_EXPORT PFN_vkVoidFunction VKAPI_CALL vkBasalt_GetInstanceProcAddr(VkInstance instance, const char* pName);
@@ -1682,14 +1530,9 @@ extern "C"
 #define GETPROCADDR(func) \
     if (!std::strcmp(pName, "vk" #func)) \
         return (PFN_vkVoidFunction) &vkBasalt::vkBasalt_##func;
-    /*
-    Return our funktions for the funktions we want to intercept
-    the macro takes the name and returns our vkBasalt_##func, if the name is equal
-    */
 
     // vkGetDeviceProcAddr needs to behave like vkGetInstanceProcAddr thanks to some games
 #define INTERCEPT_CALLS \
-    /* instance chain functions we intercept */ \
     if (!std::strcmp(pName, "vkGetInstanceProcAddr")) \
         return (PFN_vkVoidFunction) &vkBasalt_GetInstanceProcAddr; \
     GETPROCADDR(EnumerateInstanceLayerProperties); \
@@ -1698,7 +1541,6 @@ extern "C"
     GETPROCADDR(DestroyInstance); \
     GETPROCADDR(CreateWaylandSurfaceKHR); \
 \
-    /* device chain functions we intercept*/ \
     if (!std::strcmp(pName, "vkGetDeviceProcAddr")) \
         return (PFN_vkVoidFunction) &vkBasalt_GetDeviceProcAddr; \
     GETPROCADDR(EnumerateDeviceLayerProperties); \

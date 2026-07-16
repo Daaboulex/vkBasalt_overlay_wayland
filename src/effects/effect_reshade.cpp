@@ -75,7 +75,6 @@ namespace vkBasalt
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                          stagingBuffer,
                          stagingBufferMemory);
-            // Persistent map — HOST_COHERENT means no flush needed, just write directly
             VkResult mapResult = pLogicalDevice->vkd.MapMemory(pLogicalDevice->device, stagingBufferMemory, 0, bufferSize, 0, &stagingBufferMapped);
             if (mapResult != VK_SUCCESS)
             {
@@ -100,7 +99,6 @@ namespace vkBasalt
 
         std::vector<std::vector<VkImageView>> imageViewVector;
 
-        // Cache shader manager config once for all texture lookups (avoids re-reading per texture)
         ShaderManagerConfig cachedShaderMgrConfig = ConfigSerializer::loadShaderManagerConfig();
 
         for (size_t i = 0; i < module.textures.size(); i++)
@@ -250,7 +248,6 @@ namespace vkBasalt
                         break;
                 }
 
-                // Search for texture in discovered paths from shader manager
                 std::string textureName = source->value.string_data;
                 std::string filePath;
                 FILE* file = nullptr;
@@ -296,7 +293,6 @@ namespace vkBasalt
                     continue;
                 }
 
-                // change RGBA to RG
                 if (textureFormatsUNORM[module.textures[i].unique_name] == VK_FORMAT_R8G8_UNORM)
                 {
                     uint32_t pos = 0;
@@ -366,7 +362,6 @@ namespace vkBasalt
         inputDescriptorSets =
             allocateAndWriteImageSamplerDescriptorSets(pLogicalDevice, descriptorPool, imageSamplerDescriptorSetLayout, samplers, imageViewVector);
 
-        // count the back buffer writes
         for (auto& pass : module.techniques[0].passes)
         {
             if (pass.render_target_names[0] == "")
@@ -375,7 +370,6 @@ namespace vkBasalt
             }
         }
 
-        // if there is only one outputWrite, we can directly write to outputImages
         if (outputWrites > 1)
         {
             textureMemory.push_back(VK_NULL_HANDLE);
@@ -522,7 +516,6 @@ namespace vkBasalt
                 attachmentDescriptions.push_back(attachmentDescription);
             }
 
-            // renderpass
 
             VkSubpassDescription subpassDescription;
             subpassDescription.flags                   = 0;
@@ -573,7 +566,6 @@ namespace vkBasalt
 
             renderPassBeginInfos.push_back(renderPassBeginInfo);
 
-            // framebuffers
 
             if (pass.render_target_names[0] == "")
             {
@@ -593,13 +585,10 @@ namespace vkBasalt
                 switchSamplers.push_back(false);
             }
 
-            // pipeline
 
-            // Configure effect
             std::vector<VkSpecializationMapEntry> specMapEntrys;
             std::vector<char>                     specData;
 
-            // Track vector component index (for float2/float3/float4 which are split into multiple spec constants)
             std::string prevSpecName;
             int vectorComponentIndex = 0;
 
@@ -607,7 +596,6 @@ namespace vkBasalt
             {
                 if (!opt.name.empty())
                 {
-                    // Track which component of a vector this is (consecutive same-named spec constants = vector components)
                     if (opt.name == prevSpecName)
                     {
                         vectorComponentIndex++;
@@ -618,7 +606,6 @@ namespace vkBasalt
                         prevSpecName = opt.name;
                     }
 
-                    // Get parameter from EffectRegistry (the single source of truth)
                     EffectParam* param = pEffectRegistry->getParameter(effectName, opt.name);
                     if (!param)
                     {
@@ -641,7 +628,6 @@ namespace vkBasalt
                             }
                             break;
                         case reshadefx::type::t_int:
-                            // Could be IntParam or IntVecParam (vector component)
                             if (auto* ivp = dynamic_cast<IntVecParam*>(param))
                             {
                                 if (vectorComponentIndex < static_cast<int>(ivp->componentCount))
@@ -661,7 +647,6 @@ namespace vkBasalt
                             }
                             break;
                         case reshadefx::type::t_uint:
-                            // Could be UintParam or UintVecParam (vector component)
                             if (auto* uvp = dynamic_cast<UintVecParam*>(param))
                             {
                                 if (vectorComponentIndex < static_cast<int>(uvp->componentCount))
@@ -689,7 +674,6 @@ namespace vkBasalt
                             }
                             break;
                         case reshadefx::type::t_float:
-                            // Could be FloatParam or FloatVecParam (vector component)
                             if (auto* fvp = dynamic_cast<FloatVecParam*>(param))
                             {
                                 if (vectorComponentIndex < static_cast<int>(fvp->componentCount))
@@ -709,7 +693,6 @@ namespace vkBasalt
                             }
                             break;
                         default:
-                            // do nothing
                             break;
                     }
                 }
@@ -887,13 +870,11 @@ namespace vkBasalt
         {
             for (auto& uniform : uniforms)
                 uniform->update(stagingBufferMapped);
-            // HOST_COHERENT: no flush needed, GPU sees writes automatically
         }
     }
 
     void ReshadeEffect::useDepthImage(VkImageView depthImageView)
     {
-        // Update DepthUniforms so bufready_depth reports correctly
         bool hasDepth = (depthImageView != VK_NULL_HANDLE);
         for (auto& uniform : uniforms)
         {
@@ -923,7 +904,6 @@ namespace vkBasalt
                     {
                         VkDescriptorImageInfo imageInfo;
                         imageInfo.sampler = samplers[i];
-                        // Use a input image if there is no depth image to prevent a crash
                         imageInfo.imageView   = depthImageView ? depthImageView : inputImageViewsUNORM[j];
                         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
@@ -959,7 +939,6 @@ namespace vkBasalt
     }
     void ReshadeEffect::applyEffect(uint32_t imageIndex, VkCommandBuffer commandBuffer)
     {
-        // Used to make the Image accessable by the shader
         VkImageMemoryBarrier memoryBarrier;
         memoryBarrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         memoryBarrier.pNext               = nullptr;
@@ -977,7 +956,6 @@ namespace vkBasalt
         memoryBarrier.subresourceRange.baseArrayLayer = 0;
         memoryBarrier.subresourceRange.layerCount     = 1;
 
-        // Reverses the first Barrier
         VkImageMemoryBarrier secondBarrier;
         secondBarrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         secondBarrier.pNext               = nullptr;
@@ -1017,7 +995,6 @@ namespace vkBasalt
                                                    &memoryBarrier);
         }
 
-        // stencil image
         memoryBarrier.image                       = stencilImage;
         memoryBarrier.srcAccessMask               = 0;
         memoryBarrier.dstAccessMask               = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
@@ -1107,7 +1084,6 @@ namespace vkBasalt
     {
         std::vector<std::unique_ptr<EffectParam>> params;
 
-        // Helper lambdas
         auto findAnnotation = [](const auto& annotations, const std::string& name) {
             return std::find_if(annotations.begin(), annotations.end(),
                 [&name](const auto& a) { return a.name == name; });
@@ -1142,15 +1118,12 @@ namespace vkBasalt
 
         for (const auto& spec : module.spec_constants)
         {
-            // Skip uniforms with "source" annotation (auto-updated like frametime)
             if (findAnnotation(spec.annotations, "source") != spec.annotations.end())
                 continue;
 
-            // Skip if no name (can't be configured)
             if (spec.name.empty())
                 continue;
 
-            // Get common annotations
             auto labelIt = findAnnotation(spec.annotations, "ui_label");
             std::string label = (labelIt != spec.annotations.end()) ? labelIt->value.string_data : spec.name;
 
@@ -1160,10 +1133,8 @@ namespace vkBasalt
             auto typeIt = findAnnotation(spec.annotations, "ui_type");
             std::string uiType = (typeIt != spec.annotations.end()) ? typeIt->value.string_data : "";
 
-            // Get current value from EffectRegistry (the single source of truth)
             EffectParam* registryParam = pEffectRegistry->getParameter(effectName, spec.name);
 
-            // Create appropriate subclass based on spec type
             if (spec.type.is_floating_point())
             {
                 auto p = std::make_unique<FloatParam>();
@@ -1173,7 +1144,6 @@ namespace vkBasalt
                 p->tooltip = tooltip;
                 p->uiType = uiType;
                 p->defaultValue = spec.initializer_value.as_float[0];
-                // Get value from registry if available
                 if (auto* rp = dynamic_cast<FloatParam*>(registryParam))
                     p->value = rp->value;
                 else
@@ -1201,7 +1171,6 @@ namespace vkBasalt
                 p->tooltip = tooltip;
                 p->uiType = uiType;
                 p->defaultValue = (spec.initializer_value.as_uint[0] != 0);
-                // Get value from registry if available
                 if (auto* rp = dynamic_cast<BoolParam*>(registryParam))
                     p->value = rp->value;
                 else
@@ -1218,7 +1187,6 @@ namespace vkBasalt
                 p->tooltip = tooltip;
                 p->uiType = uiType;
                 p->defaultValue = spec.initializer_value.as_int[0];
-                // Get value from registry if available
                 if (auto* rp = dynamic_cast<IntParam*>(registryParam))
                     p->value = rp->value;
                 else
@@ -1379,26 +1347,22 @@ namespace vkBasalt
         preprocessor.add_macro_definition("BUFFER_COLOR_DEPTH", (inputOutputFormatUNORM == VK_FORMAT_A2R10G10B10_UNORM_PACK32) ? "10" : "8");
         preprocessor.add_macro_definition("BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH");
 
-        // Add custom preprocessor definitions (user-configurable macros)
         for (const auto& def : customPreprocessorDefs)
         {
             preprocessor.add_macro_definition(def.name, def.value);
             Logger::debug("  custom macro: " + def.name + " = " + def.value);
         }
 
-        // Add all discovered shader paths from shader manager
         ShaderManagerConfig shaderMgrConfig = ConfigSerializer::loadShaderManagerConfig();
         for (const auto& path : shaderMgrConfig.discoveredShaderPaths)
             preprocessor.add_include_path(path);
 
-        // Use provided effectPath, or try to find it in discovered shader paths
         std::string shaderPath = this->effectPath;
         if (shaderPath.empty())
         {
             shaderPath = pEffectRegistry->getEffectFilePath(effectName);
             if (shaderPath.empty())
             {
-                // Search discovered shader paths for the effect
                 for (const auto& searchPath : shaderMgrConfig.discoveredShaderPaths)
                 {
                     std::string candidate = searchPath + "/" + effectName + ".fx";

@@ -16,7 +16,6 @@ namespace vkBasalt
     {
         bool shouldShow = settingsManager.getShowDebugWindow();
 
-        // Enable/disable history collection based on debug window visibility
         if (shouldShow && !Logger::isHistoryEnabled())
             Logger::setHistoryEnabled(true);
         else if (!shouldShow && Logger::isHistoryEnabled())
@@ -25,7 +24,6 @@ namespace vkBasalt
         if (!shouldShow)
             return;
 
-        // Local bool for ImGui window close button
         bool showDebugWindow = true;
         ImGui::SetNextWindowSize(ImVec2(600, 400), ImGuiCond_FirstUseEver);
         if (!ImGui::Begin("Debug Window", &showDebugWindow))
@@ -47,7 +45,6 @@ namespace vkBasalt
 
         if (ImGui::BeginTabBar("DebugTabs"))
         {
-            // Effects tab
             if (ImGui::BeginTabItem("Effects"))
             {
                 debugWindowTab = 0;
@@ -125,19 +122,15 @@ namespace vkBasalt
                 ImGui::EndTabItem();
             }
 
-            // Log tab
             if (ImGui::BeginTabItem("Log"))
             {
                 debugWindowTab = 1;
 
-                // Only capture keyboard when this window is focused
                 bool windowFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
 
-                // Handle ESC to clear search
                 if (windowFocused && ImGui::IsKeyPressed(ImGuiKey_Escape) && debugLogSearch[0] != '\0')
                     debugLogSearch[0] = '\0';
 
-                // Capture keyboard input for seamless search (only when focused and no widget active)
                 if (windowFocused && !ImGui::IsAnyItemActive())
                 {
                     ImGuiIO& io = ImGui::GetIO();
@@ -176,7 +169,6 @@ namespace vkBasalt
                     ImGui::Separator();
                 }
 
-                // Filter checkboxes + actions
                 ImGui::Text("Filters:");
                 ImGui::SameLine();
                 ImGui::Checkbox("Trace", &debugLogFilters[0]);
@@ -213,7 +205,6 @@ namespace vkBasalt
 
                 ImGui::Separator();
 
-                // Log output in scrolling region
                 ImGui::BeginChild("LogScrollRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
 
                 auto history = Logger::getHistory();
@@ -251,7 +242,6 @@ namespace vkBasalt
                     ImGui::PopStyleColor();
                 }
 
-                // Auto-scroll: stick to bottom unless user scrolled up manually
                 bool atBottom = ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 10.0f;
                 if (atBottom && !hasSearch)
                     ImGui::SetScrollHereY(1.0f);

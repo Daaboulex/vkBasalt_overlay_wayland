@@ -32,7 +32,6 @@ namespace vkBasalt
                     p.value[i] = std::round(p.value[i] / p.step) * p.step;
             }
 
-            // Right-click context menu to reset
             if (ImGui::BeginPopupContextItem("##reset"))
             {
                 if (ImGui::MenuItem("Reset to default"))

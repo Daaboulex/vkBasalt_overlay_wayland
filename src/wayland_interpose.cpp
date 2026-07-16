@@ -1,22 +1,17 @@
-// Wayland event interposition for input blocking.
-//
-// On Wayland, there is no XGrabPointer equivalent. The game and our overlay
-// both receive pointer/keyboard events from the compositor for the same
-// surface. This module interposes on wl_proxy_add_listener (the underlying
-// C function that wl_pointer_add_listener inlines to) and wraps the game's
-// pointer/keyboard listeners with callbacks that suppress events when the
-// overlay has input blocked.
-//
-// Overlay-owned proxies are registered via registerOverlayProxy() and are
-// always passed through unwrapped.
+// Input blocking on Wayland: the game and the overlay both receive events for
+// the same surface, so the game's pointer/keyboard listeners are wrapped with
+// callbacks that drop events while the overlay has input blocked.
+// wl_pointer_add_listener and friends are static inline in
+// <wayland-client-protocol.h>, so the interpose targets the underlying
+// wl_proxy_add_listener.
 
 #include "wayland_interpose.hpp"
 #include "input_blocker.hpp"
 #include "wayland_display.hpp"
 #include "logger.hpp"
 
-// Forward-declare to avoid pulling in mouse_input_wayland.hpp (which
-// transitively includes mouse_input.hpp → X11 headers in some targets).
+// Forward-declared to avoid mouse_input_wayland.hpp, which pulls X11 headers
+// into some targets.
 namespace vkBasalt { void mirrorButtonState(uint32_t button, bool pressed); }
 
 #include <wayland-client.h>
@@ -50,10 +45,6 @@ namespace vkBasalt
     }
 } // namespace vkBasalt
 
-// ── Game listener storage ────────────────────────────────────────────────────
-
-// Per-proxy data for wrapped game listeners. We store the game's original
-// listener and user_data so we can forward events when not blocking.
 struct GamePointerData
 {
     wl_pointer_listener original;
@@ -70,8 +61,6 @@ static std::mutex gameDataMutex;
 static std::unordered_map<wl_pointer*, GamePointerData> gamePointers;
 static std::unordered_map<wl_keyboard*, GameKeyboardData> gameKeyboards;
 
-// ── Wrapper pointer listener ─────────────────────────────────────────────────
-
 static void wp_enter(void* data, wl_pointer* p, uint32_t serial, wl_surface* s, wl_fixed_t x, wl_fixed_t y)
 {
     if (vkBasalt::isInputBlocked())
@@ -84,7 +73,6 @@ static void wp_enter(void* data, wl_pointer* p, uint32_t serial, wl_surface* s, 
 
 static void wp_leave(void* data, wl_pointer* p, uint32_t serial, wl_surface* s)
 {
-    // Always forward leave — the game needs to know it lost focus
     std::lock_guard<std::mutex> lock(gameDataMutex);
     auto it = gamePointers.find(p);
     if (it != gamePointers.end() && it->second.original.leave)
@@ -103,8 +91,8 @@ static void wp_motion(void* data, wl_pointer* p, uint32_t time, wl_fixed_t x, wl
 
 static void wp_button(void* data, wl_pointer* p, uint32_t serial, uint32_t time, uint32_t button, uint32_t state)
 {
-    // Always mirror button state to overlay — the game's pointer receives
-    // releases via Wayland's implicit grab that our overlay pointer never sees.
+    // Always mirror to the overlay: releases consumed by Wayland's implicit grab
+    // reach the game's pointer but never the overlay's.
     if (vkBasalt::isWayland())
         vkBasalt::mirrorButtonState(button, state == WL_POINTER_BUTTON_STATE_PRESSED);
 
@@ -200,11 +188,11 @@ static const wl_pointer_listener wrapperPointerListener = {
     .axis_relative_direction = wp_axis_relative_direction,
 };
 
-// ── Wrapper keyboard listener ────────────────────────────────────────────────
+// leave, keymap, modifiers, and repeat_info are always forwarded so the game's
+// input state stays consistent while blocked.
 
 static void wk_keymap(void* data, wl_keyboard* kb, uint32_t format, int32_t fd, uint32_t size)
 {
-    // Always forward keymap — needed for initialization
     std::lock_guard<std::mutex> lock(gameDataMutex);
     auto it = gameKeyboards.find(kb);
     if (it != gameKeyboards.end() && it->second.original.keymap)
@@ -223,7 +211,6 @@ static void wk_enter(void* data, wl_keyboard* kb, uint32_t serial, wl_surface* s
 
 static void wk_leave(void* data, wl_keyboard* kb, uint32_t serial, wl_surface* s)
 {
-    // Always forward leave
     std::lock_guard<std::mutex> lock(gameDataMutex);
     auto it = gameKeyboards.find(kb);
     if (it != gameKeyboards.end() && it->second.original.leave)
@@ -242,7 +229,6 @@ static void wk_key(void* data, wl_keyboard* kb, uint32_t serial, uint32_t time, 
 
 static void wk_modifiers(void* data, wl_keyboard* kb, uint32_t serial, uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group)
 {
-    // Always forward modifiers — games need modifier state for keybinds
     std::lock_guard<std::mutex> lock(gameDataMutex);
     auto it = gameKeyboards.find(kb);
     if (it != gameKeyboards.end() && it->second.original.modifiers)
@@ -251,7 +237,6 @@ static void wk_modifiers(void* data, wl_keyboard* kb, uint32_t serial, uint32_t 
 
 static void wk_repeat_info(void* data, wl_keyboard* kb, int32_t rate, int32_t delay)
 {
-    // Always forward repeat info
     std::lock_guard<std::mutex> lock(gameDataMutex);
     auto it = gameKeyboards.find(kb);
     if (it != gameKeyboards.end() && it->second.original.repeat_info)
@@ -266,12 +251,6 @@ static const wl_keyboard_listener wrapperKeyboardListener = {
     .modifiers = wk_modifiers,
     .repeat_info = wk_repeat_info,
 };
-
-// ── Symbol interposition ─────────────────────────────────────────────────────
-//
-// wl_pointer_add_listener is a static inline in <wayland-client-protocol.h>
-// that calls wl_proxy_add_listener. We interpose on the underlying C function
-// so that even inlined calls are caught.
 
 using AddListenerFn = int (*)(struct wl_proxy*, void (**)(void), void*);
 
@@ -294,7 +273,6 @@ int wl_proxy_add_listener(struct wl_proxy* proxy,
     if (!cls)
         return real(proxy, implementation, data);
 
-    // Skip overlay-owned proxies — they use their own listeners
     if (vkBasalt::isOverlayProxy(proxy))
         return real(proxy, implementation, data);
 
@@ -347,7 +325,6 @@ namespace vkBasalt
         {
             if (hasFocus)
             {
-                // Synthetic enter — game regains keyboard focus with no pressed keys
                 if (data.original.enter)
                 {
                     wl_array emptyKeys;
@@ -358,7 +335,6 @@ namespace vkBasalt
             }
             else
             {
-                // Synthetic leave — game drops all held keys
                 if (data.original.leave)
                     data.original.leave(data.userData, kb, 0, nullptr);
             }

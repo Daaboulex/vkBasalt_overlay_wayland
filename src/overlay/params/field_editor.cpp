@@ -16,7 +16,6 @@ namespace vkBasalt
 
     FieldEditor* FieldEditorFactory::getEditor(ParamType type)
     {
-        // Lazy initialization - create editor on first use
         auto it = editors.find(type);
         if (it != editors.end())
             return it->second.get();
@@ -37,7 +36,6 @@ namespace vkBasalt
 
         bool changed = editor->render(param);
 
-        // Show tooltip if present
         if (!param.tooltip.empty() && ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", param.tooltip.c_str());
 

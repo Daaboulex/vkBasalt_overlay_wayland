@@ -14,12 +14,8 @@
 
 namespace vkBasalt
 {
-    // Build version - increment this each build
-    static constexpr int BUILD_NUMBER = 14;
-    static constexpr const char* BUILD_DATE = "2026-03-10";
     namespace
     {
-        // Ring buffer for storing history
         template<typename T, size_t N>
         class RingBuffer
         {
@@ -70,7 +66,6 @@ namespace vkBasalt
                 return sum / static_cast<T>(count);
             }
 
-            // Get data as contiguous array for ImGui plotting
             void copyTo(float* out) const
             {
                 for (size_t i = 0; i < count; i++)
@@ -83,7 +78,6 @@ namespace vkBasalt
             size_t count = 0;
         };
 
-        // ── GPU vendor detection ────────────────────────────────────────────
 
         enum class GpuVendor { Unknown, AMD, Intel, NVIDIA };
 
@@ -97,9 +91,7 @@ namespace vkBasalt
             bool hasGtt = false;
         };
 
-        // ── NVIDIA NVML (runtime dlopen) ────────────────────────────────────
 
-        // NVML types (from nvml.h, but we don't require the header)
         using nvmlReturn_t = unsigned int;
         using nvmlDevice_t = void*;
         struct nvmlUtilization_t { unsigned int gpu; unsigned int memory; };
@@ -113,7 +105,6 @@ namespace vkBasalt
             nvmlDevice_t device = nullptr;
             bool initialized = false;
 
-            // Function pointers
             nvmlReturn_t (*Init)() = nullptr;
             nvmlReturn_t (*Shutdown)() = nullptr;
             nvmlReturn_t (*DeviceGetHandleByIndex)(unsigned int, nvmlDevice_t*) = nullptr;
@@ -168,7 +159,6 @@ namespace vkBasalt
                 return false;
             }
 
-            // Get first GPU handle (index 0)
             if (nvml.DeviceGetHandleByIndex(0, &nvml.device) != NVML_SUCCESS)
             {
                 Logger::debug("NVML: could not get device handle");
@@ -193,9 +183,7 @@ namespace vkBasalt
             }
         }
 
-        // ── GPU discovery ───────────────────────────────────────────────────
 
-        // Read PCI vendor ID from DRM card sysfs
         static uint16_t readVendorId(const std::string& cardPath)
         {
             std::ifstream f(cardPath + "/device/vendor");
@@ -224,7 +212,6 @@ namespace vkBasalt
                     // 0x1002 = AMD, 0x8086 = Intel, 0x10de = NVIDIA
                     if (vendorId == 0x1002)
                     {
-                        // AMD: check for gpu_busy_percent
                         if (std::filesystem::exists(cardPath + "/device/gpu_busy_percent"))
                         {
                             info.vendor = GpuVendor::AMD;
@@ -238,20 +225,17 @@ namespace vkBasalt
                     }
                     else if (vendorId == 0x8086)
                     {
-                        // Intel: use frequency ratio as GPU utilization estimate
                         info.vendor = GpuVendor::Intel;
                         info.drmCardPath = cardPath;
                         info.vendorName = "Intel";
                         info.hasGpuUsage = std::filesystem::exists(cardPath + "/device/gt_act_freq_mhz") &&
                                            std::filesystem::exists(cardPath + "/device/gt_max_freq_mhz");
-                        // Intel discrete (Arc) may have VRAM via drm_memory_stats
                         info.hasVram = std::filesystem::exists(cardPath + "/device/mem_info_vram_total");
                         info.hasGtt = false;
                         return info;
                     }
                     else if (vendorId == 0x10de)
                     {
-                        // NVIDIA: use NVML (runtime dlopen)
                         info.vendor = GpuVendor::NVIDIA;
                         info.drmCardPath = cardPath;
                         info.vendorName = "NVIDIA";
@@ -269,7 +253,6 @@ namespace vkBasalt
             return info;
         }
 
-        // ── Static state ────────────────────────────────────────────────────
 
         static RingBuffer<float, 300> frameTimeHistory;
         static RingBuffer<float, 300> gpuUsageHistory;
@@ -280,7 +263,6 @@ namespace vkBasalt
         static std::string detectedGameName;
         static std::string autoDetectedConfig;
 
-        // Read a single value from sysfs
         template<typename T>
         bool readSysfs(const std::string& path, T& value)
         {
@@ -291,7 +273,6 @@ namespace vkBasalt
             return !file.fail();
         }
 
-        // ── Per-vendor stat readers ─────────────────────────────────────────
 
         float getGpuUsage()
         {
@@ -303,7 +284,6 @@ namespace vkBasalt
             }
             else if (gpuInfo.vendor == GpuVendor::Intel)
             {
-                // Frequency ratio: (actual / max) * 100 as utilization estimate
                 int actFreq = 0, maxFreq = 0;
                 if (readSysfs(gpuInfo.drmCardPath + "/device/gt_act_freq_mhz", actFreq) &&
                     readSysfs(gpuInfo.drmCardPath + "/device/gt_max_freq_mhz", maxFreq) &&
@@ -368,13 +348,11 @@ namespace vkBasalt
             return false;
         }
 
-        // Helper to draw a graph with label
         void drawGraph(const char* label, const char* id, RingBuffer<float, 300>& history, float minVal, float maxVal,
                        const char* overlayFmt, ImVec4 color = ImVec4(0.4f, 0.8f, 0.4f, 1.0f))
         {
             ImGui::Text("%s", label);
 
-            // Get data for plotting
             float data[300];
             history.copyTo(data);
 
@@ -389,7 +367,6 @@ namespace vkBasalt
 
             ImGui::PopStyleColor(2);
 
-            // Stats below graph
             if (history.size() > 0)
             {
                 ImGui::TextDisabled("Min: %.1f  Avg: %.1f  Max: %.1f",
@@ -400,7 +377,6 @@ namespace vkBasalt
 
     void ImGuiOverlay::renderDiagnosticsView()
     {
-        // Initialize on first call
         static bool initialized = false;
         if (!initialized)
         {
@@ -416,7 +392,6 @@ namespace vkBasalt
                 Logger::info("Diagnostics: No supported GPU found");
         }
 
-        // Calculate frame time
         auto now = std::chrono::steady_clock::now();
         float frameTimeMs = std::chrono::duration<float, std::milli>(now - lastFrameTime).count();
         lastFrameTime = now;
@@ -425,9 +400,7 @@ namespace vkBasalt
         if (frameTimeMs > 0.1f && frameTimeMs < 500.0f)
             frameTimeHistory.push(frameTimeMs);
 
-        // Sample GPU stats at a fixed wall-clock interval (~200ms) so overhead
-        // stays constant regardless of frame rate (not "every 10 frames" which
-        // would over-poll at high FPS and under-poll at low FPS).
+        // Fixed wall-clock sampling keeps the overhead constant at any frame rate.
         static auto lastGpuSampleTime = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastGpuSampleTime).count() >= 200)
         {
@@ -448,7 +421,6 @@ namespace vkBasalt
 
         ImGui::BeginChild("DiagnosticsContent", ImVec2(0, 0), false);
 
-        // Frame rate and timing
         float avgFrameTime = frameTimeHistory.avg();
         float fps = avgFrameTime > 0 ? 1000.0f / avgFrameTime : 0;
         float fps1Low = frameTimeHistory.max() > 0 ? 1000.0f / frameTimeHistory.max() : 0;
@@ -456,7 +428,6 @@ namespace vkBasalt
         ImGui::Text("Performance");
         ImGui::Separator();
 
-        // Big FPS display
         ImFont* font = ImGui::GetIO().Fonts->Fonts[0];
         ImGui::PushFont(font, font->LegacySize);
         ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "%.0f FPS", fps);
@@ -466,14 +437,12 @@ namespace vkBasalt
 
         ImGui::Spacing();
 
-        // Frame time graph
         drawGraph("Frame Time", "##frametime", frameTimeHistory, 0.0f, 50.0f, "%.1f ms",
                   ImVec4(0.4f, 0.8f, 0.4f, 1.0f));
 
         ImGui::Spacing();
         ImGui::Spacing();
 
-        // GPU stats
         if (gpuInfo.vendor != GpuVendor::Unknown)
         {
             ImGui::Text("GPU (%s)", gpuInfo.vendorName.c_str());
@@ -525,7 +494,6 @@ namespace vkBasalt
             ImGui::TextDisabled("(No AMD/Intel/NVIDIA GPU detected via sysfs)");
         }
 
-        // Game info
         ImGui::Spacing();
         ImGui::Spacing();
         ImGui::Text("Game");
@@ -543,7 +511,6 @@ namespace vkBasalt
             ImGui::TextDisabled("Could not detect game executable");
         }
 
-        // Credits and build info
         ImGui::Spacing();
         ImGui::Spacing();
         ImGui::Separator();
@@ -561,7 +528,6 @@ namespace vkBasalt
         ImGui::TextLinkOpenURL("@Daaboulex", "https://github.com/Daaboulex/vkBasalt_overlay_wayland");
 
         ImGui::Spacing();
-        ImGui::TextDisabled("Build #%d (%s)", BUILD_NUMBER, BUILD_DATE);
         ImGui::TextDisabled("Report issues:");
         ImGui::TextLinkOpenURL("github.com/Daaboulex/vkBasalt_overlay_wayland/issues", "https://github.com/Daaboulex/vkBasalt_overlay_wayland/issues");
 

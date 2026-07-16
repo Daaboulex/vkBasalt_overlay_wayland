@@ -99,7 +99,6 @@ namespace vkBasalt
         descriptorPool = createDescriptorPool(pLogicalDevice, poolSizes);
         Logger::debug("created descriptorPool");
 
-        // get config options
         struct SmaaOptions
         {
             float   screenWidth;
@@ -207,7 +206,6 @@ namespace vkBasalt
     }
     void SmaaEffect::applyEffect(uint32_t imageIndex, VkCommandBuffer commandBuffer)
     {
-        // Used to make the Image accessable by the shader
         VkImageMemoryBarrier memoryBarrier;
         memoryBarrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         memoryBarrier.pNext               = nullptr;
@@ -225,7 +223,6 @@ namespace vkBasalt
         memoryBarrier.subresourceRange.baseArrayLayer = 0;
         memoryBarrier.subresourceRange.layerCount     = 1;
 
-        // Reverses the first Barrier
         VkImageMemoryBarrier secondBarrier;
         secondBarrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         secondBarrier.pNext               = nullptr;
@@ -256,7 +253,6 @@ namespace vkBasalt
         VkClearValue clearValue               = {0.0f, 0.0f, 0.0f, 1.0f};
         renderPassBeginInfo.clearValueCount   = 1;
         renderPassBeginInfo.pClearValues      = &clearValue;
-        // edge renderPass
         pLogicalDevice->vkd.CmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
         pLogicalDevice->vkd.CmdBindDescriptorSets(
@@ -270,11 +266,9 @@ namespace vkBasalt
 
         memoryBarrier.image             = edgeImages[imageIndex];
         renderPassBeginInfo.framebuffer = blendFramebuffers[imageIndex];
-        // blend renderPass
         pLogicalDevice->vkd.CmdPipelineBarrier(
             commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &memoryBarrier);
 
-        // blend renderPass
         pLogicalDevice->vkd.CmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
         pLogicalDevice->vkd.CmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blendPipeline);
@@ -286,11 +280,9 @@ namespace vkBasalt
         memoryBarrier.image             = blendImages[imageIndex];
         renderPassBeginInfo.framebuffer = neignborFramebuffers[imageIndex];
         renderPassBeginInfo.renderPass  = renderPass;
-        // neighbor renderPass
         pLogicalDevice->vkd.CmdPipelineBarrier(
             commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &memoryBarrier);
 
-        // neighbor renderPass
         pLogicalDevice->vkd.CmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
         pLogicalDevice->vkd.CmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, neighborPipeline);

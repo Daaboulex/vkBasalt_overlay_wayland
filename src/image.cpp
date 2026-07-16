@@ -57,7 +57,6 @@ namespace vkBasalt
             result = pLogicalDevice->vkd.CreateImage(pLogicalDevice->device, &imageCreateInfo, nullptr, &(images[i]));
             ASSERT_VULKAN(result);
         }
-        // Allocate a bunch of memory for all images at one
         VkMemoryRequirements memoryRequirements;
         pLogicalDevice->vkd.GetImageMemoryRequirements(pLogicalDevice->device, images[0], &memoryRequirements);
 

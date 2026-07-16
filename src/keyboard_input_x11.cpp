@@ -59,7 +59,6 @@ namespace vkBasalt
 
     uint32_t convertToKeySymX11(std::string key)
     {
-        // TODO what if X11 isn't loaded?
         uint32_t result = (uint32_t) XStringToKeysym(key.c_str());
         if (!result)
         {
@@ -68,9 +67,6 @@ namespace vkBasalt
         return result;
     }
 
-    // TODO(issue-15): This function opens its own Display connection separate from
-    // kbDisplay used by getKeyboardStateX11(). Merging them would require careful
-    // handling since XQueryKeymap and XInput2 event polling share the same queue.
     bool isKeyPressedX11(uint32_t ks)
     {
         static int usesX11 = -1;
@@ -107,12 +103,10 @@ namespace vkBasalt
         return !!(keys_return[kc2 >> 3] & (1 << (kc2 & 7)));
     }
 
-    // Helper to process a keycode and update state
     static void processKeycode(KeyCode keycode, unsigned int state)
     {
         KeySym keysym = XkbKeycodeToKeysym(kbDisplay, keycode, 0, 0);
 
-        // Capture key name for keybind editor (skip modifier keys)
         if (keysym != XK_Shift_L && keysym != XK_Shift_R &&
             keysym != XK_Control_L && keysym != XK_Control_R &&
             keysym != XK_Alt_L && keysym != XK_Alt_R &&
@@ -123,7 +117,6 @@ namespace vkBasalt
                 lastKeyNameAccumulator = keyName;
         }
 
-        // Handle special keys
         if (keysym == XK_BackSpace) backspacePressed = true;
         else if (keysym == XK_Delete) deletePressed = true;
         else if (keysym == XK_Return || keysym == XK_KP_Enter) enterPressed = true;
@@ -133,7 +126,6 @@ namespace vkBasalt
         else if (keysym == XK_End) endPressed = true;
         else
         {
-            // Check shifted state (from event state or keyboard query)
             bool shifted = (state & ShiftMask) != 0;
             if (!shifted)
             {
@@ -159,18 +151,15 @@ namespace vkBasalt
         if (!kbDisplay || !xiInitialized)
             return state;
 
-        // Process keyboard events
         while (XPending(kbDisplay) > 0)
         {
             XEvent ev;
             XNextEvent(kbDisplay, &ev);
 
-            // Handle regular KeyPress events (from grab)
             if (ev.type == KeyPress)
             {
                 processKeycode(ev.xkey.keycode, ev.xkey.state);
             }
-            // Handle XInput2 raw events (normal operation)
             else if (ev.xcookie.type == GenericEvent && ev.xcookie.extension == xiOpcode &&
                 XGetEventData(kbDisplay, &ev.xcookie))
             {
@@ -193,7 +182,6 @@ namespace vkBasalt
         state.home = homePressed;
         state.end = endPressed;
 
-        // Reset accumulators
         typedCharsAccumulator.clear();
         lastKeyNameAccumulator.clear();
         backspacePressed = false;

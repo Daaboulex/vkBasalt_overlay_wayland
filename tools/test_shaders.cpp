@@ -1,5 +1,5 @@
 // Standalone shader compilation tester for vkBasalt-overlay ReShade .fx files.
-// Links against libreshade.a only — no Vulkan, no ImGui, no full vkbasalt deps.
+// Links against libreshade.a only: no Vulkan, no ImGui, no full vkbasalt deps.
 //
 // Compile:
 //   g++ -std=c++20 -O2 -I../src -I../src/reshade \
@@ -34,7 +34,6 @@
 
 namespace fs = std::filesystem;
 
-// --- Signal-safe crash recovery (mirrors reshade_parser.cpp) ---
 
 static thread_local sigjmp_buf s_jmpBuf;
 static thread_local volatile sig_atomic_t s_jmpActive = 0;
@@ -65,7 +64,6 @@ static void installCrashHandlers()
     installed = true;
 }
 
-// --- Preprocessor setup (mirrors addStandardMacros from reshade_parser.cpp) ---
 
 static void addStandardMacros(reshadefx::preprocessor& pp)
 {
@@ -79,7 +77,7 @@ static void addStandardMacros(reshadefx::preprocessor& pp)
     pp.add_macro_definition("BUFFER_COLOR_DEPTH", "8");
     pp.add_macro_definition("BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH");
 
-    // Function-like macros must use append_string (raw struct lacks parameter substitution markers)
+    // append_string because add_macro_definition cannot express function-like macros.
     pp.append_string(
         "#define tex2DgatherR(s, coords) tex2Dgather(s, coords, 0)\n"
         "#define tex2DgatherG(s, coords) tex2Dgather(s, coords, 1)\n"
@@ -116,7 +114,6 @@ static void addStandardMacros(reshadefx::preprocessor& pp)
     );
 }
 
-// --- shader_manager.conf parser (standalone, avoids ConfigSerializer dependency) ---
 
 struct ShaderManagerConfig
 {
@@ -173,7 +170,6 @@ static ShaderManagerConfig loadShaderManagerConfig()
     return config;
 }
 
-// --- Error categorization ---
 
 enum class ErrorCategory
 {
@@ -206,7 +202,6 @@ static ErrorCategory categorizeError(const std::string& msg)
     return ErrorCategory::Parse;
 }
 
-// --- Test result ---
 
 struct TestResult
 {
@@ -218,7 +213,6 @@ struct TestResult
     ErrorCategory category = ErrorCategory::Parse;
 };
 
-// --- Core test function (mirrors testShaderCompilation) ---
 
 static TestResult testShader(
     const std::string& effectName,
@@ -270,7 +264,6 @@ static TestResult testShader(
             return result;
         }
 
-        // Save preprocessed output for depth check (parser takes ownership via move)
         std::string ppOutput = preprocessor.output();
 
         reshadefx::parser parser;
@@ -289,16 +282,12 @@ static TestResult testShader(
         std::string parseErrors = parser.errors();
         if (!parseErrors.empty())
         {
-            // Warnings — still considered success, but continue to depth detection
             result.errorMessage = "Warnings: " + parseErrors;
         }
 
         reshadefx::module module;
         codegen->write_result(module);
 
-        // Check if shader actually uses depth buffer at runtime.
-        // Verify via SPIR-V that any depth sampler is actually referenced
-        // in executable code (not just declared in a header).
         {
             std::string depthTexName;
             for (const auto& tex : module.textures)
@@ -312,8 +301,6 @@ static TestResult testShader(
 
             if (!depthTexName.empty())
             {
-                // Check if entry points transitively use the depth sampler.
-                // Build per-function call graph + BFS from entry points.
                 auto isSamplerUsedInSpirv = [&](uint32_t samplerId) -> bool {
                     const auto& code = module.spirv;
                     if (code.size() < 5)
@@ -400,7 +387,6 @@ static TestResult testShader(
     return result;
 }
 
-// --- Collect .fx files from a directory ---
 
 static std::vector<fs::path> collectFxFiles(const std::string& dir)
 {
@@ -418,7 +404,6 @@ static std::vector<fs::path> collectFxFiles(const std::string& dir)
         if (!entry.is_regular_file())
             continue;
         auto ext = entry.path().extension().string();
-        // Case-insensitive .fx check
         if (ext == ".fx" || ext == ".FX")
             files.push_back(entry.path());
     }
@@ -427,17 +412,14 @@ static std::vector<fs::path> collectFxFiles(const std::string& dir)
     return files;
 }
 
-// --- Main ---
 
 int main(int argc, char* argv[])
 {
-    // Collect shader directories and include paths
     std::vector<std::string> shaderDirs;
     std::vector<std::string> includePaths;
 
     if (argc > 1)
     {
-        // Directories from command line — also use them as include paths
         for (int i = 1; i < argc; i++)
         {
             shaderDirs.push_back(argv[i]);
@@ -446,22 +428,18 @@ int main(int argc, char* argv[])
     }
     else
     {
-        // Read from shader_manager.conf
         auto config = loadShaderManagerConfig();
         includePaths = config.discoveredShaderPaths;
 
         if (includePaths.empty())
         {
-            // Fallback default
             std::string defaultDir = "/etc/vkBasalt-overlay/reshade/Shaders";
             includePaths.push_back(defaultDir);
         }
 
-        // Search all discovered shader paths for .fx files
         shaderDirs = includePaths;
     }
 
-    // Also add texture paths as include paths (some shaders include from there)
     if (argc <= 1)
     {
         auto config = loadShaderManagerConfig();
@@ -474,7 +452,6 @@ int main(int argc, char* argv[])
         std::cout << "  " << p << "\n";
     std::cout << "\n";
 
-    // Collect all .fx files
     std::vector<fs::path> allFiles;
     for (const auto& dir : shaderDirs)
     {
@@ -482,7 +459,7 @@ int main(int argc, char* argv[])
         allFiles.insert(allFiles.end(), files.begin(), files.end());
     }
 
-    // Deduplicate by canonical path (resolves symlinks, e.g. /etc/... → /nix/store/...)
+    // Canonical-path dedup resolves symlinked duplicates.
     for (auto& f : allFiles)
     {
         try { f = fs::canonical(f); }
@@ -499,7 +476,6 @@ int main(int argc, char* argv[])
 
     std::cout << "Testing " << allFiles.size() << " shader(s)...\n\n";
 
-    // Run tests
     int passCount = 0;
     int failCount = 0;
     int warnCount = 0;
@@ -518,7 +494,6 @@ int main(int argc, char* argv[])
         {
             if (!result.errorMessage.empty())
             {
-                // Has warnings
                 std::cout << "WARN  " << effectName << "\n";
                 warnCount++;
                 warnings.push_back(result);
@@ -543,7 +518,6 @@ int main(int argc, char* argv[])
         }
     }
 
-    // --- Summary ---
 
     std::cout << "\n";
     std::cout << "========================================\n";
@@ -556,7 +530,6 @@ int main(int argc, char* argv[])
     std::cout << "  Total:   " << allFiles.size() << " shaders\n";
     std::cout << "========================================\n";
 
-    // --- Grouped failure details ---
 
     if (!failures.empty())
     {
