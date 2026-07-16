@@ -21,6 +21,7 @@
 #include "image.hpp"
 #include "format.hpp"
 #include "config_serializer.hpp"
+#include "shader_cache.hpp"
 
 #include "util.hpp"
 
@@ -1334,28 +1335,21 @@ namespace vkBasalt
 
     void ReshadeEffect::createReshadeModule()
     {
-        reshadefx::preprocessor preprocessor;
-        preprocessor.add_macro_definition("__RESHADE__", std::to_string(INT_MAX));
-        preprocessor.add_macro_definition("__RESHADE_PERFORMANCE_MODE__", "1");
-        preprocessor.add_macro_definition("__RENDERER__", "0x20000");
-        // TODO add more macros
-
-        preprocessor.add_macro_definition("BUFFER_WIDTH", std::to_string(imageExtent.width));
-        preprocessor.add_macro_definition("BUFFER_HEIGHT", std::to_string(imageExtent.height));
-        preprocessor.add_macro_definition("BUFFER_RCP_WIDTH", "(1.0 / BUFFER_WIDTH)");
-        preprocessor.add_macro_definition("BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)");
-        preprocessor.add_macro_definition("BUFFER_COLOR_DEPTH", (inputOutputFormatUNORM == VK_FORMAT_A2R10G10B10_UNORM_PACK32) ? "10" : "8");
-        preprocessor.add_macro_definition("BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH");
-
+        std::vector<std::pair<std::string, std::string>> defines = {
+            {"BUFFER_WIDTH", std::to_string(imageExtent.width)},
+            {"BUFFER_HEIGHT", std::to_string(imageExtent.height)},
+            {"BUFFER_RCP_WIDTH", "(1.0 / BUFFER_WIDTH)"},
+            {"BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)"},
+            {"BUFFER_COLOR_DEPTH", (inputOutputFormatUNORM == VK_FORMAT_A2R10G10B10_UNORM_PACK32) ? "10" : "8"},
+            {"BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH"},
+        };
         for (const auto& def : customPreprocessorDefs)
         {
-            preprocessor.add_macro_definition(def.name, def.value);
+            defines.push_back({def.name, def.value});
             Logger::debug("  custom macro: " + def.name + " = " + def.value);
         }
 
         ShaderManagerConfig shaderMgrConfig = ConfigSerializer::loadShaderManagerConfig();
-        for (const auto& path : shaderMgrConfig.discoveredShaderPaths)
-            preprocessor.add_include_path(path);
 
         std::string shaderPath = this->effectPath;
         if (shaderPath.empty())
@@ -1381,47 +1375,22 @@ namespace vkBasalt
             }
         }
 
-        if (shaderPath.empty() || !preprocessor.append_file(shaderPath))
+        if (shaderPath.empty())
         {
-            Logger::err("failed to load shader file: " + shaderPath);
-            Logger::err("Does the filepath exist and does it not include spaces?");
+            Logger::err("no shader file found for: " + effectName);
             throw std::runtime_error("failed to load shader: " + effectName);
         }
 
-        reshadefx::parser parser;
-
-        std::string errors = preprocessor.errors();
-        if (!errors.empty())
-            Logger::err(errors);
-
-        std::unique_ptr<reshadefx::codegen> codegen(reshadefx::create_codegen_spirv(
-            true /* vulkan semantics */, true /* debug info */, true /* uniforms to spec constants */, true /*flip vertex shader*/));
-
-        if (!parser.parse(std::move(preprocessor.output()), codegen.get()))
+        auto compiled = getOrCompileReshadeEffect(shaderPath, defines, shaderMgrConfig.discoveredShaderPaths);
+        if (!compiled->ok())
         {
-            errors = parser.errors();
-            if (!errors.empty())
-                Logger::err(errors);
+            Logger::err(shaderPath + ": " + compiled->error);
             throw std::runtime_error("failed to compile shader: " + effectName);
         }
+        if (!compiled->warnings.empty())
+            Logger::warn(shaderPath + ": " + compiled->warnings);
 
-        errors = parser.errors();
-        if (!errors.empty())
-            Logger::err(errors);
-
-        codegen->write_result(module);
-
-        if (module.techniques.empty())
-        {
-            Logger::err("shader has no techniques: " + effectName);
-            throw std::runtime_error("shader has no techniques: " + effectName);
-        }
-
-        if (module.spirv.empty())
-        {
-            Logger::err("shader produced empty SPIR-V: " + effectName);
-            throw std::runtime_error("shader produced empty SPIR-V: " + effectName);
-        }
+        module = compiled->module;
 
         VkShaderModuleCreateInfo shaderCreateInfo;
         shaderCreateInfo.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;

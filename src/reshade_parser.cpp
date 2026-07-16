@@ -1,20 +1,13 @@
 #include "reshade_parser.hpp"
 
-#include <climits>
 #include <algorithm>
-#include <filesystem>
-#include <queue>
 #include <set>
-#include <unordered_map>
 #include <signal.h>
 #include <setjmp.h>
 
-#include "reshade/effect_parser.hpp"
-#include "reshade/effect_codegen.hpp"
-#include "reshade/effect_preprocessor.hpp"
-
 #include "logger.hpp"
 #include "config_serializer.hpp"
+#include "shader_cache.hpp"
 
 namespace vkBasalt
 {
@@ -68,79 +61,18 @@ namespace vkBasalt
             return items;
         }
 
-        void addStandardMacros(reshadefx::preprocessor& pp)
+        // Placeholder resolution for parameter/metadata compiles; the real
+        // per-swapchain compile in effect_reshade.cpp uses the actual extent.
+        std::vector<std::pair<std::string, std::string>> defaultMacros()
         {
-            pp.add_macro_definition("__RESHADE__", std::to_string(INT_MAX));
-            pp.add_macro_definition("__RESHADE_PERFORMANCE_MODE__", "1");
-            pp.add_macro_definition("__RENDERER__", "0x20000");
-            pp.add_macro_definition("BUFFER_WIDTH", "1920");
-            pp.add_macro_definition("BUFFER_HEIGHT", "1080");
-            pp.add_macro_definition("BUFFER_RCP_WIDTH", "(1.0 / BUFFER_WIDTH)");
-            pp.add_macro_definition("BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)");
-            pp.add_macro_definition("BUFFER_COLOR_DEPTH", "8");
-            pp.add_macro_definition("BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH");
-
-            // Shorthands missing from this reshadefx version; append_string because
-            // add_macro_definition cannot express function-like macros.
-            pp.append_string(
-                "#define tex2DgatherR(s, coords) tex2Dgather(s, coords, 0)\n"
-                "#define tex2DgatherG(s, coords) tex2Dgather(s, coords, 1)\n"
-                "#define tex2DgatherB(s, coords) tex2Dgather(s, coords, 2)\n"
-                "#define tex2DgatherA(s, coords) tex2Dgather(s, coords, 3)\n"
-
-                // Non-square matrix types map to matrix<> template syntax
-                "#define float2x3 matrix<float, 2, 3>\n"
-                "#define float2x4 matrix<float, 2, 4>\n"
-                "#define float3x2 matrix<float, 3, 2>\n"
-                "#define float3x4 matrix<float, 3, 4>\n"
-                "#define float4x2 matrix<float, 4, 2>\n"
-                "#define float4x3 matrix<float, 4, 3>\n"
-
-                // High-precision derivative variants map to standard derivatives
-                "#define ddx_fine(x) ddx(x)\n"
-                "#define ddy_fine(x) ddy(x)\n"
-                "#define ddx_coarse(x) ddx(x)\n"
-                "#define ddy_coarse(x) ddy(x)\n"
-
-                // Atomic ops are compute-shader features; no-op stubs for the fragment-only pipeline
-                "#define atomicAdd(d, v) (v)\n"
-                "#define atomicMax(d, v) (v)\n"
-                "#define atomicMin(d, v) (v)\n"
-                "#define atomicOr(d, v) (v)\n"
-                "#define atomicAnd(d, v) (v)\n"
-                "#define atomicXor(d, v) (v)\n"
-                "#define atomicExchange(d, v) (v)\n"
-                "#define atomicCompSwap(d, c, v) (v)\n"
-
-                // Compute shader stubs expand to valid no-op expressions for the fragment-only pipeline
-                "#define tex2Dstore(s, c, v) (0)\n"
-                "#define barrier() (0)\n"
-                "#define memoryBarrier() (0)\n"
-                "#define groupMemoryBarrier() (0)\n"
-                "#define DeviceMemoryBarrier() (0)\n"
-                "#define GroupMemoryBarrier() (0)\n"
-                "#define AllMemoryBarrier() (0)\n"
-                "#define DeviceMemoryBarrierWithGroupSync() (0)\n"
-                "#define GroupMemoryBarrierWithGroupSync() (0)\n"
-                "#define AllMemoryBarrierWithGroupSync() (0)\n"
-            );
-        }
-
-        void setupPreprocessor(reshadefx::preprocessor& pp)
-        {
-            addStandardMacros(pp);
-
-            ShaderManagerConfig shaderMgrConfig = ConfigSerializer::loadShaderManagerConfig();
-            for (const auto& path : shaderMgrConfig.discoveredShaderPaths)
-                pp.add_include_path(path);
-        }
-
-        void setupPreprocessor(reshadefx::preprocessor& pp,
-                               const std::vector<std::string>& includePaths)
-        {
-            addStandardMacros(pp);
-            for (const auto& path : includePaths)
-                pp.add_include_path(path);
+            return {
+                {"BUFFER_WIDTH", "1920"},
+                {"BUFFER_HEIGHT", "1080"},
+                {"BUFFER_RCP_WIDTH", "(1.0 / BUFFER_WIDTH)"},
+                {"BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)"},
+                {"BUFFER_COLOR_DEPTH", "8"},
+                {"BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH"},
+            };
         }
 
         void applyFloatRange(FloatParam& p, const auto& annotations)
@@ -413,37 +345,16 @@ namespace vkBasalt
         try
         {
 
-        reshadefx::preprocessor preprocessor;
-        setupPreprocessor(preprocessor);
-
-        if (!preprocessor.append_file(effectPath))
+        ShaderManagerConfig smConfig = ConfigSerializer::loadShaderManagerConfig();
+        auto compiled = getOrCompileReshadeEffect(effectPath, defaultMacros(), smConfig.discoveredShaderPaths);
+        if (!compiled->ok())
         {
-            Logger::err("reshade_parser: failed to load shader file: " + effectPath);
+            Logger::err("reshade_parser: " + effectPath + ": " + compiled->error);
+            parserSignalJmpActive = 0;
             return params;
         }
 
-        std::string errors = preprocessor.errors();
-        if (!errors.empty())
-            Logger::err("reshade_parser preprocessor errors: " + errors);
-
-        reshadefx::parser parser;
-        auto codegen = std::unique_ptr<reshadefx::codegen>(
-            reshadefx::create_codegen_spirv(true, true, true, true));
-
-        if (!parser.parse(std::move(preprocessor.output()), codegen.get()))
-        {
-            errors = parser.errors();
-            if (!errors.empty())
-                Logger::err("reshade_parser parse errors: " + errors);
-            return params;
-        }
-
-        errors = parser.errors();
-        if (!errors.empty())
-            Logger::err("reshade_parser parse errors: " + errors);
-
-        reshadefx::module module;
-        codegen->write_result(module);
+        const reshadefx::module& module = compiled->module;
 
         // float2/3/4 arrive as consecutive same-named scalar spec_constants; combine them.
         for (size_t i = 0; i < module.spec_constants.size(); i++)
@@ -615,161 +526,10 @@ namespace vkBasalt
 
         try
         {
-            reshadefx::preprocessor preprocessor;
-            setupPreprocessor(preprocessor, includePaths);
-
-            if (!preprocessor.append_file(effectPath))
-            {
-                result.success = false;
-                result.errorMessage = "Failed to load shader file";
-                std::string ppErrors = preprocessor.errors();
-                if (!ppErrors.empty())
-                    result.errorMessage += ": " + ppErrors;
-                return result;
-            }
-
-            // errors() mixes warnings in; only "preprocessor error:" is fatal.
-            std::string ppErrors = preprocessor.errors();
-            if (!ppErrors.empty() && ppErrors.find("preprocessor error:") != std::string::npos)
-            {
-                result.success = false;
-                result.errorMessage = "Preprocessor errors: " + ppErrors;
-                return result;
-            }
-
-            reshadefx::parser parser;
-            auto codegen = std::unique_ptr<reshadefx::codegen>(
-                reshadefx::create_codegen_spirv(true, true, true, true));
-
-            if (!parser.parse(preprocessor.output(), codegen.get()))
-            {
-                result.success = false;
-                result.errorMessage = "Parse errors: " + parser.errors();
-                return result;
-            }
-
-            std::string parseErrors = parser.errors();
-            if (!parseErrors.empty())
-                result.errorMessage = "Warnings: " + parseErrors;
-
-            reshadefx::module module;
-            codegen->write_result(module);
-
-            // ReShade.fxh and qUINT_common.fxh declare DEPTH textures and samplers
-            // most shaders never call; a shader counts as depth-using only when an
-            // entry point actually reaches the sampler in the compiled SPIR-V.
-            {
-                std::string depthTexName;
-                for (const auto& tex : module.textures)
-                {
-                    if (tex.semantic == "DEPTH")
-                    {
-                        depthTexName = tex.unique_name;
-                        break;
-                    }
-                }
-
-                if (!depthTexName.empty())
-                {
-                    // Call-graph reachability from entry points; a raw OpLoad scan
-                    // false-positives on unreachable helper functions.
-                    auto isSamplerUsedInSpirv = [&](uint32_t samplerId) -> bool {
-                        const auto& code = module.spirv;
-                        if (code.size() < 5)
-                            return false;
-
-                        std::set<uint32_t> entryFuncIds;
-                        size_t i = 5;  // Skip SPIR-V header
-                        while (i < code.size())
-                        {
-                            uint32_t wc = code[i] >> 16;
-                            uint32_t op = code[i] & 0xFFFF;
-                            if (wc == 0)
-                                break;
-                            // OpEntryPoint: [wc|15, execModel, funcId, name..., interface...]
-                            if (op == 15 && wc >= 3 && (i + 2) < code.size())
-                                entryFuncIds.insert(code[i + 2]);
-                            i += wc;
-                        }
-
-                        struct FuncInfo
-                        {
-                            bool loadsDepthSampler = false;
-                            std::vector<uint32_t> callees;
-                        };
-                        std::unordered_map<uint32_t, FuncInfo> funcs;
-                        uint32_t currentFunc = 0;
-                        i = 5;
-                        while (i < code.size())
-                        {
-                            uint32_t wc = code[i] >> 16;
-                            uint32_t op = code[i] & 0xFFFF;
-                            if (wc == 0)
-                                break;
-                            // OpFunction: [wc|54, resultType, funcId, control, funcType]
-                            if (op == 54 && wc >= 3 && (i + 2) < code.size())
-                            {
-                                currentFunc = code[i + 2];
-                                funcs[currentFunc];
-                            }
-                            // OpFunctionEnd: [wc|56]
-                            else if (op == 56)
-                                currentFunc = 0;
-                            else if (currentFunc != 0)
-                            {
-                                // OpLoad: [wc|61, resultType, resultId, pointer]
-                                if (op == 61 && wc >= 4 && (i + 3) < code.size())
-                                {
-                                    if (code[i + 3] == samplerId)
-                                        funcs[currentFunc].loadsDepthSampler = true;
-                                }
-                                // OpFunctionCall: [wc|57, resultType, resultId, funcId, args...]
-                                if (op == 57 && wc >= 4 && (i + 3) < code.size())
-                                    funcs[currentFunc].callees.push_back(code[i + 3]);
-                            }
-                            i += wc;
-                        }
-
-                        std::queue<uint32_t> worklist;
-                        std::set<uint32_t> visited;
-                        for (uint32_t ep : entryFuncIds)
-                        {
-                            worklist.push(ep);
-                            visited.insert(ep);
-                        }
-                        while (!worklist.empty())
-                        {
-                            uint32_t fid = worklist.front();
-                            worklist.pop();
-                            auto it = funcs.find(fid);
-                            if (it == funcs.end())
-                                continue;
-                            if (it->second.loadsDepthSampler)
-                                return true;
-                            for (uint32_t callee : it->second.callees)
-                            {
-                                if (visited.insert(callee).second)
-                                    worklist.push(callee);
-                            }
-                        }
-                        return false;
-                    };
-
-                    bool depthUsed = false;
-                    for (const auto& samp : module.samplers)
-                    {
-                        if (samp.texture_name != depthTexName)
-                            continue;
-                        if (!isSamplerUsedInSpirv(samp.id))
-                            continue;
-                        depthUsed = true;
-                        break;
-                    }
-                    result.usesDepth = depthUsed;
-                }
-            }
-
-            result.success = true;
+            auto compiled = getOrCompileReshadeEffect(effectPath, defaultMacros(), includePaths);
+            result.success = compiled->ok();
+            result.errorMessage = compiled->ok() ? compiled->warnings : compiled->error;
+            result.usesDepth = compiled->usesDepth;
         }
         catch (const std::exception& e)
         {
@@ -832,18 +592,15 @@ namespace vkBasalt
 
         try
         {
-            reshadefx::preprocessor preprocessor;
-            setupPreprocessor(preprocessor);
-
-            if (!preprocessor.append_file(effectPath))
+            ShaderManagerConfig smConfig = ConfigSerializer::loadShaderManagerConfig();
+            auto compiled = getOrCompileReshadeEffect(effectPath, defaultMacros(), smConfig.discoveredShaderPaths);
+            if (!compiled->ok())
             {
-                Logger::err("extractPreprocessorDefinitions: failed to load shader: " + effectPath);
+                Logger::err("extractPreprocessorDefinitions: " + effectPath + ": " + compiled->error);
                 return defs;
             }
 
-            auto usedMacros = preprocessor.used_macro_definitions();
-
-            for (const auto& [name, value] : usedMacros)
+            for (const auto& [name, value] : compiled->usedMacros)
             {
                 if (builtInMacros.count(name))
                     continue;

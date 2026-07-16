@@ -18,9 +18,7 @@
 
 #include "logical_device.hpp"
 
-#include "reshade/effect_parser.hpp"
-#include "reshade/effect_codegen.hpp"
-#include "reshade/effect_preprocessor.hpp"
+#include "reshade/effect_module.hpp"
 
 namespace vkBasalt
 {
@@ -34,8 +32,8 @@ namespace vkBasalt
                       std::vector<VkImage> outputImages,
                       EffectRegistry*      pEffectRegistry,
                       std::string          effectName,
-                      std::string          effectPath = "",  // Optional: explicit path to .fx file
-                      std::vector<PreprocessorDefinition> customDefs = {});  // Custom preprocessor definitions
+                      std::string          effectPath = "",
+                      std::vector<PreprocessorDefinition> customDefs = {});
         void virtual applyEffect(uint32_t imageIndex, VkCommandBuffer commandBuffer) override;
         void virtual updateEffect() override;
         void virtual useDepthImage(VkImageView depthImageView) override;

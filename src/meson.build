@@ -50,6 +50,7 @@ vkBasalt_src = [
     'effects/builtin/effect_lut.cpp',
     'effects/builtin/effect_smaa.cpp',
     'reshade_parser.cpp',
+    'shader_cache.cpp',
     'fake_swapchain.cpp',
     'format.cpp',
     'framebuffer.cpp',
