@@ -112,10 +112,10 @@ namespace vkBasalt
 
     std::string ConfigSerializer::getDefaultConfigPath()
     {
-        const char* home = std::getenv("HOME");
-        if (home)
-            return std::string(home) + "/.config/vkBasalt-overlay/default_config";
-        return "";
+        std::string baseDir = getBaseConfigDir();
+        if (baseDir.empty())
+            return "";
+        return baseDir + "/default_config";
     }
 
     bool ConfigSerializer::setDefaultConfig(const std::string& configName)
