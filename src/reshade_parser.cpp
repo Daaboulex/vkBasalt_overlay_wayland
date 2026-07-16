@@ -637,8 +637,6 @@ namespace vkBasalt
                 return result;
             }
 
-            std::string ppSource = preprocessor.output();
-
             reshadefx::parser parser;
             auto codegen = std::unique_ptr<reshadefx::codegen>(
                 reshadefx::create_codegen_spirv(true, true, true, true));

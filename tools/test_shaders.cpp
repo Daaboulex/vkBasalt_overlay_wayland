@@ -264,8 +264,6 @@ static TestResult testShader(
             return result;
         }
 
-        std::string ppOutput = preprocessor.output();
-
         reshadefx::parser parser;
         auto codegen = std::unique_ptr<reshadefx::codegen>(
             reshadefx::create_codegen_spirv(true, true, true, true));

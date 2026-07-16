@@ -220,14 +220,6 @@ namespace vkBasalt
                            pLogicalSwapchain->commandBuffersNoEffect);
     }
 
-    void applyOverlayParams(LogicalDevice* pLogicalDevice)
-    {
-        if (!pLogicalDevice->imguiOverlay)
-            return;
-
-        Logger::info("Applying parameters from overlay - effects will read from EffectRegistry");
-    }
-
     static std::string detectedGameName;
     static std::string activeProfileName;
     static std::string activeProfilePath;
@@ -1198,9 +1190,6 @@ namespace vkBasalt
 
         if (pLogicalDevice->imguiOverlay && pLogicalDevice->imguiOverlay->hasModifiedParams())
         {
-            if (!pLogicalDevice->imguiOverlay->hasPendingConfig())
-                applyOverlayParams(pLogicalDevice);
-
             pLogicalDevice->imguiOverlay->clearApplyRequest();
             shouldReload = true;
         }
@@ -1259,6 +1248,8 @@ namespace vkBasalt
         presentSemaphores.reserve(pPresentInfo->swapchainCount);
         waitStages.assign(pPresentInfo->waitSemaphoreCount, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 
+        updateOverlayState(pLogicalDevice, presentEffect);
+
         for (unsigned int i = 0; i < pPresentInfo->swapchainCount; i++)
         {
             uint32_t          index             = pPresentInfo->pImageIndices[i];
@@ -1286,8 +1277,6 @@ namespace vkBasalt
             VkResult vr = pLogicalDevice->vkd.QueueSubmit(pLogicalDevice->queue, 1, &submitInfo, VK_NULL_HANDLE);
             if (vr != VK_SUCCESS)
                 return vr;
-
-            updateOverlayState(pLogicalDevice, presentEffect);
 
             VkSemaphore finalSemaphore;
             vr = submitOverlayFrame(pLogicalDevice, pLogicalSwapchain, index, finalSemaphore);

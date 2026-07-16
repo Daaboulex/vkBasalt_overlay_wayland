@@ -7,6 +7,7 @@
 #include <X11/XKBlib.h>
 #include <X11/extensions/XInput2.h>
 
+#include <chrono>
 #include <memory>
 #include <functional>
 
@@ -94,13 +95,20 @@ namespace vkBasalt
             return false;
         }
 
-        char keys_return[32];
-
-        XQueryKeymap(display.get(), keys_return);
+        // XQueryKeymap is a server round trip; one snapshot serves the several
+        // key checks made within a frame.
+        static char keysSnapshot[32];
+        static std::chrono::steady_clock::time_point lastQuery{};
+        auto now = std::chrono::steady_clock::now();
+        if (now - lastQuery >= std::chrono::milliseconds(2))
+        {
+            XQueryKeymap(display.get(), keysSnapshot);
+            lastQuery = now;
+        }
 
         KeyCode kc2 = XKeysymToKeycode(display.get(), (KeySym) ks);
 
-        return !!(keys_return[kc2 >> 3] & (1 << (kc2 & 7)));
+        return !!(keysSnapshot[kc2 >> 3] & (1 << (kc2 & 7)));
     }
 
     static void processKeycode(KeyCode keycode, unsigned int state)
