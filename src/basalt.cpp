@@ -1,5 +1,6 @@
 #include "vulkan_include.hpp"
 
+#include <atomic>
 #include <mutex>
 #include <map>
 #include <set>
@@ -933,8 +934,11 @@ namespace vkBasalt
         VkImageFormatListCreateInfoKHR imageFormatListCreateInfo;
         if (pLogicalDevice->supportsMutableFormat)
         {
-            modifiedCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-                                            | VK_IMAGE_USAGE_SAMPLED_BIT; // we want to use the swapchain images as output of the graphics pipeline
+            // OR our usage into the app's instead of replacing it: the app and
+            // any layer below us (lsfg-vk adds TRANSFER_SRC/DST to blit frames
+            // for generation) may rely on bits a replacement would silently drop.
+            modifiedCreateInfo.imageUsage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+                                             | VK_IMAGE_USAGE_SAMPLED_BIT; // we want to use the swapchain images as output of the graphics pipeline
             modifiedCreateInfo.flags |= VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR;
             // TODO what if the application already uses multiple formats for the swapchain?
 
@@ -947,6 +951,15 @@ namespace vkBasalt
         }
 
         modifiedCreateInfo.imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
+        Logger::debug("swapchain create: app usage=" + convertToString(pCreateInfo->imageUsage)
+                      + " our usage=" + convertToString(modifiedCreateInfo.imageUsage)
+                      + " flags=" + convertToString(modifiedCreateInfo.flags)
+                      + " (decimal bit values)"
+                      + " minImageCount=" + std::to_string(modifiedCreateInfo.minImageCount)
+                      + " presentMode=" + std::to_string(modifiedCreateInfo.presentMode)
+                      + " extent=" + std::to_string(modifiedCreateInfo.imageExtent.width) + "x"
+                      + std::to_string(modifiedCreateInfo.imageExtent.height));
 
         Logger::debug("format " + std::to_string(modifiedCreateInfo.imageFormat));
         std::shared_ptr<LogicalSwapchain> pLogicalSwapchain(new LogicalSwapchain());
@@ -990,6 +1003,11 @@ namespace vkBasalt
         pLogicalDevice->vkd.GetSwapchainImagesKHR(device, swapchain, &pLogicalSwapchain->imageCount, nullptr);
         pLogicalSwapchain->images.resize(pLogicalSwapchain->imageCount);
         pLogicalDevice->vkd.GetSwapchainImagesKHR(device, swapchain, &pLogicalSwapchain->imageCount, pLogicalSwapchain->images.data());
+
+        // A frame-generation layer below us bumps minImageCount for its extra
+        // acquires; this delta in the log proves which side of lsfg-vk we are on.
+        Logger::debug("down-chain swapchain imageCount=" + std::to_string(pLogicalSwapchain->imageCount)
+                      + " (app requested minImageCount=" + std::to_string(pLogicalSwapchain->swapchainCreateInfo.minImageCount) + ")");
 
         pLogicalSwapchain->imageViews.resize(pLogicalSwapchain->imageCount);
         for (uint32_t i = 0; i < pLogicalSwapchain->imageCount; i++)
@@ -1112,7 +1130,7 @@ namespace vkBasalt
 
     VKAPI_ATTR VkResult VKAPI_CALL vkBasalt_QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo)
     {
-        scoped_lock l(globalLock);
+        std::unique_lock<std::mutex> l(globalLock);
 
         // Mark new input frame so dispatch deduplication resets
         beginWaylandInputFrame();
@@ -1290,7 +1308,40 @@ namespace vkBasalt
         presentInfo.waitSemaphoreCount = presentSemaphores.size();
         presentInfo.pWaitSemaphores    = presentSemaphores.data();
 
-        return pLogicalDevice->vkd.QueuePresentKHR(queue, &presentInfo);
+        // Release the global lock across the down-chain present: a frame
+        // generation layer below us (lsfg-vk) acquires additional swapchain
+        // images and presents several frames INSIDE this call, blocking until
+        // the presentation engine frees images. Holding our lock across that
+        // serializes every other intercepted entry point (input thread, image
+        // create/destroy) into multi-frame stalls -- the frozen-black-screen
+        // shape reported when vkBasalt sits above lsfg-vk.
+        PFN_vkQueuePresentKHR downchainPresent = pLogicalDevice->vkd.QueuePresentKHR;
+        l.unlock();
+
+        VkResult presentResult = downchainPresent(queue, &presentInfo);
+
+        // Down-chain visibility: this log ticking at the game's real FPS while
+        // the display runs at the generated rate proves effects process real
+        // frames only; anomalous results are surfaced because games die on
+        // them silently.
+        static std::atomic<uint64_t> presentCycles{0};
+        uint64_t cycle = ++presentCycles;
+        // trace: every cycle (so a counted rate is a REAL rate, not a sampled
+        // one); debug: a bounded sample, because a per-frame log at debug would
+        // be its own overhead.
+        Logger::trace("present cycle " + std::to_string(cycle) + " -> result " + std::to_string(presentResult));
+        if (cycle <= 5 || cycle % 600 == 0)
+            Logger::debug("present cycle " + std::to_string(cycle) + " -> result " + std::to_string(presentResult));
+        if (presentResult != VK_SUCCESS && presentResult != VK_SUBOPTIMAL_KHR)
+        {
+            static std::atomic<uint64_t> badResults{0};
+            uint64_t bad = ++badResults;
+            if (bad <= 20 || bad % 300 == 0)
+                Logger::warn("down-chain present returned " + std::to_string(presentResult)
+                             + " (occurrence " + std::to_string(bad) + ")");
+        }
+
+        return presentResult;
     }
 
     VKAPI_ATTR void VKAPI_CALL vkBasalt_DestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain, const VkAllocationCallbacks* pAllocator)
