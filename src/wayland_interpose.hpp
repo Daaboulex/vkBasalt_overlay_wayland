@@ -12,4 +12,8 @@ namespace vkBasalt
     // Synthetic keyboard leave/enter to wrapped game keyboards, so the game
     // drops held keys when the overlay opens.
     void notifyGameKeyboardFocus(bool hasFocus);
+
+    // True once a game pointer or keyboard listener has been wrapped. Blocking
+    // cannot suppress anything until then, so callers must not claim it works.
+    bool waylandInterposeActive();
 }

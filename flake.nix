@@ -116,6 +116,15 @@
             touch $out
           '';
 
+          checks.blocking-verifies-its-mechanism = pkgs.runCommand "blocking-verifies-its-mechanism" { } ''
+            body=$(sed -n '/void setInputBlocked/,/^    }/p' ${./src/input_blocker.cpp})
+            grep -q 'waylandInterposeActive()' <<< "$body" \
+              || { echo "setInputBlocked must check waylandInterposeActive before claiming Wayland blocking"; exit 1; }
+            grep -q 'if (!grabInput())' <<< "$body" \
+              || { echo "setInputBlocked must check the X11 grab result before claiming blocking"; exit 1; }
+            touch $out
+          '';
+
           packages = {
             vkbasalt-overlay = mkVkbasaltOverlay pkgs;
 

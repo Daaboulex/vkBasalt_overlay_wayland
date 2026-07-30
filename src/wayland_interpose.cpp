@@ -311,6 +311,12 @@ int wl_proxy_add_listener(struct wl_proxy* proxy,
 
 namespace vkBasalt
 {
+    bool waylandInterposeActive()
+    {
+        std::lock_guard<std::mutex> lock(gameDataMutex);
+        return !gamePointers.empty() || !gameKeyboards.empty();
+    }
+
     void notifyGameKeyboardFocus(bool hasFocus)
     {
         std::lock_guard<std::mutex> lock(gameDataMutex);
