@@ -152,6 +152,20 @@
 
           # Compiles a shader exercising every compute feature and validates the
           # SPIR-V it produces, so a silently-wrong emission fails the build.
+          # A macro argument's tokens must not be glued together. accept() skips space tokens and
+          # drops them, so expanding through it turned "float val" into "floatval".
+          checks.macro-arguments-keep-their-spacing =
+            pkgs.runCommand "macro-arguments-keep-their-spacing"
+              { nativeBuildInputs = [ self'.packages.vkbasalt-overlay ]; }
+              ''
+                mkdir -p shaders
+                cp ${./test/macro_spacing.fx} shaders/macro_spacing.fx
+                vkbasalt-test-shaders shaders > report.txt 2>&1 || true
+                grep -q '^PASS  macro_spacing' report.txt \
+                  || { cat report.txt; echo "a macro argument's tokens are being glued together again"; exit 1; }
+                touch $out
+              '';
+
           checks.compute-spirv-is-valid =
             pkgs.runCommand "compute-spirv-is-valid"
               {

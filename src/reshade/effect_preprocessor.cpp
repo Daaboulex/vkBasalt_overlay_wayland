@@ -1247,13 +1247,16 @@ void reshadefx::preprocessor::expand_macro(const std::string &name, const macro 
 			break;
 		case macro_replacement_argument:
 			push(arguments[index] + static_cast<char>(macro_replacement_argument));
-			while (!accept(tokenid::unknown))
+			// peek, not accept: accept() skips over space tokens and drops them, which glues the
+			// argument's tokens together -- "float val" arrives as "floatval".
+			while (!peek(tokenid::unknown))
 			{
 				consume();
 				if (_token == tokenid::identifier && evaluate_identifier_as_macro())
 					continue;
 				out += _current_token_raw_data;
 			}
+			consume();
 			assert(_current_token_raw_data[0] == macro_replacement_argument);
 			break;
 		}

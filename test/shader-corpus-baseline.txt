@@ -5,7 +5,6 @@ FAIL crt-royale
 FAIL CubeLUT1D
 FAIL CubeLUT3D
 FAIL Drunk
-FAIL FILMDECK
 FAIL GI
 FAIL lilium__blue_noise_dithering
 FAIL lilium__cas_hdr
@@ -30,7 +29,6 @@ FAIL RadialSlitScan
 FAIL Rendepth
 FAIL ReVeil
 FAIL Ripple
-FAIL shades_TFAA
 FAIL SlitScan
 FAIL SplicedRadials
 FAIL StageDepth
@@ -371,6 +369,7 @@ PASS RetroTV
 PASS RGBLCD
 PASS SCurve
 PASS Sepia
+PASS shades_TFAA
 PASS SharpContrast
 PASS SimpleBloom
 PASS SimpleGrain
@@ -456,6 +455,7 @@ WARN dh_anime
 WARN dh_pastel_bug
 WARN dh_uber_mask
 WARN dh_uniformity_correction
+WARN FILMDECK
 WARN FreezeShot
 WARN HDRBloom
 WARN ImageAdjustment
