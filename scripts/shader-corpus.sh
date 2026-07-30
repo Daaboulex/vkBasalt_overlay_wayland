@@ -68,8 +68,14 @@ done
 sort -u -o "$WORK/invalid.txt" "$WORK/invalid.txt"
 echo "  SPIR-V: $(wc -l < "$WORK/invalid.txt") of $(ls "$WORK"/spv/*.spv 2>/dev/null | wc -l) emitted modules are invalid"
 
-awk 'NR==FNR { bad[$1]=1; next } { print ($2 in bad) ? "INVALID " $2 : $0 }' \
-  "$WORK/invalid.txt" "$WORK/raw-verdicts.txt" | sort > "$WORK/verdicts.txt"
+# The two-file NR==FNR idiom needs a non-empty first file: with none, NR==FNR holds
+# for every record of the second and the whole verdict list is swallowed.
+if [ -s "$WORK/invalid.txt" ]; then
+  awk 'NR==FNR { bad[$1]=1; next } { print ($2 in bad) ? "INVALID " $2 : $0 }' \
+    "$WORK/invalid.txt" "$WORK/raw-verdicts.txt" | sort > "$WORK/verdicts.txt"
+else
+  cp "$WORK/raw-verdicts.txt" "$WORK/verdicts.txt"
+fi
 
 if [ "$RECORD" -eq 1 ]; then
   mkdir -p "$(dirname "$BASELINE")"

@@ -892,11 +892,10 @@ bool reshadefx::parser::parse_expression_unary(expression &exp)
 
 			std::vector<expression> parameters(arguments.size());
 
-			// Copying an out parameter back needs the type the argument had before it was cast to
-			// the parameter type, or the value is stored through a pointer of a different type.
-			std::vector<reshadefx::type> argument_types(arguments.size());
-			for (size_t i = 0; i < arguments.size(); ++i)
-				argument_types[i] = arguments[i].type;
+			// Casting an argument to the parameter type is what makes it readable as that type, but
+			// it also rewrites the access chain, which makes it wrong to store through. Copying an
+			// out parameter back therefore targets the argument as it was before the cast.
+			std::vector<expression> argument_targets(arguments);
 
 			// We need to allocate some temporary variables to pass in and load results from pointer parameters
 			for (size_t i = 0; i < arguments.size(); ++i)
@@ -965,9 +964,9 @@ bool reshadefx::parser::parse_expression_unary(expression &exp)
 				{
 					expression result_value;
 					result_value.reset_to_rvalue(arguments[i].location, _codegen->emit_load(parameters[i]), parameters[i].type);
-					result_value.add_cast_operation(argument_types[i]);
+					result_value.add_cast_operation(argument_targets[i].type);
 
-					_codegen->emit_store(arguments[i], _codegen->emit_load(result_value));
+					_codegen->emit_store(argument_targets[i], _codegen->emit_load(result_value));
 				}
 		}
 		else if (symbol.op == symbol_type::invalid)

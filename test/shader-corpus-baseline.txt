@@ -41,8 +41,6 @@ FAIL vort_Static
 FAIL Wave
 FAIL ZenWork
 FAIL ZigZag
-INVALID MartysMods_LAUNCHPAD
-INVALID nGlide_3DFX
 PASS 3DFX
 PASS 4xBRZ
 PASS AdaptiveColorGrading
@@ -280,6 +278,7 @@ PASS MagicHDR
 PASS MagnifyingGlass
 PASS MartysMods_CHROMATICABERRATION
 PASS MartysMods_HALFTONE
+PASS MartysMods_LAUNCHPAD
 PASS MartysMods_LOCALLAPLACIAN
 PASS MartysMods_MXAO
 PASS MartysMods_NVSHARPEN
@@ -471,6 +470,7 @@ WARN mdapt
 WARN MetaCRT
 WARN MMJCelShader
 WARN N64_3Point
+WARN nGlide_3DFX
 WARN ntsc
 WARN NTSC_RetroArch
 WARN NTSC_RetroArch_NoScanlines

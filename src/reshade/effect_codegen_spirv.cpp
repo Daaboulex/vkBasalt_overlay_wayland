@@ -381,9 +381,25 @@ private:
 			if (info.rows == 1)
 				return type;
 
-			type = add_instruction(spv::OpTypeMatrix, 0, _types_and_constants)
-				.add(type)
-				.add(info.rows).result;
+			if (info.is_floating_point())
+			{
+				type = add_instruction(spv::OpTypeMatrix, 0, _types_and_constants)
+					.add(type)
+					.add(info.rows).result;
+			}
+			else
+			{
+				// SPIR-V cannot parameterize a matrix with anything but a floating-point type, so a
+				// matrix of any other type is carried as an array of its columns instead.
+				const spv::Id column_count = emit_constant(info.rows);
+
+				type = add_instruction(spv::OpTypeArray, 0, _types_and_constants)
+					.add(type)
+					.add(column_count).result;
+
+				if (array_stride != 0)
+					add_decoration(type, spv::DecorationArrayStride, { array_stride });
+			}
 		}
 		else if (info.is_vector())
 		{
