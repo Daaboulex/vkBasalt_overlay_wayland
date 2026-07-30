@@ -26,6 +26,10 @@ namespace vkBasalt
     // Press events kept until polled, so a press+release within one frame is still seen.
     static std::unordered_set<uint32_t> keyPressEvents;
 
+    // The queue is pumped every frame for the toggle key, but only drained while the overlay is
+    // open, so without a bound this grows for as long as the game runs and lands in the first text
+    // field the overlay opens with.
+    static constexpr size_t TYPED_CHARS_LIMIT = 256;
     static std::string typedCharsAccumulator;
     static std::string lastKeyNameAccumulator;
     static bool backspacePressed = false;
@@ -89,7 +93,7 @@ namespace vkBasalt
         {
             char buf[8];
             int len = xkb_state_key_get_utf8(xkbState, xkbKeycode, buf, sizeof(buf));
-            if (len > 0 && buf[0] >= 0x20)
+            if (len > 0 && buf[0] >= 0x20 && typedCharsAccumulator.size() + len <= TYPED_CHARS_LIMIT)
                 typedCharsAccumulator += std::string(buf, len);
         }
     }

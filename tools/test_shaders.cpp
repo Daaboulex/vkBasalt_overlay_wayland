@@ -13,6 +13,8 @@
 // If no directories given, reads include paths from
 // ~/.config/vkBasalt-overlay/shader_manager.conf and tests all .fx files found.
 
+#include <algorithm>
+#include <chrono>
 #include <climits>
 #include <cstring>
 #include <filesystem>
@@ -180,6 +182,7 @@ struct TestResult
     bool usesDepth = false;
     std::string errorMessage;
     ErrorCategory category = ErrorCategory::Parse;
+    double milliseconds = 0.0;
 };
 
 
@@ -191,6 +194,14 @@ static TestResult testShader(
     TestResult result;
     result.name = effectName;
     result.path = effectPath;
+
+    const auto compileStart = std::chrono::steady_clock::now();
+    struct CompileTimer
+    {
+        std::chrono::steady_clock::time_point start;
+        double* out;
+        ~CompileTimer() { *out = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count(); }
+    } compileTimer{compileStart, &result.milliseconds};
 
     installCrashHandlers();
     if (sigsetjmp(s_jmpBuf, 1) != 0)
@@ -463,6 +474,7 @@ int main(int argc, char* argv[])
     int passCount = 0;
     int failCount = 0;
     int warnCount = 0;
+    std::vector<double> compileTimes;
     int depthCount = 0;
     std::vector<TestResult> failures;
     std::vector<TestResult> warnings;
@@ -473,6 +485,9 @@ int main(int argc, char* argv[])
         std::string effectPath = fxPath.string();
 
         TestResult result = testShader(effectName, effectPath, includePaths);
+
+        if (result.success)
+            compileTimes.push_back(result.milliseconds);
 
         if (result.success)
         {
@@ -512,6 +527,22 @@ int main(int argc, char* argv[])
         std::cout << " (" << depthCount << " use depth)";
     std::cout << "\n";
     std::cout << "  Total:   " << allFiles.size() << " shaders\n";
+
+    std::vector<double> times = compileTimes;
+    double totalMs = 0.0;
+    for (double t : times)
+        totalMs += t;
+
+    if (!times.empty())
+    {
+        std::sort(times.begin(), times.end());
+        const auto pct = [&times](double p) {
+            size_t i = static_cast<size_t>(p / 100.0 * (times.size() - 1));
+            return times[i];
+        };
+        std::cout << "  COMPILE ms: p50=" << pct(50) << " p95=" << pct(95) << " p99=" << pct(99)
+                  << " max=" << times.back() << " total=" << totalMs << "\n";
+    }
     std::cout << "========================================\n";
 
 

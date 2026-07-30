@@ -183,6 +183,15 @@
                 touch $out
               '';
 
+          checks.typed-characters-are-bounded = pkgs.runCommand "typed-characters-are-bounded" { } ''
+            src=${./src/keyboard_input_wayland.cpp}
+            grep -q 'TYPED_CHARS_LIMIT' "$src" \
+              || { echo "the typed character accumulator has no bound -- it is drained only while the overlay is open, so it would grow for the life of the game"; exit 1; }
+            grep -q 'typedCharsAccumulator.size() + len <= TYPED_CHARS_LIMIT' "$src" \
+              || { echo "the bound is declared but the append does not check it"; exit 1; }
+            touch $out
+          '';
+
           checks.reshade-input-map =
             pkgs.runCommand "reshade-input-map" { nativeBuildInputs = [ pkgs.gcc ]; }
               ''
