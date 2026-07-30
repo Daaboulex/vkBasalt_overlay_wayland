@@ -597,9 +597,28 @@ namespace vkBasalt
         OverlayState overlayState;
         overlayState.effectNames = pLogicalDevice->imguiOverlay->getActiveEffects();
 
+        // This walks every configured shader directory and re-reads the shader manager config.
+        // The overlay asks for it once a frame, but the directories do not change that fast.
+        static std::vector<std::string> cachedCurrentConfigEffects;
+        static std::vector<std::string> cachedDefaultConfigEffects;
+        static std::map<std::string, std::string> cachedEffectPaths;
+        static std::chrono::steady_clock::time_point lastEffectScan;
 
-        getAvailableEffects(pConfig.get(), overlayState.currentConfigEffects,
-                            overlayState.defaultConfigEffects, overlayState.effectPaths);
+        const auto now = std::chrono::steady_clock::now();
+        if (lastEffectScan == std::chrono::steady_clock::time_point{}
+            || now - lastEffectScan >= std::chrono::milliseconds(500))
+        {
+            cachedCurrentConfigEffects.clear();
+            cachedDefaultConfigEffects.clear();
+            cachedEffectPaths.clear();
+            getAvailableEffects(pConfig.get(), cachedCurrentConfigEffects,
+                                cachedDefaultConfigEffects, cachedEffectPaths);
+            lastEffectScan = now;
+        }
+
+        overlayState.currentConfigEffects = cachedCurrentConfigEffects;
+        overlayState.defaultConfigEffects = cachedDefaultConfigEffects;
+        overlayState.effectPaths = cachedEffectPaths;
         overlayState.configPath = pConfig->getConfigFilePath();
 
         static std::string cachedConfigPath;
