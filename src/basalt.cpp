@@ -674,8 +674,9 @@ namespace vkBasalt
 
         // The enabled surface extension is the reliable backend signal: XWayland
         // clients inherit WAYLAND_DISPLAY, so the env var alone misroutes them.
-        // A client enabling both extensions is resolved by the actual
-        // vkCreateWaylandSurfaceKHR call.
+        // A client enabling both extensions is left undetermined here and
+        // resolved by whichever surface it actually creates; both the Wayland
+        // and the Xlib/Xcb entry points record that choice.
         {
             bool wantsWayland = false;
             bool wantsX11     = false;
@@ -1548,6 +1549,46 @@ namespace vkBasalt
         return nextFunc(instance, pCreateInfo, pAllocator, pSurface);
     }
 
+    // Xlib and Xcb surface creation is intercepted only to record which backend
+    // the client actually chose; the create-info is never read, so the opaque
+    // pointer keeps the X11 platform headers out of this translation unit.
+    typedef VkResult(VKAPI_PTR* PFN_vkCreateOpaqueSurfaceKHR)(VkInstance, const void*, const VkAllocationCallbacks*, VkSurfaceKHR*);
+
+    static VkResult createX11Surface(VkInstance                   instance,
+                                     const void*                  pCreateInfo,
+                                     const VkAllocationCallbacks* pAllocator,
+                                     VkSurfaceKHR*                pSurface,
+                                     const char*                  name)
+    {
+        scoped_lock l(globalLock);
+
+        Logger::trace(name);
+
+        setX11Surface();
+
+        auto nextFunc = (PFN_vkCreateOpaqueSurfaceKHR) instanceDispatchMap[GetKey(instance)].GetInstanceProcAddr(instanceMap[GetKey(instance)], name);
+        if (!nextFunc)
+            return VK_ERROR_EXTENSION_NOT_PRESENT;
+
+        return nextFunc(instance, pCreateInfo, pAllocator, pSurface);
+    }
+
+    VKAPI_ATTR VkResult VKAPI_CALL vkBasalt_CreateXlibSurfaceKHR(VkInstance                   instance,
+                                                                 const void*                  pCreateInfo,
+                                                                 const VkAllocationCallbacks* pAllocator,
+                                                                 VkSurfaceKHR*                pSurface)
+    {
+        return createX11Surface(instance, pCreateInfo, pAllocator, pSurface, "vkCreateXlibSurfaceKHR");
+    }
+
+    VKAPI_ATTR VkResult VKAPI_CALL vkBasalt_CreateXcbSurfaceKHR(VkInstance                   instance,
+                                                                const void*                  pCreateInfo,
+                                                                const VkAllocationCallbacks* pAllocator,
+                                                                VkSurfaceKHR*                pSurface)
+    {
+        return createX11Surface(instance, pCreateInfo, pAllocator, pSurface, "vkCreateXcbSurfaceKHR");
+    }
+
 
     VkResult VKAPI_CALL vkBasalt_EnumerateInstanceLayerProperties(uint32_t* pPropertyCount, VkLayerProperties* pProperties)
     {
@@ -1639,6 +1680,8 @@ extern "C"
     GETPROCADDR(CreateInstance); \
     GETPROCADDR(DestroyInstance); \
     GETPROCADDR(CreateWaylandSurfaceKHR); \
+    GETPROCADDR(CreateXlibSurfaceKHR); \
+    GETPROCADDR(CreateXcbSurfaceKHR); \
 \
     if (!std::strcmp(pName, "vkGetDeviceProcAddr")) \
         return (PFN_vkVoidFunction) &vkBasalt_GetDeviceProcAddr; \
