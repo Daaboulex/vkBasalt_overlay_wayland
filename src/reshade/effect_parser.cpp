@@ -682,9 +682,14 @@ bool reshadefx::parser::parse_expression_unary(expression &exp)
 		{
 			composite_type.array_length = static_cast<int>(elements.size());
 
+			// Each element is converted to the array's element type, not the array type itself.
+			auto element_type = composite_type;
+			element_type.array_length = 0;
+
 			// Resolve all access chains
 			for (expression &element : elements)
 			{
+				element.add_cast_operation(element_type);
 				element.reset_to_rvalue(element.location, _codegen->emit_load(element), element.type);
 			}
 
@@ -887,6 +892,12 @@ bool reshadefx::parser::parse_expression_unary(expression &exp)
 
 			std::vector<expression> parameters(arguments.size());
 
+			// Copying an out parameter back needs the type the argument had before it was cast to
+			// the parameter type, or the value is stored through a pointer of a different type.
+			std::vector<reshadefx::type> argument_types(arguments.size());
+			for (size_t i = 0; i < arguments.size(); ++i)
+				argument_types[i] = arguments[i].type;
+
 			// We need to allocate some temporary variables to pass in and load results from pointer parameters
 			for (size_t i = 0; i < arguments.size(); ++i)
 			{
@@ -951,7 +962,13 @@ bool reshadefx::parser::parse_expression_unary(expression &exp)
 			for (size_t i = 0; i < arguments.size(); ++i)
 				// Only do this for pointer parameters as discovered above
 				if (parameters[i].is_lvalue && parameters[i].type.has(type::q_out) && !parameters[i].type.is_sampler())
-					_codegen->emit_store(arguments[i], _codegen->emit_load(parameters[i]));
+				{
+					expression result_value;
+					result_value.reset_to_rvalue(arguments[i].location, _codegen->emit_load(parameters[i]), parameters[i].type);
+					result_value.add_cast_operation(argument_types[i]);
+
+					_codegen->emit_store(arguments[i], _codegen->emit_load(result_value));
+				}
 		}
 		else if (symbol.op == symbol_type::invalid)
 		{

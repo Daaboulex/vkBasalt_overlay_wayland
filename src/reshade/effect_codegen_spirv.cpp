@@ -174,6 +174,7 @@ private:
 	std::unordered_map<std::string, spv::Id> _string_lookup;
 	std::unordered_map<spv::Id, spv::StorageClass> _storage_lookup;
 	std::unordered_map<std::string, uint32_t> _semantic_to_location;
+	uint32_t _next_semantic_location = 0;
 
 	std::vector<function_blocks> _functions_blocks;
 	std::unordered_map<id, spirv_basic_block> _block_data;
@@ -900,7 +901,15 @@ private:
 				else if (const auto it = _semantic_to_location.find(semantic); it != _semantic_to_location.end())
 					location = it->second;
 				else
-					_semantic_to_location[semantic] = location = static_cast<uint32_t>(_semantic_to_location.size());
+				{
+					// A matrix occupies one location per column, so the next free location is not
+					// simply the number of semantics seen so far.
+					const uint32_t consumed = (param_type.is_matrix() ? param_type.rows : 1)
+						* (param_type.is_array() ? static_cast<uint32_t>(param_type.array_length) : 1);
+
+					_semantic_to_location[semantic] = location = _next_semantic_location;
+					_next_semantic_location += consumed;
+				}
 
 				add_decoration(attrib_variable, spv::DecorationLocation, { location });
 			}
@@ -1913,20 +1922,20 @@ private:
 		if (type.is_matrix())
 		{
 
+			// A MxN matrix is M SPIR-V columns of N elements, so a column is as wide as 'cols'
+			// and there are 'rows' of them.
 			auto vector_type = type;
+			vector_type.rows = type.cols;
 			vector_type.cols = 1;
 
-			// Turn the list of scalar arguments into a list of column vectors
-			for (size_t arg = 0; arg < args.size(); arg += type.rows)
+			for (size_t column = 0; column < type.rows && (column + 1) * type.cols <= args.size(); ++column)
 			{
 				spirv_instruction &inst = add_instruction(spv::OpCompositeConstruct, convert_type(vector_type));
-				for (size_t row = 0; row < type.rows; ++row)
-					inst.add(args[arg + row].base);
+				for (size_t element = 0; element < type.cols; ++element)
+					inst.add(args[column * type.cols + element].base);
 
 				ids.push_back(inst.result);
 			}
-
-			ids.erase(ids.begin() + type.cols, ids.end());
 		}
 		else
 		{

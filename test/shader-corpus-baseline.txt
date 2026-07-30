@@ -41,16 +41,8 @@ FAIL vort_Static
 FAIL Wave
 FAIL ZenWork
 FAIL ZigZag
-INVALID CRTHyllian
-INVALID dh_uber_rt
-INVALID DirectionalDepthBlur
-INVALID Heightfog
 INVALID MartysMods_LAUNCHPAD
-INVALID MartysMods_SCENEWEAVER
 INVALID nGlide_3DFX
-INVALID NTSCCustom
-INVALID SuperDepth3D
-INVALID Zenteon_PaletteMap
 PASS 3DFX
 PASS 4xBRZ
 PASS AdaptiveColorGrading
@@ -188,12 +180,14 @@ PASS dh_canvas
 PASS dh_Lain
 PASS dh_sync
 PASS dh_uber_motion
+PASS dh_uber_rt
 PASS DH_UI_TextDetect
 PASS dh_undither
 PASS Dimension_Plus
 PASS DINN
 PASS DINN
 PASS DINN
+PASS DirectionalDepthBlur
 PASS DisplayDepth
 PASS DisplayMod
 PASS Dither
@@ -245,6 +239,7 @@ PASS Halation
 PASS Halftone
 PASS HDRMotionBlur
 PASS HDRSaturation
+PASS Heightfog
 PASS HexLensFlare
 PASS HotsamplingHelper
 PASS HueFX
@@ -288,6 +283,7 @@ PASS MartysMods_HALFTONE
 PASS MartysMods_LOCALLAPLACIAN
 PASS MartysMods_MXAO
 PASS MartysMods_NVSHARPEN
+PASS MartysMods_SCENEWEAVER
 PASS MartysMods_SHARPEN
 PASS MartysMods_SMAA
 PASS MartysMods_SOLARIS
@@ -308,6 +304,7 @@ PASS NeoBloom
 PASS NFAA
 PASS NormalMap
 PASS Nostalgia
+PASS NTSCCustom
 PASS Oilify
 PASS OrtonBloom
 PASS Overlay
@@ -443,6 +440,7 @@ WARN CRTCaligari
 WARN CRTcgwg
 WARN CRTCX
 WARN CRT-Frutbunn
+WARN CRTHyllian
 WARN CRTKurg
 WARN CRTLottes
 WARN crt-nes-mini
@@ -486,6 +484,7 @@ WARN scanlines-fract
 WARN sgenpt-mix
 WARN StageDepthPlus
 WARN StageDepthPlus_WithDepthBufferMod
+WARN SuperDepth3D
 WARN Technicolor
 WARN TinyPlanet
 WARN TVCRTPixels
@@ -497,6 +496,7 @@ WARN Zenteon_ATA
 WARN Zenteon_FilmGrain
 WARN Zenteon_Framework
 WARN Zenteon_Motion
+WARN Zenteon_PaletteMap
 WARN Zenteon_Sharpen
 WARN Zenteon_SSAO_History
 WARN Zenteon_TurboGI
