@@ -149,6 +149,15 @@ shared_library(meson.project_name().to_lower(),
     install : true,
     install_dir : lib_dir)
 
+# Standalone shader-compatibility tester. Shares the layer's compile
+# environment through reshade_fx_env.hpp, so a verdict here is the layer's
+# verdict; see SHADER-COMPATIBILITY.md.
+executable('vkbasalt-test-shaders',
+    '../tools/test_shaders.cpp',
+    include_directories : vkBasalt_include_path,
+    dependencies : [reshade_dep],
+    install : true)
+
 # LD_AUDIT library for Wine Wayland input interposition.
 # Redirects wl_proxy_add_listener bindings from dlopen(RTLD_LOCAL) scopes
 # (e.g. Wine's winewayland.so) to our wrapper in libvkbasalt-overlay.so.

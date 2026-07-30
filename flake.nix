@@ -102,6 +102,10 @@
             settings.configuration.MD033.enabled = false;
           };
 
+          # The corpus baseline is generated and lists third-party shader names
+          # verbatim; they are identifiers, not prose we can correct.
+          pre-commit.settings.hooks.typos.excludes = [ "^test/shader-corpus-baseline\\.txt$" ];
+
           checks.settings-writer-owns-its-file = pkgs.runCommand "settings-writer-owns-its-file" { } ''
             src=${./src/config_serializer.cpp}
             writer=$(sed -n '/ConfigSerializer::saveSettings/,/^    }/p' "$src")
