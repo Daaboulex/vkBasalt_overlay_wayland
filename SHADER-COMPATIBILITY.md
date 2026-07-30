@@ -42,12 +42,12 @@ version we do not implement made these shaders compile against a compiler their
 authors had ruled out. Eight of this group are the include-path artifacts
 described below rather than version gates.
 
-**Needs compute shaders (8, category `UNSUPPORTED`).** Storage-image writes
-(`tex2Dstore`) and compute barriers. This layer's pipeline is fragment-only, so
-these cannot run. The compiler error is translated into the requirement — *needs
-ReShade 4.8 or newer (uses storage-image writes); this build implements 4.7* —
-rather than reported as an unknown identifier, or, as it was previously, compiled
-against no-op stubs into an image that renders incorrectly with nothing said.
+**Needs texture atomics (category `UNSUPPORTED`).** Compute itself now runs;
+what remains is `atomicAdd` and friends. The compiler error is translated into
+the requirement — *needs ReShade 4.8 or newer (uses texture atomics); this build
+implements 4.7* — rather than reported as an unknown identifier, or, as it was
+previously, compiled against no-op stubs into an image that renders incorrectly
+with nothing said.
 
 The translation reads the compiler's error, never the shader source. Scanning the
 source for these tokens refuses shaders that merely mention one in a comment or
@@ -74,10 +74,16 @@ Compared against a build from before these changes, over the same corpus:
   images, `tex2Dstore` and `barrier()`. They briefly stopped compiling when the
   no-op stubs were removed, which was the correct intermediate state — a stub
   renders wrong and says nothing.
-- **A compute pass is refused at load, not silently skipped.** This build
-  compiles compute but does not yet dispatch it, so an effect containing a
-  compute pass reports that and declines. A build check enforces that it can
-  never become silence.
+- **Compute passes are dispatched.** A pass with a `ComputeShader` builds a
+  compute pipeline, binds its storage images, and dispatches the group counts
+  from `DispatchSizeX/Y/Z`, with layout transitions around the dispatch so a
+  later pass reads what it wrote. `groupshared` is real workgroup memory: it was
+  lexed as `static` before, which made it a private per-invocation copy that
+  `barrier()` guarded nothing about — a wrong image with nothing reported.
+- **The generated SPIR-V is validated in the build.** A smoke shader exercising
+  every compute feature is compiled and run through `spirv-val`, and the
+  disassembly is checked for the compute entry point, the thread group size, the
+  image write, the barrier and the workgroup variable.
 - **Four are prod80 shaders** — pCamera, pColorNoise, pColors, pPalettePosterize.
   None uses compute. They fail because `Oklab.fxh` declares
   `ReShade 5.1+ is required`, and that check is now honoured. Previously the

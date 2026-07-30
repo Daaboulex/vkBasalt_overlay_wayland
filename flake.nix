@@ -150,6 +150,39 @@
                 touch $out
               '';
 
+          # Compiles a shader exercising every compute feature and validates the
+          # SPIR-V it produces, so a silently-wrong emission fails the build.
+          checks.compute-spirv-is-valid =
+            pkgs.runCommand "compute-spirv-is-valid"
+              {
+                nativeBuildInputs = [
+                  self'.packages.vkbasalt-overlay
+                  pkgs.spirv-tools
+                ];
+              }
+              ''
+                mkdir -p shaders
+                cp ${./test/compute_smoke.fx} shaders/compute_smoke.fx
+
+                vkbasalt-test-shaders --dump-spirv "$PWD" shaders > report.txt 2>&1 || true
+                grep -q '^PASS  compute_smoke' report.txt || { cat report.txt; echo "the compute smoke shader stopped compiling"; exit 1; }
+
+                spirv-val --target-env vulkan1.1 compute_smoke.spv || { echo "the compute SPIR-V this compiler emits is invalid"; exit 1; }
+
+                spirv-dis compute_smoke.spv > dis.txt
+                grep -q 'OpEntryPoint GLCompute' dis.txt \
+                  || { echo "no GLCompute entry point -- the compute function was compiled as a graphics stage"; exit 1; }
+                grep -qE 'OpExecutionMode %[0-9]+ LocalSize 8 8 1' dis.txt \
+                  || { echo "the <8, 8> thread group size did not reach the LocalSize execution mode"; exit 1; }
+                grep -q 'OpImageWrite' dis.txt \
+                  || { echo "tex2Dstore did not become an image write"; exit 1; }
+                grep -q 'OpControlBarrier' dis.txt \
+                  || { echo "barrier() did not become a control barrier"; exit 1; }
+                grep -q 'OpVariable %_ptr_Workgroup[A-Za-z0-9_]* Workgroup' dis.txt \
+                  || { echo "groupshared is not Workgroup storage -- every invocation would get a private copy and barrier() would guard nothing"; exit 1; }
+                touch $out
+              '';
+
           checks.reshade-input-map =
             pkgs.runCommand "reshade-input-map" { nativeBuildInputs = [ pkgs.gcc ]; }
               ''

@@ -121,6 +121,88 @@ namespace vkBasalt
         return descriptorSetLayout;
     }
 
+    VkDescriptorSetLayout createStorageImageDescriptorSetLayout(LogicalDevice* pLogicalDevice, uint32_t count)
+    {
+        VkDescriptorSetLayout descriptorSetLayout;
+
+        std::vector<VkDescriptorSetLayoutBinding> bindings(count);
+        for (uint32_t i = 0; i < count; i++)
+        {
+            VkDescriptorSetLayoutBinding descriptorSetLayoutBinding;
+            descriptorSetLayoutBinding.binding            = i;
+            descriptorSetLayoutBinding.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+            descriptorSetLayoutBinding.descriptorCount    = 1;
+            descriptorSetLayoutBinding.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+            descriptorSetLayoutBinding.pImmutableSamplers = nullptr;
+            bindings[i]                                   = descriptorSetLayoutBinding;
+        }
+
+        VkDescriptorSetLayoutCreateInfo descriptorSetCreateInfo;
+        descriptorSetCreateInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        descriptorSetCreateInfo.pNext        = nullptr;
+        descriptorSetCreateInfo.flags        = 0;
+        descriptorSetCreateInfo.bindingCount = count;
+        descriptorSetCreateInfo.pBindings    = bindings.data();
+
+        VkResult result =
+            pLogicalDevice->vkd.CreateDescriptorSetLayout(pLogicalDevice->device, &descriptorSetCreateInfo, nullptr, &descriptorSetLayout);
+        ASSERT_VULKAN(result)
+        return descriptorSetLayout;
+    }
+
+    std::vector<VkDescriptorSet> allocateAndWriteStorageImageDescriptorSets(LogicalDevice*                        pLogicalDevice,
+                                                                            VkDescriptorPool                      descriptorPool,
+                                                                            VkDescriptorSetLayout                 descriptorSetLayout,
+                                                                            std::vector<std::vector<VkImageView>> imageViewsVectors)
+    {
+        if (imageViewsVectors.empty() || imageViewsVectors[0].empty())
+        {
+            Logger::warn("allocateAndWriteStorageImageDescriptorSets: empty imageViewsVectors");
+            return {};
+        }
+
+        std::vector<VkDescriptorSet>       descriptorSets(imageViewsVectors[0].size());
+        std::vector<VkDescriptorSetLayout> layouts(descriptorSets.size(), descriptorSetLayout);
+
+        VkDescriptorSetAllocateInfo descriptorSetAllocateInfo;
+        descriptorSetAllocateInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        descriptorSetAllocateInfo.pNext              = nullptr;
+        descriptorSetAllocateInfo.descriptorPool     = descriptorPool;
+        descriptorSetAllocateInfo.descriptorSetCount = descriptorSets.size();
+        descriptorSetAllocateInfo.pSetLayouts        = layouts.data();
+
+        VkResult result = pLogicalDevice->vkd.AllocateDescriptorSets(pLogicalDevice->device, &descriptorSetAllocateInfo, descriptorSets.data());
+        ASSERT_VULKAN(result);
+
+        for (uint32_t i = 0; i < descriptorSets.size(); i++)
+        {
+            std::vector<VkDescriptorImageInfo> imageInfos(imageViewsVectors.size());
+            std::vector<VkWriteDescriptorSet>  writes(imageViewsVectors.size());
+
+            for (uint32_t j = 0; j < imageViewsVectors.size(); j++)
+            {
+                imageInfos[j].sampler     = VK_NULL_HANDLE;
+                imageInfos[j].imageView   = imageViewsVectors[j][i];
+                imageInfos[j].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+                writes[j].sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                writes[j].pNext            = nullptr;
+                writes[j].dstSet           = descriptorSets[i];
+                writes[j].dstBinding       = j;
+                writes[j].dstArrayElement  = 0;
+                writes[j].descriptorCount  = 1;
+                writes[j].descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+                writes[j].pImageInfo       = &imageInfos[j];
+                writes[j].pBufferInfo      = nullptr;
+                writes[j].pTexelBufferView = nullptr;
+            }
+
+            pLogicalDevice->vkd.UpdateDescriptorSets(pLogicalDevice->device, writes.size(), writes.data(), 0, nullptr);
+        }
+
+        return descriptorSets;
+    }
+
     std::vector<VkDescriptorSet> allocateAndWriteImageSamplerDescriptorSets(LogicalDevice*                        pLogicalDevice,
                                                                             VkDescriptorPool                      descriptorPool,
                                                                             VkDescriptorSetLayout                 descriptorSetLayout,

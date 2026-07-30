@@ -38,6 +38,7 @@ namespace reshadefx
 			q_precise = 1 << 4,
 			q_in = 1 << 5,
 			q_out = 1 << 6,
+			q_groupshared = 1 << 7,
 			q_inout = q_in | q_out,
 			q_const = 1 << 8,
 			q_linear = 1 << 10,

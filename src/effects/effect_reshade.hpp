@@ -68,6 +68,10 @@ namespace vkBasalt
 
         VkDescriptorSetLayout                 uniformDescriptorSetLayout;
         VkDescriptorSetLayout                 imageSamplerDescriptorSetLayout;
+        VkDescriptorSetLayout                 storageImageDescriptorSetLayout = VK_NULL_HANDLE;
+        std::vector<VkDescriptorSet>          storageDescriptorSets;
+        std::vector<std::vector<VkImageView>> storageImageViewVector;
+        std::vector<std::string>              storageTextureNames;
         VkShaderModule                        shaderModule;
         VkDescriptorPool                      descriptorPool;
         std::vector<VkRenderPass>             renderPasses;

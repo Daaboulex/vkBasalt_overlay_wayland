@@ -343,6 +343,8 @@ bool reshadefx::parser::accept_type_qualifiers(type &type)
 		qualifiers |= type::q_extern;
 	if (accept(tokenid::static_))
 		qualifiers |= type::q_static;
+	if (accept(tokenid::groupshared))
+		qualifiers |= type::q_groupshared | type::q_static;
 	if (accept(tokenid::uniform_))
 		qualifiers |= type::q_uniform;
 	if (accept(tokenid::volatile_))

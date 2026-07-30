@@ -290,7 +290,7 @@ vkBasalt is a **read-only visual filter** — it applies post-processing shaders
 ## Known Limitations
 
 - Only a shader's first technique runs; a shader defining several will not behave as its author intended
-- Compute shaders are not supported: the pipeline is fragment-only, so storage-image writes (`tex2Dstore`) and barriers cannot run. Such shaders are refused with an explanation rather than compiled into something that renders incorrectly
+- Compute shaders run: `ComputeShader` passes are dispatched with their declared thread group and dispatch sizes, including storage images (`tex2Dstore`), `barrier()` and `groupshared` memory. Texture atomics are still refused with an explanation rather than compiled into something that renders incorrectly
 - The embedded FX compiler is ReShade 4.7.0 (plus `f32tof16`/`f16tof32`), so a shader that requires a newer ReShade refuses to load and says which version it wants
 - Depth buffer access works but is experimental (depends on game's depth format)
 - Input blocking may cause issues in some games with custom input handling; on Wayland under wine it needs the `LD_AUDIT` shim that `vkbasalt-run` sets, and the layer says so when it cannot block

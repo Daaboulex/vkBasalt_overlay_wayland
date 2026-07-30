@@ -118,6 +118,7 @@ namespace reshadefx
 		discard_,
 		extern_,
 		static_,
+		groupshared,
 		uniform_,
 		volatile_,
 		precise,

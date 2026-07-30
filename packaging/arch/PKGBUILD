@@ -7,8 +7,8 @@ pkgdesc="Vulkan post-processing layer with an in-game overlay, on Wayland and X1
 arch=('x86_64')
 url="https://github.com/Daaboulex/vkBasalt_overlay_wayland"
 license=('zlib')
-depends=('gcc-libs' 'glslang' 'libx11' 'libxi' 'wayland' 'libxkbcommon' 'vulkan-icd-loader')
-makedepends=('git' 'meson' 'ninja' 'pkgconf' 'spirv-headers' 'vulkan-headers' 'wayland-protocols')
+depends=('gcc-libs' 'libx11' 'libxi' 'wayland' 'libxkbcommon' 'vulkan-icd-loader')
+makedepends=('git' 'glslang' 'meson' 'ninja' 'pkgconf' 'spirv-headers' 'vulkan-headers' 'wayland-protocols')
 # Every vkBasalt reads ENABLE_VKBASALT, so two installed means two active at once.
 provides=('vkbasalt')
 conflicts=('vkbasalt' 'vkbasalt-git' 'vkbasalt-overlay-git')

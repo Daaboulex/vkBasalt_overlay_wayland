@@ -24,6 +24,13 @@ namespace vkBasalt
 
     VkDescriptorSetLayout createImageSamplerDescriptorSetLayout(LogicalDevice* pLogicalDevice, uint32_t count);
 
+    VkDescriptorSetLayout createStorageImageDescriptorSetLayout(LogicalDevice* pLogicalDevice, uint32_t count);
+
+    std::vector<VkDescriptorSet> allocateAndWriteStorageImageDescriptorSets(LogicalDevice*                        pLogicalDevice,
+                                                                            VkDescriptorPool                      descriptorPool,
+                                                                            VkDescriptorSetLayout                 descriptorSetLayout,
+                                                                            std::vector<std::vector<VkImageView>> imageViewsVectors);
+
     std::vector<VkDescriptorSet> allocateAndWriteImageSamplerDescriptorSets(LogicalDevice*                        pLogicalDevice,
                                                                             VkDescriptorPool                      descriptorPool,
                                                                             VkDescriptorSetLayout                 descriptorSetLayout,

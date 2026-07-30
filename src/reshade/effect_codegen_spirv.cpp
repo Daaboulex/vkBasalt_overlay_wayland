@@ -756,7 +756,10 @@ private:
 	id   define_variable(const location &loc, const type &type, std::string name, bool global, id initializer_value) override
 	{
 		id res = make_id();
-		define_variable(res, loc, type, name.c_str(), global ? spv::StorageClassPrivate : spv::StorageClassFunction, initializer_value);
+		const bool shared = type.has(type::q_groupshared);
+		const spv::StorageClass storage = shared ? spv::StorageClassWorkgroup : (global ? spv::StorageClassPrivate : spv::StorageClassFunction);
+		// A Workgroup variable may not carry an initializer before SPIR-V 1.4.
+		define_variable(res, loc, type, name.c_str(), storage, shared ? 0 : initializer_value);
 		return res;
 	}
 	void define_variable(id id, const location &loc, const type &type, const char *name, spv::StorageClass storage, spv::Id initializer_value = 0)

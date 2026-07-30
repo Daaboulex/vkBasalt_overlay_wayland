@@ -863,28 +863,50 @@ namespace vkBasalt
             }
         }
 
-        bool alreadyRequested = appFeatures2 ? appFeatures2->features.shaderImageGatherExtended == VK_TRUE
-                                            : (modifiedCreateInfo.pEnabledFeatures
-                                               && modifiedCreateInfo.pEnabledFeatures->shaderImageGatherExtended == VK_TRUE);
-
         VkPhysicalDeviceFeatures deviceFeatures = {};
-        if (!alreadyRequested && !supportedFeatures.shaderImageGatherExtended)
-        {
-            Logger::warn("device does not support shaderImageGatherExtended -- ReShade effects that gather with offsets will fail to compile");
-        }
-        else if (!alreadyRequested && appFeatures2)
-        {
-            appFeatures2->features.shaderImageGatherExtended = VK_TRUE;
-        }
-        else if (!alreadyRequested)
-        {
-            if (modifiedCreateInfo.pEnabledFeatures)
+        bool                     ownEnabledFeatures = false;
+
+        using FeatureField = VkBool32 VkPhysicalDeviceFeatures::*;
+        auto requestFeature = [&](FeatureField field, const char* name, const char* consequence) {
+            const bool alreadyRequested = appFeatures2
+                                              ? appFeatures2->features.*field == VK_TRUE
+                                              : (modifiedCreateInfo.pEnabledFeatures && modifiedCreateInfo.pEnabledFeatures->*field == VK_TRUE);
+            if (alreadyRequested)
+                return true;
+
+            if (!(supportedFeatures.*field))
             {
-                deviceFeatures = *(modifiedCreateInfo.pEnabledFeatures);
+                Logger::warn(std::string("device does not support ") + name + " -- " + consequence);
+                return false;
             }
-            deviceFeatures.shaderImageGatherExtended = VK_TRUE;
-            modifiedCreateInfo.pEnabledFeatures      = &deviceFeatures;
-        }
+
+            if (appFeatures2)
+            {
+                appFeatures2->features.*field = VK_TRUE;
+                return true;
+            }
+
+            if (!ownEnabledFeatures)
+            {
+                if (modifiedCreateInfo.pEnabledFeatures)
+                    deviceFeatures = *(modifiedCreateInfo.pEnabledFeatures);
+                modifiedCreateInfo.pEnabledFeatures = &deviceFeatures;
+                ownEnabledFeatures                  = true;
+            }
+            deviceFeatures.*field = VK_TRUE;
+            return true;
+        };
+
+        requestFeature(&VkPhysicalDeviceFeatures::shaderImageGatherExtended,
+                       "shaderImageGatherExtended",
+                       "ReShade effects that gather with offsets will fail to compile");
+
+        const bool storageWrite = requestFeature(&VkPhysicalDeviceFeatures::shaderStorageImageWriteWithoutFormat,
+                                                 "shaderStorageImageWriteWithoutFormat",
+                                                 "ReShade compute effects will be refused");
+        const bool storageRead  = requestFeature(&VkPhysicalDeviceFeatures::shaderStorageImageReadWithoutFormat,
+                                                "shaderStorageImageReadWithoutFormat",
+                                                "ReShade compute effects will be refused");
 
         VkResult ret = createFunc(physicalDevice, &modifiedCreateInfo, pAllocator, pDevice);
 
@@ -895,6 +917,7 @@ namespace vkBasalt
         pLogicalDevice->vki                   = instanceDispatchMap[GetKey(physicalDevice)];
         pLogicalDevice->device                = *pDevice;
         pLogicalDevice->physicalDevice        = physicalDevice;
+        pLogicalDevice->supportsStorageImageWithoutFormat = storageWrite && storageRead;
         pLogicalDevice->instance              = instanceMap[GetKey(physicalDevice)];
         pLogicalDevice->queue                 = VK_NULL_HANDLE;
         pLogicalDevice->queueFamilyIndex      = 0;

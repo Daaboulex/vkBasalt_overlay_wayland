@@ -63,6 +63,33 @@ namespace vkBasalt
 
         createReshadeModule();
 
+        for (const auto& storage : module.storages)
+        {
+            if (storage.level != 0)
+            {
+                Logger::err(effectName + ": storage '" + storage.unique_name + "' binds mip level " + std::to_string(storage.level)
+                            + ", which this build does not bind");
+                throw std::runtime_error("unsupported storage mip level: " + effectName);
+            }
+            if (std::find(storageTextureNames.begin(), storageTextureNames.end(), storage.texture_name) == storageTextureNames.end())
+            {
+                storageTextureNames.push_back(storage.texture_name);
+            }
+        }
+
+        if (!module.storages.empty() && !pLogicalDevice->supportsStorageImageWithoutFormat)
+        {
+            Logger::err(effectName + ": compute passes need shaderStorageImageReadWithoutFormat and"
+                        " shaderStorageImageWriteWithoutFormat, which this device does not support");
+            throw std::runtime_error("device lacks format-less storage image access: " + effectName);
+        }
+
+        const auto usedAsStorage = [this](const std::string& textureName) -> VkImageUsageFlags {
+            return std::find(storageTextureNames.begin(), storageTextureNames.end(), textureName) != storageTextureNames.end()
+                       ? VK_IMAGE_USAGE_STORAGE_BIT
+                       : 0;
+        };
+
         enumerateReshadeUniforms(module);
 
         uniforms = createReshadeUniforms(module);
@@ -143,7 +170,8 @@ namespace vkBasalt
                                                            textureExtent,
                                                            convertReshadeFormat(module.textures[i].format),
                                                            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-                                                               | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                                                               | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+                                                               | usedAsStorage(module.textures[i].unique_name),
                                                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                            textureMemory.back(),
                                                            module.textures[i].levels);
@@ -200,7 +228,8 @@ namespace vkBasalt
                                  1,
                                  textureExtent,
                                  convertReshadeFormat(module.textures[i].format), // TODO search for format and save it
-                                 VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                                 VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+                                     | usedAsStorage(module.textures[i].unique_name),
                                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                  textureMemory.back(),
                                  module.textures[i].levels);
@@ -331,8 +360,27 @@ namespace vkBasalt
             imageViewVector.push_back(info.srgb ? textureImageViewsSRGB[info.texture_name] : textureImageViewsUNORM[info.texture_name]);
         }
 
+        for (const auto& storage : module.storages)
+        {
+            const auto imagesIt = textureImages.find(storage.texture_name);
+            const auto formatIt = textureFormatsUNORM.find(storage.texture_name);
+            if (imagesIt == textureImages.end() || imagesIt->second.empty() || formatIt == textureFormatsUNORM.end())
+            {
+                Logger::err(effectName + ": storage '" + storage.unique_name + "' binds texture '" + storage.texture_name
+                            + "', which has no image backing it");
+                throw std::runtime_error("storage bound to a texture with no image: " + effectName);
+            }
+
+            std::vector<VkImageView> views = createImageViews(pLogicalDevice, formatIt->second, imagesIt->second);
+            storageImageViewVector.push_back(std::vector<VkImageView>(inputImages.size(), views[0]));
+        }
+
         imageSamplerDescriptorSetLayout = createImageSamplerDescriptorSetLayout(pLogicalDevice, module.samplers.size());
         uniformDescriptorSetLayout      = createUniformBufferDescriptorSetLayout(pLogicalDevice);
+        if (!module.storages.empty())
+        {
+            storageImageDescriptorSetLayout = createStorageImageDescriptorSetLayout(pLogicalDevice, module.storages.size());
+        }
         Logger::debug("created descriptorSetLayouts");
 
         VkDescriptorPoolSize imagePoolSize;
@@ -345,10 +393,28 @@ namespace vkBasalt
 
         std::vector<VkDescriptorPoolSize> poolSizes = {imagePoolSize, bufferPoolSize};
 
+        if (!module.storages.empty())
+        {
+            VkDescriptorPoolSize storagePoolSize;
+            storagePoolSize.type            = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+            storagePoolSize.descriptorCount = inputImages.size() * module.storages.size();
+            poolSizes.push_back(storagePoolSize);
+        }
+
         descriptorPool = createDescriptorPool(pLogicalDevice, poolSizes);
         Logger::debug("created descriptorPool");
 
+        if (!module.storages.empty())
+        {
+            storageDescriptorSets = allocateAndWriteStorageImageDescriptorSets(
+                pLogicalDevice, descriptorPool, storageImageDescriptorSetLayout, storageImageViewVector);
+        }
+
         std::vector<VkDescriptorSetLayout> descriptorSetLayouts = {uniformDescriptorSetLayout, imageSamplerDescriptorSetLayout};
+        if (storageImageDescriptorSetLayout != VK_NULL_HANDLE)
+        {
+            descriptorSetLayouts.push_back(storageImageDescriptorSetLayout);
+        }
 
         pipelineLayout = createGraphicsPipelineLayout(pLogicalDevice, descriptorSetLayouts);
 
@@ -403,8 +469,166 @@ namespace vkBasalt
 
         bool firstTimeStencilAccess = true; // Used to clear the sttencil attachment on the first time
 
+        std::vector<VkSpecializationMapEntry> specMapEntrys;
+        std::vector<char>                     specData;
+
+        std::string prevSpecName;
+        int vectorComponentIndex = 0;
+
+        for (uint32_t specId = 0, offset = 0; auto &opt : module.spec_constants)
+        {
+            if (!opt.name.empty())
+            {
+                if (opt.name == prevSpecName)
+                {
+                    vectorComponentIndex++;
+                }
+                else
+                {
+                    vectorComponentIndex = 0;
+                    prevSpecName = opt.name;
+                }
+
+                EffectParam* param = pEffectRegistry->getParameter(effectName, opt.name);
+                if (!param)
+                {
+                    specId++;
+                    continue;
+                }
+
+                std::variant<int32_t, uint32_t, float> convertedValue;
+                offset = static_cast<uint32_t>(specData.size());
+
+                switch (opt.type.base)
+                {
+                    case reshadefx::type::t_bool:
+                        if (auto* bp = dynamic_cast<BoolParam*>(param))
+                        {
+                            convertedValue = (int32_t)(bp->value ? 1 : 0);
+                            specData.resize(offset + sizeof(VkBool32));
+                            std::memcpy(specData.data() + offset, &convertedValue, sizeof(VkBool32));
+                            specMapEntrys.push_back({specId, offset, sizeof(VkBool32)});
+                        }
+                        break;
+                    case reshadefx::type::t_int:
+                        if (auto* ivp = dynamic_cast<IntVecParam*>(param))
+                        {
+                            if (vectorComponentIndex < static_cast<int>(ivp->componentCount))
+                            {
+                                convertedValue = ivp->value[vectorComponentIndex];
+                                specData.resize(offset + sizeof(int32_t));
+                                std::memcpy(specData.data() + offset, &convertedValue, sizeof(int32_t));
+                                specMapEntrys.push_back({specId, offset, sizeof(int32_t)});
+                            }
+                        }
+                        else if (auto* ip = dynamic_cast<IntParam*>(param))
+                        {
+                            convertedValue = ip->value;
+                            specData.resize(offset + sizeof(int32_t));
+                            std::memcpy(specData.data() + offset, &convertedValue, sizeof(int32_t));
+                            specMapEntrys.push_back({specId, offset, sizeof(int32_t)});
+                        }
+                        break;
+                    case reshadefx::type::t_uint:
+                        if (auto* uvp = dynamic_cast<UintVecParam*>(param))
+                        {
+                            if (vectorComponentIndex < static_cast<int>(uvp->componentCount))
+                            {
+                                convertedValue = uvp->value[vectorComponentIndex];
+                                specData.resize(offset + sizeof(uint32_t));
+                                std::memcpy(specData.data() + offset, &convertedValue, sizeof(uint32_t));
+                                specMapEntrys.push_back({specId, offset, sizeof(uint32_t)});
+                            }
+                        }
+                        else if (auto* up = dynamic_cast<UintParam*>(param))
+                        {
+                            convertedValue = up->value;
+                            specData.resize(offset + sizeof(uint32_t));
+                            std::memcpy(specData.data() + offset, &convertedValue, sizeof(uint32_t));
+                            specMapEntrys.push_back({specId, offset, sizeof(uint32_t)});
+                        }
+                        else if (auto* ip = dynamic_cast<IntParam*>(param))
+                        {
+                            // Fallback: some shaders use int for uint
+                            convertedValue = static_cast<uint32_t>(ip->value);
+                            specData.resize(offset + sizeof(uint32_t));
+                            std::memcpy(specData.data() + offset, &convertedValue, sizeof(uint32_t));
+                            specMapEntrys.push_back({specId, offset, sizeof(uint32_t)});
+                        }
+                        break;
+                    case reshadefx::type::t_float:
+                        if (auto* fvp = dynamic_cast<FloatVecParam*>(param))
+                        {
+                            if (vectorComponentIndex < static_cast<int>(fvp->componentCount))
+                            {
+                                convertedValue = fvp->value[vectorComponentIndex];
+                                specData.resize(offset + sizeof(float));
+                                std::memcpy(specData.data() + offset, &convertedValue, sizeof(float));
+                                specMapEntrys.push_back({specId, offset, sizeof(float)});
+                            }
+                        }
+                        else if (auto* fp = dynamic_cast<FloatParam*>(param))
+                        {
+                            convertedValue = fp->value;
+                            specData.resize(offset + sizeof(float));
+                            std::memcpy(specData.data() + offset, &convertedValue, sizeof(float));
+                            specMapEntrys.push_back({specId, offset, sizeof(float)});
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
+            specId++;
+        }
+
+        VkSpecializationInfo specializationInfo;
+        if (specMapEntrys.size() > 0)
+        {
+            specializationInfo = {.mapEntryCount = static_cast<uint32_t>(specMapEntrys.size()),
+                                  .pMapEntries   = specMapEntrys.data(),
+                                  .dataSize      = specData.size(),
+                                  .pData         = specData.data()};
+        }
+
         for (bool outputToBackBuffer = outputWrites % 2 == 0; auto& pass : module.techniques[0].passes)
         {
+            if (!pass.cs_entry_point.empty())
+            {
+                VkPipelineShaderStageCreateInfo shaderStageCreateInfoComp;
+                shaderStageCreateInfoComp.sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+                shaderStageCreateInfoComp.pNext               = nullptr;
+                shaderStageCreateInfoComp.flags               = 0;
+                shaderStageCreateInfoComp.stage               = VK_SHADER_STAGE_COMPUTE_BIT;
+                shaderStageCreateInfoComp.module              = shaderModule;
+                shaderStageCreateInfoComp.pName               = pass.cs_entry_point.c_str();
+                shaderStageCreateInfoComp.pSpecializationInfo = (specMapEntrys.size() > 0) ? &specializationInfo : nullptr;
+
+                VkComputePipelineCreateInfo computePipelineCreateInfo;
+                computePipelineCreateInfo.sType              = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+                computePipelineCreateInfo.pNext              = nullptr;
+                computePipelineCreateInfo.flags              = 0;
+                computePipelineCreateInfo.stage              = shaderStageCreateInfoComp;
+                computePipelineCreateInfo.layout             = pipelineLayout;
+                computePipelineCreateInfo.basePipelineHandle = VK_NULL_HANDLE;
+                computePipelineCreateInfo.basePipelineIndex  = -1;
+
+                VkPipeline computePipeline;
+                VkResult   computeResult = pLogicalDevice->vkd.CreateComputePipelines(
+                    pLogicalDevice->device, VK_NULL_HANDLE, 1, &computePipelineCreateInfo, nullptr, &computePipeline);
+                ASSERT_VULKAN(computeResult);
+
+                graphicsPipelines.push_back(computePipeline);
+                renderPasses.push_back(VK_NULL_HANDLE);
+                renderPassBeginInfos.push_back({});
+                framebuffers.push_back(std::vector<VkFramebuffer>(inputImages.size(), VK_NULL_HANDLE));
+                renderTargets.push_back({});
+                switchSamplers.push_back(false);
+
+                Logger::debug("compute entry: " + pass.cs_entry_point);
+                continue;
+            }
+
             std::vector<VkAttachmentReference>               attachmentReferences;
             std::vector<VkAttachmentDescription>             attachmentDescriptions;
             std::vector<VkPipelineColorBlendAttachmentState> attachmentBlendStates;
@@ -587,127 +811,6 @@ namespace vkBasalt
             }
 
 
-            std::vector<VkSpecializationMapEntry> specMapEntrys;
-            std::vector<char>                     specData;
-
-            std::string prevSpecName;
-            int vectorComponentIndex = 0;
-
-            for (uint32_t specId = 0, offset = 0; auto &opt : module.spec_constants)
-            {
-                if (!opt.name.empty())
-                {
-                    if (opt.name == prevSpecName)
-                    {
-                        vectorComponentIndex++;
-                    }
-                    else
-                    {
-                        vectorComponentIndex = 0;
-                        prevSpecName = opt.name;
-                    }
-
-                    EffectParam* param = pEffectRegistry->getParameter(effectName, opt.name);
-                    if (!param)
-                    {
-                        specId++;
-                        continue;
-                    }
-
-                    std::variant<int32_t, uint32_t, float> convertedValue;
-                    offset = static_cast<uint32_t>(specData.size());
-
-                    switch (opt.type.base)
-                    {
-                        case reshadefx::type::t_bool:
-                            if (auto* bp = dynamic_cast<BoolParam*>(param))
-                            {
-                                convertedValue = (int32_t)(bp->value ? 1 : 0);
-                                specData.resize(offset + sizeof(VkBool32));
-                                std::memcpy(specData.data() + offset, &convertedValue, sizeof(VkBool32));
-                                specMapEntrys.push_back({specId, offset, sizeof(VkBool32)});
-                            }
-                            break;
-                        case reshadefx::type::t_int:
-                            if (auto* ivp = dynamic_cast<IntVecParam*>(param))
-                            {
-                                if (vectorComponentIndex < static_cast<int>(ivp->componentCount))
-                                {
-                                    convertedValue = ivp->value[vectorComponentIndex];
-                                    specData.resize(offset + sizeof(int32_t));
-                                    std::memcpy(specData.data() + offset, &convertedValue, sizeof(int32_t));
-                                    specMapEntrys.push_back({specId, offset, sizeof(int32_t)});
-                                }
-                            }
-                            else if (auto* ip = dynamic_cast<IntParam*>(param))
-                            {
-                                convertedValue = ip->value;
-                                specData.resize(offset + sizeof(int32_t));
-                                std::memcpy(specData.data() + offset, &convertedValue, sizeof(int32_t));
-                                specMapEntrys.push_back({specId, offset, sizeof(int32_t)});
-                            }
-                            break;
-                        case reshadefx::type::t_uint:
-                            if (auto* uvp = dynamic_cast<UintVecParam*>(param))
-                            {
-                                if (vectorComponentIndex < static_cast<int>(uvp->componentCount))
-                                {
-                                    convertedValue = uvp->value[vectorComponentIndex];
-                                    specData.resize(offset + sizeof(uint32_t));
-                                    std::memcpy(specData.data() + offset, &convertedValue, sizeof(uint32_t));
-                                    specMapEntrys.push_back({specId, offset, sizeof(uint32_t)});
-                                }
-                            }
-                            else if (auto* up = dynamic_cast<UintParam*>(param))
-                            {
-                                convertedValue = up->value;
-                                specData.resize(offset + sizeof(uint32_t));
-                                std::memcpy(specData.data() + offset, &convertedValue, sizeof(uint32_t));
-                                specMapEntrys.push_back({specId, offset, sizeof(uint32_t)});
-                            }
-                            else if (auto* ip = dynamic_cast<IntParam*>(param))
-                            {
-                                // Fallback: some shaders use int for uint
-                                convertedValue = static_cast<uint32_t>(ip->value);
-                                specData.resize(offset + sizeof(uint32_t));
-                                std::memcpy(specData.data() + offset, &convertedValue, sizeof(uint32_t));
-                                specMapEntrys.push_back({specId, offset, sizeof(uint32_t)});
-                            }
-                            break;
-                        case reshadefx::type::t_float:
-                            if (auto* fvp = dynamic_cast<FloatVecParam*>(param))
-                            {
-                                if (vectorComponentIndex < static_cast<int>(fvp->componentCount))
-                                {
-                                    convertedValue = fvp->value[vectorComponentIndex];
-                                    specData.resize(offset + sizeof(float));
-                                    std::memcpy(specData.data() + offset, &convertedValue, sizeof(float));
-                                    specMapEntrys.push_back({specId, offset, sizeof(float)});
-                                }
-                            }
-                            else if (auto* fp = dynamic_cast<FloatParam*>(param))
-                            {
-                                convertedValue = fp->value;
-                                specData.resize(offset + sizeof(float));
-                                std::memcpy(specData.data() + offset, &convertedValue, sizeof(float));
-                                specMapEntrys.push_back({specId, offset, sizeof(float)});
-                            }
-                            break;
-                        default:
-                            break;
-                    }
-                }
-                specId++;
-            }
-
-            VkSpecializationInfo specializationInfo;
-            if (specMapEntrys.size() > 0)
-            {
-                specializationInfo = {.mapEntryCount = static_cast<uint32_t>(specMapEntrys.size()),
-                                      .pMapEntries   = specMapEntrys.data(),
-                                      .dataSize      = specData.size(),
-                                      .pData         = specData.data()};
-            }
 
             VkPipelineShaderStageCreateInfo shaderStageCreateInfoVert;
             shaderStageCreateInfoVert.sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -1027,6 +1130,78 @@ namespace vkBasalt
         bool backBufferNext = outputWrites % 2 == 0;
         for (size_t i = 0; i < graphicsPipelines.size(); i++)
         {
+            const auto& passInfo = module.techniques[0].passes[i];
+
+            if (!passInfo.cs_entry_point.empty())
+            {
+                std::vector<VkImageMemoryBarrier> storageBarriers;
+                for (const auto& storageTextureName : storageTextureNames)
+                {
+                    VkImageMemoryBarrier storageBarrier   = {};
+                    storageBarrier.sType                  = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                    storageBarrier.pNext                  = nullptr;
+                    storageBarrier.srcAccessMask          = VK_ACCESS_SHADER_READ_BIT;
+                    storageBarrier.dstAccessMask          = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+                    storageBarrier.oldLayout              = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    storageBarrier.newLayout              = VK_IMAGE_LAYOUT_GENERAL;
+                    storageBarrier.srcQueueFamilyIndex    = VK_QUEUE_FAMILY_IGNORED;
+                    storageBarrier.dstQueueFamilyIndex    = VK_QUEUE_FAMILY_IGNORED;
+                    storageBarrier.image                  = textureImages[storageTextureName][0];
+                    storageBarrier.subresourceRange       = {VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, 1};
+                    storageBarriers.push_back(storageBarrier);
+                }
+
+                pLogicalDevice->vkd.CmdPipelineBarrier(commandBuffer,
+                                                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                                       VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                                       0,
+                                                       0,
+                                                       nullptr,
+                                                       0,
+                                                       nullptr,
+                                                       storageBarriers.size(),
+                                                       storageBarriers.data());
+
+                pLogicalDevice->vkd.CmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, graphicsPipelines[i]);
+
+                pLogicalDevice->vkd.CmdBindDescriptorSets(
+                    commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 1, 1, &(inputDescriptorSets[imageIndex]), 0, nullptr);
+
+                if (bufferSize)
+                {
+                    pLogicalDevice->vkd.CmdBindDescriptorSets(
+                        commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &bufferDescriptorSet, 0, nullptr);
+                }
+
+                if (!storageDescriptorSets.empty())
+                {
+                    pLogicalDevice->vkd.CmdBindDescriptorSets(
+                        commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 2, 1, &(storageDescriptorSets[imageIndex]), 0, nullptr);
+                }
+
+                pLogicalDevice->vkd.CmdDispatch(commandBuffer, passInfo.viewport_width, passInfo.viewport_height, passInfo.dispatch_z);
+
+                for (auto& storageBarrier : storageBarriers)
+                {
+                    storageBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                    storageBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                    storageBarrier.oldLayout     = VK_IMAGE_LAYOUT_GENERAL;
+                    storageBarrier.newLayout     = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                }
+
+                pLogicalDevice->vkd.CmdPipelineBarrier(commandBuffer,
+                                                       VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                                       0,
+                                                       0,
+                                                       nullptr,
+                                                       0,
+                                                       nullptr,
+                                                       storageBarriers.size(),
+                                                       storageBarriers.data());
+                continue;
+            }
+
             renderPassBeginInfos[i].framebuffer = framebuffers[i][imageIndex];
 
             pLogicalDevice->vkd.CmdBeginRenderPass(commandBuffer, &renderPassBeginInfos[i], VK_SUBPASS_CONTENTS_INLINE);
@@ -1237,6 +1412,17 @@ namespace vkBasalt
             pLogicalDevice->vkd.DestroyRenderPass(pLogicalDevice->device, renderPass, nullptr);
         }
 
+        for (auto& storageViews : storageImageViewVector)
+        {
+            if (!storageViews.empty())
+            {
+                pLogicalDevice->vkd.DestroyImageView(pLogicalDevice->device, storageViews[0], nullptr);
+            }
+        }
+        if (storageImageDescriptorSetLayout != VK_NULL_HANDLE)
+        {
+            pLogicalDevice->vkd.DestroyDescriptorSetLayout(pLogicalDevice->device, storageImageDescriptorSetLayout, nullptr);
+        }
         pLogicalDevice->vkd.DestroyDescriptorSetLayout(pLogicalDevice->device, imageSamplerDescriptorSetLayout, nullptr);
         pLogicalDevice->vkd.DestroyDescriptorSetLayout(pLogicalDevice->device, uniformDescriptorSetLayout, nullptr);
 
@@ -1391,21 +1577,6 @@ namespace vkBasalt
             Logger::warn(shaderPath + ": " + compiled->warnings);
 
         module = compiled->module;
-
-        // The compiler emits compute entry points, but this renderer only dispatches graphics
-        // passes. Refuse here rather than build a graphics pipeline from empty entry point names.
-        for (const auto& technique : module.techniques)
-        {
-            for (const auto& pass : technique.passes)
-            {
-                if (pass.cs_entry_point.empty())
-                    continue;
-
-                Logger::err(shaderPath + ": technique '" + technique.name
-                            + "' has a compute pass, which this build compiles but cannot yet dispatch");
-                throw std::runtime_error("compute pass not supported yet: " + effectName);
-            }
-        }
 
         VkShaderModuleCreateInfo shaderCreateInfo;
         shaderCreateInfo.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;

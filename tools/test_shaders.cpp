@@ -35,6 +35,8 @@
 
 namespace fs = std::filesystem;
 
+static std::string g_dumpSpirvDir;
+
 
 static thread_local sigjmp_buf s_jmpBuf;
 static thread_local volatile sig_atomic_t s_jmpActive = 0;
@@ -258,6 +260,13 @@ static TestResult testShader(
         reshadefx::module module;
         codegen->write_result(module);
 
+        if (!g_dumpSpirvDir.empty())
+        {
+            std::filesystem::path out = std::filesystem::path(g_dumpSpirvDir) / (result.name + ".spv");
+            std::ofstream spv(out, std::ios::binary);
+            spv.write(reinterpret_cast<const char*>(module.spirv.data()), module.spirv.size() * sizeof(uint32_t));
+        }
+
         {
             std::string depthTexName;
             for (const auto& tex : module.textures)
@@ -392,6 +401,11 @@ int main(int argc, char* argv[])
     {
         for (int i = 1; i < argc; i++)
         {
+            if (std::string(argv[i]) == "--dump-spirv" && (i + 1) < argc)
+            {
+                g_dumpSpirvDir = argv[++i];
+                continue;
+            }
             shaderDirs.push_back(argv[i]);
             includePaths.push_back(argv[i]);
         }
