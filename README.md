@@ -210,6 +210,13 @@ In theory, you could change the env var in `/usr/share/vulkan/implicit_layer.d/v
 
 Configuration is stored in `~/.config/vkBasalt-overlay/`. All required config files and subfolders are generated on first run.
 
+Two files, with one writer each. `vkBasalt.conf` holds effects, shader paths and
+tuning, and is yours to edit — the overlay never rewrites it. `settings.conf`
+holds the overlay's own settings (key bindings, effect slots, auto-apply) and is
+written by the overlay when you change them there. Upgrading from a build that
+kept settings in `vkBasalt.conf` needs nothing: that location is still read, so
+existing key bindings carry over.
+
 ### Key Bindings
 
 | Key | Default | Description |
@@ -269,12 +276,16 @@ vkBasalt is a **read-only visual filter** — it applies post-processing shaders
 
 ## Known Limitations
 
-- Some ReShade shaders with multiple techniques may not work
+- Only a shader's first technique runs; a shader defining several will not behave as its author intended
+- Compute shaders are not supported: the pipeline is fragment-only, so storage-image writes (`tex2Dstore`) and barriers cannot run. Such shaders are refused with an explanation rather than compiled into something that renders incorrectly
+- The embedded FX compiler is ReShade 4.7.0 (plus `f32tof16`/`f16tof32`), so a shader that requires a newer ReShade refuses to load and says which version it wants
 - Depth buffer access works but is experimental (depends on game's depth format)
-- Input blocking may cause issues in some games with custom input handling
+- Input blocking may cause issues in some games with custom input handling; on Wayland under wine it needs the `LD_AUDIT` shim that `vkbasalt-run` sets, and the layer says so when it cannot block
 - Intel GPU usage is estimated from frequency ratio (not direct utilization)
 - NVIDIA stats require `libnvidia-ml.so.1` (install `nvidia-utils`)
-- ReShade mouse/key uniforms (`mousepoint`, `mousedelta`, `mousebutton`, `key`) are not yet implemented
+
+[SHADER-COMPATIBILITY.md](SHADER-COMPATIBILITY.md) records how many shaders from
+ReShade's official package index compile, and why each of the rest does not.
 
 ## Architecture
 
@@ -291,7 +302,17 @@ Effects read from one image and write to another in a chain.
 
 ### Effect System
 
-Built-in effects: CAS (sharpening), DLS (denoised luma sharpening), FXAA, SMAA, Deband, LUT.
+Built-in effects: CAS (sharpening), RCAS (FSR 1's sharpener — solves for the
+maximum sharpness before clipping and limits sharpening of detected noise, where
+CAS maps local contrast to sharpness more simply), DLS (denoised luma sharpening),
+FXAA, SMAA, Deband, LUT.
+
+Upscaling is deliberately absent. A layer at this position receives a frame the
+game has already drawn at full size, so there is nothing smaller to upscale from
+and no performance to recover; and AMD specifies FSR's upscaling pass to run
+before UI compositing and with a negative mip bias, neither of which is available
+here. For a genuine render-scale use gamescope's `-F fsr`, or Proton's fullscreen
+FSR, both of which sit above the game's resolution choice rather than below it.
 
 ReShade FX effects are compiled at runtime using an embedded ReShade shader compiler. Parameters are managed through the `EffectRegistry` (single source of truth for all runtime parameter values).
 
