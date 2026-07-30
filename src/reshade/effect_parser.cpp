@@ -902,10 +902,21 @@ bool reshadefx::parser::parse_expression_unary(expression &exp)
 
 				if (symbol.op == symbol_type::function || param_type.has(type::q_out))
 				{
-					if (param_type.is_sampler())
+					if (param_type.is_sampler() || param_type.is_storage())
 					{
 						// Do not shadow sampler parameters to function calls (but do load them for intrinsics)
 						parameters[i] = arguments[i];
+					}
+					else if (param_type.has(type::q_groupshared))
+					{
+						// An atomic must reach the variable itself; shadowing it through a temporary would make the operation atomic on the copy.
+						if (!arguments[i].type.has(type::q_groupshared) || !arguments[i].chain.empty())
+							return error(arguments[i].location, 3004,
+										 "no matching intrinsic overload for '" + identifier + "', expected a plain groupshared variable"),
+								   false;
+
+						parameters[i] = arguments[i];
+						parameters[i].is_lvalue = false;
 					}
 					else
 					{

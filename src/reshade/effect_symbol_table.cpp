@@ -69,6 +69,8 @@ enum {
 #define out_float4 { reshadefx::type::t_float, 4, 1, reshadefx::type::q_out }
 #define sampler { reshadefx::type::t_sampler }
 #define storage { reshadefx::type::t_storage }
+#define inout_shared_int { reshadefx::type::t_int, 1, 1, reshadefx::type::q_inout | reshadefx::type::q_groupshared }
+#define inout_shared_uint { reshadefx::type::t_uint, 1, 1, reshadefx::type::q_inout | reshadefx::type::q_groupshared }
 
 // Import intrinsic function definitions
 #define DEFINE_INTRINSIC(name, i, ret_type, ...) intrinsic(#name, name##i, ret_type, { __VA_ARGS__ }),
@@ -108,6 +110,8 @@ static const intrinsic s_intrinsics[] = {
 #undef out_float4
 #undef sampler
 #undef storage
+#undef inout_shared_int
+#undef inout_shared_uint
 
 #pragma endregion
 

@@ -3,7 +3,7 @@
 Measured, not estimated. Every `.fx` in the shader packs listed below was compiled
 through this layer's own compile environment and the result recorded.
 
-**Result as of 2026-07-30: 449 of 504 shaders compile (89%).**
+**Result as of 2026-07-30: 460 of 504 shaders compile (91%).**
 
 ## What was tested
 
@@ -32,7 +32,7 @@ retroluxfilm/reshade-vrtoolkit, smolbbsoop/smolbbsoopshaders,
 umar-afzaal/LumeniteFX, vortigern11/vort_Shaders, yplebedev/BFBFX,
 Zenteon/ZenteonFX
 
-## Why the 55 remaining shaders do not compile
+## Why the 44 remaining shaders do not compile
 
 **Declares a newer ReShade than this build implements (29, category
 `PREPROCESSOR`).** The shader's own `#error` fires and names what it wants. The
@@ -42,12 +42,12 @@ version we do not implement made these shaders compile against a compiler their
 authors had ruled out. Eight of this group are the include-path artifacts
 described below rather than version gates.
 
-**Needs texture atomics (category `UNSUPPORTED`).** Compute itself now runs;
-what remains is `atomicAdd` and friends. The compiler error is translated into
-the requirement — *needs ReShade 4.8 or newer (uses texture atomics); this build
-implements 4.7* — rather than reported as an unknown identifier, or, as it was
-previously, compiled against no-op stubs into an image that renders incorrectly
-with nothing said.
+**Needs atomics on a storage image (category `UNSUPPORTED`).** Atomics on
+`groupshared` memory work. Atomics addressing a texel of a storage image do not:
+they need a typed storage image with an `R32i`/`R32ui` format, and no shader in
+this corpus uses one. The compiler error is translated into the requirement
+rather than reported as an unknown identifier, or, as it once was, compiled
+against no-op stubs into an image that renders incorrectly with nothing said.
 
 The translation reads the compiler's error, never the shader source. Scanning the
 source for these tokens refuses shaders that merely mention one in a comment or
@@ -80,6 +80,10 @@ Compared against a build from before these changes, over the same corpus:
   later pass reads what it wrote. `groupshared` is real workgroup memory: it was
   lexed as `static` before, which made it a private per-invocation copy that
   `barrier()` guarded nothing about — a wrong image with nothing reported.
+- **Atomics on `groupshared` memory work, and half-float conversion is
+  componentwise.** `f32tof16`/`f16tof32` were scalar-only, so a vector call
+  silently truncated to one component and carried on with a warning. Fixing that
+  is what unlocked the whole MartysMods pack, MXAO and SMAA included.
 - **The generated SPIR-V is validated in the build.** A smoke shader exercising
   every compute feature is compiled and run through `spirv-val`, and the
   disassembly is checked for the compute entry point, the thread group size, the
