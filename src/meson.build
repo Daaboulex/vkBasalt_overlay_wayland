@@ -153,7 +153,7 @@ shared_library(meson.project_name().to_lower(),
 # environment through reshade_fx_env.hpp, so a verdict here is the layer's
 # verdict; see SHADER-COMPATIBILITY.md.
 executable('vkbasalt-test-shaders',
-    '../tools/test_shaders.cpp',
+    '../tools/test_shaders.cpp', 'shader_cache.cpp', 'logger.cpp',
     include_directories : vkBasalt_include_path,
     dependencies : [reshade_dep],
     install : true)

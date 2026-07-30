@@ -183,6 +183,37 @@
                 touch $out
               '';
 
+          # The warm-up only helps if it produces the same cache key as the real compile, and a
+          # mismatch has no symptom -- it just silently stops helping.
+          checks.compile-key-has-one-source = pkgs.runCommand "compile-key-has-one-source" { } ''
+            effect=${./src/effects/effect_reshade.cpp}
+            layer=${./src/basalt.cpp}
+
+            grep -q 'reshadeCompileDefines(imageExtent' "$effect" \
+              || { echo "the effect no longer asks reshadeCompileDefines for its defines"; exit 1; }
+            grep -q 'BUFFER_RCP_WIDTH' <<< "$(sed -n '/ReshadeEffect::createReshadeModule/,$p' "$effect")" \
+              && { echo "createReshadeModule builds the compile key itself again -- it can now drift from the warm-up"; exit 1; }
+            grep -q 'reshadeCompileDefines(extent, unormFormat' "$layer" \
+              || { echo "the warm-up no longer asks reshadeCompileDefines for its defines"; exit 1; }
+            touch $out
+          '';
+
+          # The application holds the first imageCount fake images for the swapchain's life, so the
+          # pool may only ever be appended to. Freeing or reordering it hands the application dead
+          # handles, which is a use-after-free in the game's own present path.
+          checks.effect-image-pool-only-appends = pkgs.runCommand "effect-image-pool-only-appends" { } ''
+            body=$(sed -n '/bool growFakeSwapchainImages/,/^    }/p' ${./src/basalt.cpp})
+            [ -n "$body" ] || { echo "growFakeSwapchainImages is gone -- the pool can no longer grow"; exit 1; }
+
+            grep -qE 'FreeMemory|DestroyImage|fakeImages\.clear|fakeImages\.resize|fakeImages\.erase|fakeImages\.assign' <<< "$body" \
+              && { echo "growing the effect image pool releases or reorders it -- the application is still holding those handles"; exit 1; }
+            grep -q 'fakeImages.insert(pLogicalSwapchain->fakeImages.end()' <<< "$body" \
+              || { echo "growth no longer appends at the end -- earlier slots would shift under the application"; exit 1; }
+            grep -q 'settingsManager.getMaxEffects()' <<< "$body" \
+              || { echo "growth is unbounded -- a runaway effect list could exhaust video memory"; exit 1; }
+            touch $out
+          '';
+
           checks.typed-characters-are-bounded = pkgs.runCommand "typed-characters-are-bounded" { } ''
             src=${./src/keyboard_input_wayland.cpp}
             grep -q 'TYPED_CHARS_LIMIT' "$src" \

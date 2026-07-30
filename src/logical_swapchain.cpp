@@ -17,7 +17,8 @@ namespace vkBasalt
                 pLogicalDevice->device, pLogicalDevice->commandPool, commandBuffersNoEffect.size(), commandBuffersNoEffect.data());
             Logger::debug("after free commandbuffer");
 
-            pLogicalDevice->vkd.FreeMemory(pLogicalDevice->device, fakeImageMemory, nullptr);
+            for (VkDeviceMemory memory : fakeImageMemory)
+                pLogicalDevice->vkd.FreeMemory(pLogicalDevice->device, memory, nullptr);
 
             for (uint32_t i = 0; i < fakeImages.size(); i++)
             {

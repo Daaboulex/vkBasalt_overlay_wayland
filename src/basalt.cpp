@@ -43,6 +43,7 @@
 #include "buffer.hpp"
 #include "config.hpp"
 #include "config_serializer.hpp"
+#include "shader_cache.hpp"
 #include "settings_manager.hpp"
 #include "fake_swapchain.hpp"
 #include "renderpass.hpp"
@@ -411,6 +412,43 @@ namespace vkBasalt
         cachedEffects.initialized = true;
     }
 
+    // Appends slots for a longer effect chain. Only ever appends, so the images already returned
+    // to the application from vkGetSwapchainImagesKHR keep their handles for the swapchain's life.
+    bool growFakeSwapchainImages(LogicalDevice* pLogicalDevice, LogicalSwapchain* pLogicalSwapchain, size_t neededSlots)
+    {
+        if (neededSlots <= pLogicalSwapchain->maxEffectSlots)
+            return true;
+
+        const size_t hardLimit = static_cast<size_t>(std::max(1, settingsManager.getMaxEffects()));
+        if (neededSlots > hardLimit)
+        {
+            Logger::warn("refusing to allocate room for " + std::to_string(neededSlots) + " effects, maxEffects is "
+                         + std::to_string(hardLimit));
+            return false;
+        }
+
+        const size_t   extraSlots  = neededSlots - pLogicalSwapchain->maxEffectSlots;
+        const uint32_t extraImages = pLogicalSwapchain->imageCount * extraSlots;
+
+        VkDeviceMemory       block = VK_NULL_HANDLE;
+        std::vector<VkImage> grown =
+            createFakeSwapchainImages(pLogicalDevice, pLogicalSwapchain->swapchainCreateInfo, extraImages, block);
+
+        if (grown.empty())
+        {
+            Logger::warn("could not allocate room for " + std::to_string(neededSlots) + " effects, keeping "
+                         + std::to_string(pLogicalSwapchain->maxEffectSlots));
+            return false;
+        }
+
+        pLogicalSwapchain->fakeImageMemory.push_back(block);
+        pLogicalSwapchain->fakeImages.insert(pLogicalSwapchain->fakeImages.end(), grown.begin(), grown.end());
+        pLogicalSwapchain->maxEffectSlots = neededSlots;
+
+        Logger::debug("grew the effect image pool to " + std::to_string(neededSlots) + " slots");
+        return true;
+    }
+
     void createEffectsForSwapchain(
         LogicalSwapchain* pLogicalSwapchain,
         LogicalDevice* pLogicalDevice,
@@ -554,11 +592,9 @@ namespace vkBasalt
 
         std::vector<std::string> effectStrings = activeEffects;
 
-        if (effectStrings.size() > pLogicalSwapchain->maxEffectSlots)
+        if (effectStrings.size() > pLogicalSwapchain->maxEffectSlots
+            && !growFakeSwapchainImages(pLogicalDevice, pLogicalSwapchain, effectStrings.size()))
         {
-            Logger::warn("Cannot add more effects than maxEffectSlots (" +
-                        std::to_string(effectStrings.size()) + " > " + std::to_string(pLogicalSwapchain->maxEffectSlots) +
-                        "). Increase maxEffects in config.");
             effectStrings.resize(pLogicalSwapchain->maxEffectSlots);
         }
 
@@ -1082,11 +1118,67 @@ namespace vkBasalt
         return result;
     }
 
+    // Compiling an effect costs a measured 4.4ms at the median and 214ms at worst. Doing it under
+    // globalLock blocks every other intercepted call, including the vkCreateImage a texture thread
+    // makes once depth capture is on. The compile cache carries its own mutex, so filling it here,
+    // with no lock held, leaves the compile under the lock a cache hit. A miss is harmless: it
+    // simply compiles under the lock as before, so correctness never depends on this having run.
+    void warmEffectCompileCache(VkSwapchainKHR swapchain)
+    {
+        std::vector<std::string> shaderPaths;
+        std::vector<std::vector<std::pair<std::string, std::string>>> shaderDefines;
+
+        {
+            scoped_lock l(globalLock);
+
+            const auto it = swapchainMap.find(swapchain);
+            if (it == swapchainMap.end() || !it->second)
+                return;
+
+            LogicalSwapchain* pLogicalSwapchain = it->second.get();
+            if (!pLogicalSwapchain->fakeImages.empty())
+                return;
+
+            const VkExtent2D extent = pLogicalSwapchain->imageExtent;
+            const VkFormat unormFormat = convertToUNORM(pLogicalSwapchain->format);
+
+            for (const std::string& name : effectRegistry.getSelectedEffects())
+            {
+                std::string path = effectRegistry.getEffectFilePath(name);
+                if (path.empty())
+                    continue;
+
+                shaderPaths.push_back(std::move(path));
+                shaderDefines.push_back(reshadeCompileDefines(extent, unormFormat, effectRegistry.getPreprocessorDefs(name)));
+            }
+        }
+
+        if (shaderPaths.empty())
+            return;
+
+        const std::vector<std::string> includePaths = ConfigSerializer::loadShaderManagerConfig().discoveredShaderPaths;
+
+        for (size_t i = 0; i < shaderPaths.size(); i++)
+        {
+            try
+            {
+                getOrCompileReshadeEffect(shaderPaths[i], shaderDefines[i], includePaths);
+            }
+            catch (const std::exception& e)
+            {
+                Logger::debug(std::string("compile cache warm-up skipped an effect: ") + e.what());
+            }
+        }
+    }
+
     VKAPI_ATTR VkResult VKAPI_CALL vkBasalt_GetSwapchainImagesKHR(VkDevice       device,
                                                                   VkSwapchainKHR swapchain,
                                                                   uint32_t*      pCount,
                                                                   VkImage*       pSwapchainImages)
     {
+        if (pSwapchainImages != nullptr)
+            warmEffectCompileCache(swapchain);
+
         scoped_lock l(globalLock);
         Logger::trace("vkGetSwapchainImagesKHR " + std::to_string(*pCount));
 
@@ -1139,14 +1231,20 @@ namespace vkBasalt
 
         const auto& selectedEffects = effectRegistry.getSelectedEffects();
 
-        int32_t maxEffects = settingsManager.getMaxEffects();
-        size_t effectSlots = std::max(selectedEffects.size(), (size_t)maxEffects);
+        // Only what the current chain needs. Adding effects later grows this instead of reserving
+        // the maximum up front, which at 4K reserved most of a gigabyte to hold effects nobody had
+        // selected. growFakeSwapchainImages only ever appends, so the images already handed to the
+        // application keep their handles.
+        size_t effectSlots = std::max<size_t>(selectedEffects.size(), 1);
         pLogicalSwapchain->maxEffectSlots = effectSlots;
 
+        VkDeviceMemory fakeImageBlock = VK_NULL_HANDLE;
         uint32_t fakeImageCount = pLogicalSwapchain->imageCount * (effectSlots + !pLogicalDevice->supportsMutableFormat);
 
         pLogicalSwapchain->fakeImages =
-            createFakeSwapchainImages(pLogicalDevice, pLogicalSwapchain->swapchainCreateInfo, fakeImageCount, pLogicalSwapchain->fakeImageMemory);
+            createFakeSwapchainImages(pLogicalDevice, pLogicalSwapchain->swapchainCreateInfo, fakeImageCount, fakeImageBlock);
+        if (fakeImageBlock != VK_NULL_HANDLE)
+            pLogicalSwapchain->fakeImageMemory.push_back(fakeImageBlock);
         Logger::debug("created fake swapchain images");
 
         if (pLogicalSwapchain->fakeImages.empty())

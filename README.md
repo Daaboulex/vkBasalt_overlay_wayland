@@ -243,8 +243,9 @@ existing key bindings carry over.
 `~/.config/vkBasalt-overlay/vkBasalt.conf`:
 
 ```ini
-# Maximum effects (requires restart, 1-200)
-# Higher values use more VRAM (~8 bytes x width x height per slot)
+# Upper bound on how many effects may be active (1-200)
+# Video memory is allocated for the effects actually in use and grows as you add
+# more, so raising this reserves nothing on its own
 maxEffects = 10
 
 # Key bindings

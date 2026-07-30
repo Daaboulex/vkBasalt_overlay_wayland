@@ -34,7 +34,7 @@ namespace vkBasalt
         std::vector<VkSemaphore>             overlaySemaphores;
         std::vector<std::shared_ptr<Effect>> effects;
         std::shared_ptr<Effect>              defaultTransfer;
-        VkDeviceMemory                       fakeImageMemory;
+        std::vector<VkDeviceMemory>          fakeImageMemory;
 
         void destroy();
         void reloadEffects(Config* pConfig);

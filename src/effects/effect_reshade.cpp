@@ -31,6 +31,24 @@
 
 namespace vkBasalt
 {
+    std::vector<std::pair<std::string, std::string>> reshadeCompileDefines(
+        VkExtent2D extent, VkFormat unormFormat, const std::vector<PreprocessorDefinition>& customDefs)
+    {
+        std::vector<std::pair<std::string, std::string>> defines = {
+            {"BUFFER_WIDTH", std::to_string(extent.width)},
+            {"BUFFER_HEIGHT", std::to_string(extent.height)},
+            {"BUFFER_RCP_WIDTH", "(1.0 / BUFFER_WIDTH)"},
+            {"BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)"},
+            {"BUFFER_COLOR_DEPTH", (unormFormat == VK_FORMAT_A2R10G10B10_UNORM_PACK32) ? "10" : "8"},
+            {"BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH"},
+        };
+
+        for (const auto& def : customDefs)
+            defines.push_back({def.name, def.value});
+
+        return defines;
+    }
+
     ReshadeEffect::ReshadeEffect(LogicalDevice*       pLogicalDevice,
                                  VkFormat             format,
                                  VkExtent2D           imageExtent,
@@ -1521,19 +1539,10 @@ namespace vkBasalt
 
     void ReshadeEffect::createReshadeModule()
     {
-        std::vector<std::pair<std::string, std::string>> defines = {
-            {"BUFFER_WIDTH", std::to_string(imageExtent.width)},
-            {"BUFFER_HEIGHT", std::to_string(imageExtent.height)},
-            {"BUFFER_RCP_WIDTH", "(1.0 / BUFFER_WIDTH)"},
-            {"BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)"},
-            {"BUFFER_COLOR_DEPTH", (inputOutputFormatUNORM == VK_FORMAT_A2R10G10B10_UNORM_PACK32) ? "10" : "8"},
-            {"BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH"},
-        };
+        std::vector<std::pair<std::string, std::string>> defines =
+            reshadeCompileDefines(imageExtent, inputOutputFormatUNORM, customPreprocessorDefs);
         for (const auto& def : customPreprocessorDefs)
-        {
-            defines.push_back({def.name, def.value});
             Logger::debug("  custom macro: " + def.name + " = " + def.value);
-        }
 
         ShaderManagerConfig shaderMgrConfig = ConfigSerializer::loadShaderManagerConfig();
 

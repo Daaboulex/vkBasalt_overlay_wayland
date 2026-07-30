@@ -22,6 +22,11 @@
 
 namespace vkBasalt
 {
+    // The compile cache is keyed on these, so anything that wants a cache hit for an effect must
+    // ask for them here rather than assemble its own copy.
+    std::vector<std::pair<std::string, std::string>> reshadeCompileDefines(
+        VkExtent2D extent, VkFormat unormFormat, const std::vector<PreprocessorDefinition>& customDefs);
+
     class ReshadeEffect : public Effect
     {
     public:

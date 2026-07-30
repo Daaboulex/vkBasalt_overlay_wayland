@@ -34,10 +34,15 @@
 #include "reshade/effect_parser.hpp"
 #include "reshade/effect_codegen.hpp"
 #include "reshade/effect_module.hpp"
+#include "shader_cache.hpp"
+#include "logger.hpp"
 
 namespace fs = std::filesystem;
 
+namespace vkBasalt { Logger Logger::s_instance; }
+
 static std::string g_dumpSpirvDir;
+static bool g_cacheBench = false;
 
 
 static thread_local sigjmp_buf s_jmpBuf;
@@ -417,6 +422,11 @@ int main(int argc, char* argv[])
                 g_dumpSpirvDir = argv[++i];
                 continue;
             }
+            if (std::string(argv[i]) == "--cache-bench")
+            {
+                g_cacheBench = true;
+                continue;
+            }
             shaderDirs.push_back(argv[i]);
             includePaths.push_back(argv[i]);
         }
@@ -475,6 +485,7 @@ int main(int argc, char* argv[])
     int failCount = 0;
     int warnCount = 0;
     std::vector<double> compileTimes;
+    std::vector<std::string> compiledPaths;
     int depthCount = 0;
     std::vector<TestResult> failures;
     std::vector<TestResult> warnings;
@@ -487,7 +498,10 @@ int main(int argc, char* argv[])
         TestResult result = testShader(effectName, effectPath, includePaths);
 
         if (result.success)
+        {
             compileTimes.push_back(result.milliseconds);
+            compiledPaths.push_back(effectPath);
+        }
 
         if (result.success)
         {
@@ -527,6 +541,57 @@ int main(int argc, char* argv[])
         std::cout << " (" << depthCount << " use depth)";
     std::cout << "\n";
     std::cout << "  Total:   " << allFiles.size() << " shaders\n";
+
+    if (g_cacheBench)
+    {
+        std::vector<double> cold, warm;
+        const std::vector<std::pair<std::string, std::string>> macros = {
+            {"BUFFER_WIDTH", "1920"},
+            {"BUFFER_HEIGHT", "1080"},
+            {"BUFFER_RCP_WIDTH", "(1.0 / BUFFER_WIDTH)"},
+            {"BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)"},
+            {"BUFFER_COLOR_DEPTH", "8"},
+            {"BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH"},
+        };
+
+        for (const std::string& path : compiledPaths)
+        {
+            std::shared_ptr<const vkBasalt::CompiledReshadeEffect> first, second;
+            std::chrono::steady_clock::time_point t0, t1, t2;
+
+            try
+            {
+                t0 = std::chrono::steady_clock::now();
+                first = vkBasalt::getOrCompileReshadeEffect(path, macros, includePaths);
+                t1 = std::chrono::steady_clock::now();
+                second = vkBasalt::getOrCompileReshadeEffect(path, macros, includePaths);
+                t2 = std::chrono::steady_clock::now();
+            }
+            catch (const std::exception&)
+            {
+                continue;
+            }
+
+            if (!first || !first->ok())
+                continue;
+
+            cold.push_back(std::chrono::duration<double, std::milli>(t1 - t0).count());
+            warm.push_back(std::chrono::duration<double, std::milli>(t2 - t1).count());
+        }
+
+        if (!cold.empty())
+        {
+            std::sort(cold.begin(), cold.end());
+            std::sort(warm.begin(), warm.end());
+            const auto at = [](std::vector<double>& v, double p) { return v[static_cast<size_t>(p / 100.0 * (v.size() - 1))]; };
+            double coldTotal = 0.0, warmTotal = 0.0;
+            for (double d : cold) coldTotal += d;
+            for (double d : warm) warmTotal += d;
+            std::cout << "  CACHE n=" << cold.size()
+                      << " cold p50=" << at(cold, 50) << " p95=" << at(cold, 95) << " max=" << cold.back() << " total=" << coldTotal
+                      << " | warm p50=" << at(warm, 50) << " p95=" << at(warm, 95) << " max=" << warm.back() << " total=" << warmTotal << "\n";
+        }
+    }
 
     std::vector<double> times = compileTimes;
     double totalMs = 0.0;
