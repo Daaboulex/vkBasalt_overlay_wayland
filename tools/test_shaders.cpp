@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "reshade/effect_preprocessor.hpp"
+#include "reshade_fx_env.hpp"
 #include "reshade/effect_parser.hpp"
 #include "reshade/effect_codegen.hpp"
 #include "reshade/effect_module.hpp"
@@ -67,51 +68,15 @@ static void installCrashHandlers()
 
 static void addStandardMacros(reshadefx::preprocessor& pp)
 {
-    pp.add_macro_definition("__RESHADE__", std::to_string(INT_MAX));
-    pp.add_macro_definition("__RESHADE_PERFORMANCE_MODE__", "1");
-    pp.add_macro_definition("__RENDERER__", "0x20000");
+    vkBasalt::addReshadeBaseMacros(pp);
+
+    // Swapchain-dependent in the layer; fixed here so results are reproducible.
     pp.add_macro_definition("BUFFER_WIDTH", "1920");
     pp.add_macro_definition("BUFFER_HEIGHT", "1080");
     pp.add_macro_definition("BUFFER_RCP_WIDTH", "(1.0 / BUFFER_WIDTH)");
     pp.add_macro_definition("BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)");
     pp.add_macro_definition("BUFFER_COLOR_DEPTH", "8");
     pp.add_macro_definition("BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH");
-
-    // append_string because add_macro_definition cannot express function-like macros.
-    pp.append_string(
-        "#define tex2DgatherR(s, coords) tex2Dgather(s, coords, 0)\n"
-        "#define tex2DgatherG(s, coords) tex2Dgather(s, coords, 1)\n"
-        "#define tex2DgatherB(s, coords) tex2Dgather(s, coords, 2)\n"
-        "#define tex2DgatherA(s, coords) tex2Dgather(s, coords, 3)\n"
-        "#define float2x3 matrix<float, 2, 3>\n"
-        "#define float2x4 matrix<float, 2, 4>\n"
-        "#define float3x2 matrix<float, 3, 2>\n"
-        "#define float3x4 matrix<float, 3, 4>\n"
-        "#define float4x2 matrix<float, 4, 2>\n"
-        "#define float4x3 matrix<float, 4, 3>\n"
-        "#define ddx_fine(x) ddx(x)\n"
-        "#define ddy_fine(x) ddy(x)\n"
-        "#define ddx_coarse(x) ddx(x)\n"
-        "#define ddy_coarse(x) ddy(x)\n"
-        "#define atomicAdd(d, v) (v)\n"
-        "#define atomicMax(d, v) (v)\n"
-        "#define atomicMin(d, v) (v)\n"
-        "#define atomicOr(d, v) (v)\n"
-        "#define atomicAnd(d, v) (v)\n"
-        "#define atomicXor(d, v) (v)\n"
-        "#define atomicExchange(d, v) (v)\n"
-        "#define atomicCompSwap(d, c, v) (v)\n"
-        "#define tex2Dstore(s, c, v) (0)\n"
-        "#define barrier() (0)\n"
-        "#define memoryBarrier() (0)\n"
-        "#define groupMemoryBarrier() (0)\n"
-        "#define DeviceMemoryBarrier() (0)\n"
-        "#define GroupMemoryBarrier() (0)\n"
-        "#define AllMemoryBarrier() (0)\n"
-        "#define DeviceMemoryBarrierWithGroupSync() (0)\n"
-        "#define GroupMemoryBarrierWithGroupSync() (0)\n"
-        "#define AllMemoryBarrierWithGroupSync() (0)\n"
-    );
 }
 
 

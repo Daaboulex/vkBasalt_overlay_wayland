@@ -24,7 +24,7 @@
 #include "reshade/effect_codegen.hpp"
 
 #include "logger.hpp"
-#include "reshade_fx_version.hpp"
+#include "reshade_fx_env.hpp"
 
 namespace vkBasalt
 {
@@ -589,49 +589,6 @@ namespace vkBasalt
             return true;
         }
 
-        void addBaseMacros(reshadefx::preprocessor& pp)
-        {
-            pp.add_macro_definition("__RESHADE__", std::to_string(VKBASALT_RESHADE_FX_VERSION));
-            pp.add_macro_definition("__RESHADE_PERFORMANCE_MODE__", "1");
-            pp.add_macro_definition("__RENDERER__", "0x20000");
-
-            // Shorthands missing from this reshadefx version; append_string because
-            // add_macro_definition cannot express function-like macros. Atomic and
-            // compute stubs expand to no-op expressions for the fragment-only pipeline.
-            pp.append_string(
-                "#define tex2DgatherR(s, coords) tex2Dgather(s, coords, 0)\n"
-                "#define tex2DgatherG(s, coords) tex2Dgather(s, coords, 1)\n"
-                "#define tex2DgatherB(s, coords) tex2Dgather(s, coords, 2)\n"
-                "#define tex2DgatherA(s, coords) tex2Dgather(s, coords, 3)\n"
-                "#define float2x3 matrix<float, 2, 3>\n"
-                "#define float2x4 matrix<float, 2, 4>\n"
-                "#define float3x2 matrix<float, 3, 2>\n"
-                "#define float3x4 matrix<float, 3, 4>\n"
-                "#define float4x2 matrix<float, 4, 2>\n"
-                "#define float4x3 matrix<float, 4, 3>\n"
-                "#define ddx_fine(x) ddx(x)\n"
-                "#define ddy_fine(x) ddy(x)\n"
-                "#define ddx_coarse(x) ddx(x)\n"
-                "#define ddy_coarse(x) ddy(x)\n"
-                "#define atomicAdd(d, v) (v)\n"
-                "#define atomicMax(d, v) (v)\n"
-                "#define atomicMin(d, v) (v)\n"
-                "#define atomicOr(d, v) (v)\n"
-                "#define atomicAnd(d, v) (v)\n"
-                "#define atomicXor(d, v) (v)\n"
-                "#define atomicExchange(d, v) (v)\n"
-                "#define atomicCompSwap(d, c, v) (v)\n"
-                "#define tex2Dstore(s, c, v) (0)\n"
-                "#define barrier() (0)\n"
-                "#define memoryBarrier() (0)\n"
-                "#define groupMemoryBarrier() (0)\n"
-                "#define DeviceMemoryBarrier() (0)\n"
-                "#define GroupMemoryBarrier() (0)\n"
-                "#define AllMemoryBarrier() (0)\n"
-                "#define DeviceMemoryBarrierWithGroupSync() (0)\n"
-                "#define GroupMemoryBarrierWithGroupSync() (0)\n"
-                "#define AllMemoryBarrierWithGroupSync() (0)\n");
-        }
 
         // A shader counts as depth-using only when an entry point reaches a
         // DEPTH-semantic sampler in the SPIR-V; a raw OpLoad scan false-positives
@@ -793,7 +750,7 @@ namespace vkBasalt
             cacheable = true;
 
             reshadefx::preprocessor preprocessor;
-            addBaseMacros(preprocessor);
+            addReshadeBaseMacros(preprocessor);
             for (const auto& [name, value] : macroDefinitions)
                 preprocessor.add_macro_definition(name, value);
             for (const auto& path : includePaths)
@@ -824,6 +781,13 @@ namespace vkBasalt
             if (!ppErrors.empty() && ppErrors.find("preprocessor error:") != std::string::npos)
             {
                 e->error = "Preprocessor errors: " + ppErrors;
+                recordIncludes();
+                return e;
+            }
+
+            if (std::string reason = reshadeUnsupportedFeature(preprocessor.output()); !reason.empty())
+            {
+                e->error = reason;
                 recordIncludes();
                 return e;
             }

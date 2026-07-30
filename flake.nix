@@ -145,12 +145,22 @@
               '';
 
           checks.reshade-version-is-truthful = pkgs.runCommand "reshade-version-is-truthful" { } ''
-            grep -q 'add_macro_definition("__RESHADE__", std::to_string(VKBASALT_RESHADE_FX_VERSION))' ${./src/shader_cache.cpp} \
+            env=${./src/reshade_fx_env.hpp}
+            grep -q 'add_macro_definition("__RESHADE__", std::to_string(VKBASALT_RESHADE_FX_VERSION))' "$env" \
               || { echo "__RESHADE__ must come from VKBASALT_RESHADE_FX_VERSION, not a literal"; exit 1; }
-            grep -q 'INT_MAX' <<< "$(sed -n '/add_macro_definition("__RESHADE__"/p' ${./src/shader_cache.cpp})" \
+            grep -q 'INT_MAX' <<< "$(sed -n '/add_macro_definition("__RESHADE__"/p' "$env")" \
               && { echo "__RESHADE__ claims INT_MAX -- every shader version gate opens and modern paths reach a 4.7 compiler"; exit 1; }
             grep -q 'define VKBASALT_RESHADE_FX_VERSION 40700' ${./src/reshade_fx_version.hpp} \
               || { echo "the declared FX level changed -- confirm src/reshade was resynced to match"; exit 1; }
+
+            # The layer and the standalone tester must share one compile
+            # environment, or the tester reports results the layer would not.
+            for f in ${./src/shader_cache.cpp} ${./tools/test_shaders.cpp}; do
+              grep -q 'addReshadeBaseMacros' "$f" \
+                || { echo "$f does not use the shared compile environment -- its results would not match the layer"; exit 1; }
+              grep -q 'add_macro_definition("__RESHADE__"' "$f" \
+                && { echo "$f defines __RESHADE__ itself instead of sharing reshade_fx_env.hpp"; exit 1; }
+            done
             touch $out
           '';
 
