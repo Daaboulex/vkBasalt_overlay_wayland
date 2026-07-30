@@ -86,6 +86,11 @@ Per-profile toggle (`safeAntiCheat = true`) that:
 - Blocks shaders that use depth at runtime (hidden in Add Effects, shows tooltip explaining why)
 - Auto-tests all shaders on first Add Effects open (one per frame, progress bar shown)
 
+It does **not** hide the layer. The Vulkan loader answers an application's
+pre-instance layer query from the installed manifests, so vkBasalt stays visible
+however this is set. What the setting removes is depth access, so no effect can
+see through geometry.
+
 **Depth detection** uses SPIR-V call graph analysis: builds a per-function call graph from the compiled shader bytecode, then BFS from entry points to check if any reachable function loads the depth sampler. This distinguishes shaders that merely *include* depth declarations (via `ReShade.fxh`) from those that actually *use* depth at runtime.
 
 ### ReShade Shader Support

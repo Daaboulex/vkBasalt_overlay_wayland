@@ -308,7 +308,7 @@ namespace vkBasalt
             {
                 settingsManager.setSafeAntiCheat(true);
                 settingsManager.setDepthCapture(false);
-                Logger::info("safeAntiCheat enabled - depth capture forced off, layer hidden");
+                Logger::info("safeAntiCheat enabled - depth capture forced off, depth-using effects blocked");
             }
         }
 

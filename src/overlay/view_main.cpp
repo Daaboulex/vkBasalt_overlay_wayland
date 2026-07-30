@@ -185,15 +185,15 @@ namespace vkBasalt
                 ImGui::Text("Force-disable depth buffer capture for this profile.");
                 ImGui::Spacing();
                 ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "When enabled:");
-                ImGui::BulletText("Layer hidden from Vulkan enumeration queries");
                 ImGui::BulletText("Depth buffer access is disabled (no wallhack capability)");
                 ImGui::BulletText("Only color post-processing effects work (sharpening, color grading, etc.)");
                 ImGui::BulletText("Depth-using effects are auto-disabled and hidden from Add Effects");
                 ImGui::Spacing();
-                ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f),
-                    "The layer becomes invisible to the application - it cannot detect\n"
-                    "vkBasalt via vkEnumerateInstanceLayerProperties or similar queries.\n"
-                    "Only pixel colors are modified. Completely non-intrusive.");
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.4f, 1.0f),
+                    "This does NOT hide the layer. The loader answers an application's\n"
+                    "pre-instance layer query from the installed manifests, so vkBasalt\n"
+                    "remains visible. What this setting removes is depth access, so no\n"
+                    "effect can see through geometry.");
                 ImGui::EndTooltip();
             }
         }
