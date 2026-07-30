@@ -204,6 +204,20 @@
           # Compiling under globalLock is what stalled every other intercepted call. The warm-up
           # exists to stop that, so a compile started from anywhere else in the layer, or from the
           # reload path without letting the lock go first, puts the stall straight back.
+          # A depth image, its format and its view were three vectors indexed positionally, and a
+          # view was only appended when the image being bound was the one created last. An
+          # application creating images from several threads made them drift, after which the layer
+          # paired an image with another image's view and destroyed the wrong one.
+          checks.depth-tracking-cannot-drift = pkgs.runCommand "depth-tracking-cannot-drift" { } ''
+            grep -qE 'depthFormats|depthImageViews' ${./src/logical_device.hpp} ${./src/basalt.cpp} \
+              && { echo "depth tracking is back to parallel vectors -- they drift apart when images are created from several threads"; exit 1; }
+            grep -q 'std::vector<DepthImage>  depthImages;' ${./src/logical_device.hpp} \
+              || { echo "depth images are no longer one record each"; exit 1; }
+            grep -q 'depthImage.image == image' ${./src/basalt.cpp} \
+              || { echo "depth images are matched by position again rather than by handle"; exit 1; }
+            touch $out
+          '';
+
           checks.compiles-never-hold-the-lock = pkgs.runCommand "compiles-never-hold-the-lock" { } ''
             src=${./src/basalt.cpp}
 

@@ -182,11 +182,15 @@ namespace vkBasalt
     DepthState getDepthState(LogicalDevice* pLogicalDevice)
     {
         DepthState state;
-        if (!pLogicalDevice->depthImageViews.empty())
+        for (const auto& depthImage : pLogicalDevice->depthImages)
         {
-            state.imageView = pLogicalDevice->depthImageViews[0];
-            state.image = pLogicalDevice->depthImages[0];
-            state.format = pLogicalDevice->depthFormats[0];
+            if (depthImage.view == VK_NULL_HANDLE)
+                continue;
+
+            state.imageView = depthImage.view;
+            state.image = depthImage.image;
+            state.format = depthImage.format;
+            break;
         }
         return state;
     }
@@ -1034,6 +1038,11 @@ namespace vkBasalt
 
         pLogicalDevice->imguiOverlay.reset();
 
+        for (const auto& depthImage : pLogicalDevice->depthImages)
+            if (depthImage.view != VK_NULL_HANDLE)
+                pLogicalDevice->vkd.DestroyImageView(device, depthImage.view, nullptr);
+        pLogicalDevice->depthImages.clear();
+
         // The keyboard and pointer proxies live on the shared event queue, so the
         // queue is released here, after both have let go of it -- not by whichever
         // of them happened to be cleaned up first.
@@ -1666,8 +1675,7 @@ namespace vkBasalt
             VkImageCreateInfo modifiedCreateInfo = *pCreateInfo;
             modifiedCreateInfo.usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
             VkResult result = pLogicalDevice->vkd.CreateImage(device, &modifiedCreateInfo, pAllocator, pImage);
-            pLogicalDevice->depthImages.push_back(*pImage);
-            pLogicalDevice->depthFormats.push_back(pCreateInfo->format);
+            pLogicalDevice->depthImages.push_back({*pImage, pCreateInfo->format, VK_NULL_HANDLE});
 
             return result;
         }
@@ -1684,18 +1692,19 @@ namespace vkBasalt
         LogicalDevice* pLogicalDevice = deviceMap[GetKey(device)].get();
         VkResult result = pLogicalDevice->vkd.BindImageMemory(device, image, memory, memoryOffset);
 
-        // TODO what if the application creates more than one image before binding memory?
-        if (pLogicalDevice->depthImages.empty() || image != pLogicalDevice->depthImages.back())
+        const auto tracked = std::find_if(pLogicalDevice->depthImages.begin(), pLogicalDevice->depthImages.end(),
+                                          [image](const auto& depthImage) { return depthImage.image == image; });
+        if (tracked == pLogicalDevice->depthImages.end() || tracked->view != VK_NULL_HANDLE)
             return result;
 
         Logger::debug("before creating depth image view");
-        VkFormat depthFormat = pLogicalDevice->depthFormats[pLogicalDevice->depthImages.size() - 1];
-        VkImageView depthImageView = createImageViews(pLogicalDevice, depthFormat, {image},
-                                                      VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_DEPTH_BIT)[0];
+        tracked->view = createImageViews(pLogicalDevice, tracked->format, {image},
+                                         VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_DEPTH_BIT)[0];
         Logger::debug("created depth image view");
-        pLogicalDevice->depthImageViews.push_back(depthImageView);
 
-        if (pLogicalDevice->depthImageViews.size() > 1)
+        const size_t viewCount = std::count_if(pLogicalDevice->depthImages.begin(), pLogicalDevice->depthImages.end(),
+                                               [](const auto& depthImage) { return depthImage.view != VK_NULL_HANDLE; });
+        if (viewCount > 1)
             return result;
 
         DepthState depth = getDepthState(pLogicalDevice);
@@ -1722,20 +1731,14 @@ namespace vkBasalt
 
         LogicalDevice* pLogicalDevice = deviceMap[GetKey(device)].get();
 
-        auto it = std::find(pLogicalDevice->depthImages.begin(), pLogicalDevice->depthImages.end(), image);
+        auto it = std::find_if(pLogicalDevice->depthImages.begin(), pLogicalDevice->depthImages.end(),
+                               [image](const auto& depthImage) { return depthImage.image == image; });
         if (it != pLogicalDevice->depthImages.end())
         {
-            size_t i = std::distance(pLogicalDevice->depthImages.begin(), it);
+            if (it->view != VK_NULL_HANDLE)
+                pLogicalDevice->vkd.DestroyImageView(pLogicalDevice->device, it->view, nullptr);
 
             pLogicalDevice->depthImages.erase(it);
-            // TODO what if an image gets destroyed before binding memory?
-            if (i < pLogicalDevice->depthImageViews.size())
-            {
-                pLogicalDevice->vkd.DestroyImageView(pLogicalDevice->device, pLogicalDevice->depthImageViews[i], nullptr);
-                pLogicalDevice->depthImageViews.erase(pLogicalDevice->depthImageViews.begin() + i);
-            }
-            if (i < pLogicalDevice->depthFormats.size())
-                pLogicalDevice->depthFormats.erase(pLogicalDevice->depthFormats.begin() + i);
 
             DepthState depth = getDepthState(pLogicalDevice);
             for (auto& [swapchainHandle, pLogicalSwapchain] : swapchainMap)

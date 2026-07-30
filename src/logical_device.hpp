@@ -27,9 +27,17 @@ namespace vkBasalt
         VkCommandPool            commandPool;
         bool                     supportsMutableFormat;
         bool                     supportsStorageImageWithoutFormat = false;
-        std::vector<VkImage>     depthImages;
-        std::vector<VkFormat>    depthFormats;
-        std::vector<VkImageView> depthImageViews;
+        // One record per depth image. Three parallel vectors indexed positionally used to drift
+        // apart, because a view was only appended when the image being bound happened to be the
+        // one created last, which is not true when an application creates images from several
+        // threads. A record cannot drift from itself.
+        struct DepthImage
+        {
+            VkImage     image  = VK_NULL_HANDLE;
+            VkFormat    format = VK_FORMAT_UNDEFINED;
+            VkImageView view   = VK_NULL_HANDLE;
+        };
+        std::vector<DepthImage>  depthImages;
 
         std::unique_ptr<OverlayPersistentState> overlayPersistentState;
 
