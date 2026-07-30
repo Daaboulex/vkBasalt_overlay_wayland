@@ -328,6 +328,16 @@ before UI compositing and with a negative mip bias, neither of which is availabl
 here. For a genuine render-scale use gamescope's `-F fsr`, or Proton's fullscreen
 FSR, both of which sit above the game's resolution choice rather than below it.
 
+Reporting a smaller surface size to make the game draw less does not work either,
+and not for the reason you might expect: DXVK would honour it, but the game's
+backbuffer is sized above Vulkan and DXVK simply scales that full-size frame down
+into the smaller swapchain. The game still draws every pixel, and the picture is
+resampled twice.
+
+FSR 1 itself is available as a community ReShade shader (`FSR1_2X` and similar),
+which this fork compiles. Those are quality filters that supersample and come
+back down, so they cost more GPU time rather than less.
+
 ReShade FX effects are compiled at runtime using an embedded ReShade shader compiler. Parameters are managed through the `EffectRegistry` (single source of truth for all runtime parameter values).
 
 ### Wayland Interposition
