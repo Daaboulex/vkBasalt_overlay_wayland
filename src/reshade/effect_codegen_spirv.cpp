@@ -1255,6 +1255,36 @@ private:
 							.add(result)
 							.result;
 					}
+
+					// The conversion above only changes the component type, so a cast that also
+					// widens has to broadcast; without this a scalar stays a scalar and every
+					// later instruction expecting the wider type is malformed.
+					if (op.from.components() == 1 && op.to.components() > 1)
+					{
+						if (op.to.is_matrix() && op.to.rows > 1)
+						{
+							auto column_type = op.to;
+							column_type.rows = op.to.cols;
+							column_type.cols = 1;
+
+							const std::vector<spv::Id> elements(op.to.cols, result);
+							const spv::Id column = add_instruction(spv::OpCompositeConstruct, convert_type(column_type))
+								.add(elements.begin(), elements.end())
+								.result;
+
+							const std::vector<spv::Id> columns(op.to.rows, column);
+							result = add_instruction(spv::OpCompositeConstruct, convert_type(op.to))
+								.add(columns.begin(), columns.end())
+								.result;
+						}
+						else
+						{
+							const std::vector<spv::Id> elements(op.to.components(), result);
+							result = add_instruction(spv::OpCompositeConstruct, convert_type(op.to))
+								.add(elements.begin(), elements.end())
+								.result;
+						}
+					}
 				}
 				break;
 			case expression::operation::op_member:
@@ -1473,7 +1503,26 @@ private:
 					}
 					else
 					{
-						assert(false);
+						// A matrix swizzle writing more than one component, as m._m00_m11 = v.
+						for (unsigned int c = 0; c < 4 && op.swizzle[c] >= 0; ++c)
+						{
+							const spv::Id component = add_instruction(spv::OpCompositeExtract, convert_type({ base_type.base, 1, 1 }))
+								.add(value)
+								.add(c)
+								.result;
+
+							const unsigned int row = op.swizzle[c] / 4;
+							const unsigned int column = op.swizzle[c] - row * 4;
+
+							result = add_instruction(spv::OpCompositeInsert, convert_type(base_type))
+								.add(component) // Object
+								.add(result) // Composite
+								.add(row)
+								.add(column)
+								.result;
+						}
+
+						value = result;
 					}
 					break;
 				}
@@ -1714,6 +1763,41 @@ private:
 		}
 
 		add_location(loc, *_current_block_data);
+
+		// These operate component-wise, but SPIR-V only accepts scalars and vectors, so a
+		// matrix has to be taken apart into its columns and put back together.
+		if (res_type.is_matrix() && res_type.rows > 1)
+		{
+			auto column_type = res_type;
+			column_type.rows = res_type.cols;
+			column_type.cols = 1;
+
+			std::vector<spv::Id> columns;
+			for (unsigned int i = 0; i < res_type.rows; ++i)
+			{
+				const spv::Id lhs_column = add_instruction(spv::OpCompositeExtract, convert_type(column_type))
+					.add(lhs)
+					.add(i)
+					.result;
+				const spv::Id rhs_column = add_instruction(spv::OpCompositeExtract, convert_type(column_type))
+					.add(rhs)
+					.add(i)
+					.result;
+
+				spirv_instruction &column = add_instruction(spv_op, convert_type(column_type));
+				column.add(lhs_column);
+				column.add(rhs_column);
+
+				if (res_type.has(type::q_precise))
+					add_decoration(column.result, spv::DecorationNoContraction);
+
+				columns.push_back(column.result);
+			}
+
+			return add_instruction(spv::OpCompositeConstruct, convert_type(res_type))
+				.add(columns.begin(), columns.end())
+				.result;
+		}
 
 		spirv_instruction &inst = add_instruction(spv_op, convert_type(res_type));
 		inst.add(lhs); // Operand 1

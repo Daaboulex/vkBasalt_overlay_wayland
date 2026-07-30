@@ -366,7 +366,8 @@ IMPLEMENT_INTRINSIC_HLSL(f32tof16, 0, {
 	code += "f32tof16(" + id_to_name(args[0].base) + ')';
 	})
 IMPLEMENT_INTRINSIC_SPIRV(f32tof16, 0, {
-	const spv::Id zero = emit_constant(0.0f);
+	constant zero_data = {};
+	const spv::Id zero = emit_constant({ type::t_float, 1, 1 }, zero_data);
 	const spv::Id mask = emit_constant(0xFFFFu);
 	const unsigned int rows = res_type.rows;
 

@@ -3,7 +3,12 @@
 Measured, not estimated. Every `.fx` in the shader packs listed below was compiled
 through this layer's own compile environment and the result recorded.
 
-**Result as of 2026-07-30: 460 of 504 shaders compile (91%).**
+**Result as of 2026-07-30: 434 of 504 shaders compile to valid SPIR-V (86%).**
+
+A further 27 compile but emit SPIR-V a driver would reject; they are counted as
+failures here, not as passes. 43 do not compile. Compiling is not the same as
+working, so the corpus validates every module it emits and an invalid one is
+demoted rather than reported green.
 
 ## What was tested
 
@@ -32,7 +37,7 @@ retroluxfilm/reshade-vrtoolkit, smolbbsoop/smolbbsoopshaders,
 umar-afzaal/LumeniteFX, vortigern11/vort_Shaders, yplebedev/BFBFX,
 Zenteon/ZenteonFX
 
-## Why the 44 remaining shaders do not compile
+## Why the remaining shaders do not work
 
 **Declares a newer ReShade than this build implements (29, category
 `PREPROCESSOR`).** The shader's own `#error` fires and names what it wants. The

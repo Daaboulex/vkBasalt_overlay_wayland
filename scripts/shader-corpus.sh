@@ -20,6 +20,9 @@ trap 'rm -rf "$WORK"' EXIT
 TESTER=$(nix build "$ROOT#vkbasalt-overlay" --no-link --print-out-paths 2>/dev/null | head -1)/bin/vkbasalt-test-shaders
 [ -x "$TESTER" ] || { echo "could not build vkbasalt-test-shaders"; exit 1; }
 
+SPIRV_VAL=$(nix build nixpkgs#spirv-tools --no-link --print-out-paths 2>/dev/null | head -1)/bin/spirv-val
+[ -x "$SPIRV_VAL" ] || { echo "could not get spirv-val"; exit 1; }
+
 IDX=$(nix eval --impure --raw --expr \
   'toString (builtins.fetchGit { url = "https://github.com/crosire/reshade-shaders"; ref = "list"; })' 2>/dev/null)
 [ -n "$IDX" ] || { echo "could not fetch the package index"; exit 1; }
@@ -46,10 +49,27 @@ while read -r p; do
 done < "$WORK/packs.txt" | sort -u > "$WORK/dirs.txt"
 
 mapfile -t DIRS < "$WORK/dirs.txt"
-"$TESTER" "${DIRS[@]}" > "$WORK/report.txt" 2>&1
+mkdir -p "$WORK/spv"
+"$TESTER" --dump-spirv "$WORK/spv" "${DIRS[@]}" > "$WORK/report.txt" 2>&1
 
-grep -E "^(PASS|WARN|FAIL) " "$WORK/report.txt" | awk '{print $1, $2}' | sort > "$WORK/verdicts.txt"
+grep -E "^(PASS|WARN|FAIL) " "$WORK/report.txt" | awk '{print $1, $2}' | sort > "$WORK/raw-verdicts.txt"
 grep -E "  RESULTS:" "$WORK/report.txt"
+
+# Compiling is not working: a module the driver would reject is not a pass. Every
+# emitted module is validated, and a shader whose SPIR-V is invalid is demoted.
+: > "$WORK/invalid.txt"
+for spv in "$WORK"/spv/*.spv; do
+  [ -e "$spv" ] || continue
+  err=$("$SPIRV_VAL" --target-env vulkan1.1 "$spv" 2>&1) && continue
+  # A file with no technique emits no entry point. That is not a miscompilation.
+  grep -q "No OpEntryPoint instruction was found" <<< "$err" && continue
+  basename "$spv" .spv >> "$WORK/invalid.txt"
+done
+sort -u -o "$WORK/invalid.txt" "$WORK/invalid.txt"
+echo "  SPIR-V: $(wc -l < "$WORK/invalid.txt") of $(ls "$WORK"/spv/*.spv 2>/dev/null | wc -l) emitted modules are invalid"
+
+awk 'NR==FNR { bad[$1]=1; next } { print ($2 in bad) ? "INVALID " $2 : $0 }' \
+  "$WORK/invalid.txt" "$WORK/raw-verdicts.txt" | sort > "$WORK/verdicts.txt"
 
 if [ "$RECORD" -eq 1 ]; then
   mkdir -p "$(dirname "$BASELINE")"
