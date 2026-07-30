@@ -86,6 +86,7 @@ static void addStandardMacros(reshadefx::preprocessor& pp)
     pp.add_macro_definition("BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)");
     pp.add_macro_definition("BUFFER_COLOR_DEPTH", "8");
     pp.add_macro_definition("BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH");
+    pp.add_macro_definition("BUFFER_COLOR_SPACE", "1");
 }
 
 
@@ -552,6 +553,7 @@ int main(int argc, char* argv[])
             {"BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)"},
             {"BUFFER_COLOR_DEPTH", "8"},
             {"BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH"},
+            {"BUFFER_COLOR_SPACE", "1"},
         };
 
         for (const std::string& path : compiledPaths)

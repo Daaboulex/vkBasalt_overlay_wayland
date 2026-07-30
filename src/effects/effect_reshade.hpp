@@ -25,7 +25,8 @@ namespace vkBasalt
     // The compile cache is keyed on these, so anything that wants a cache hit for an effect must
     // ask for them here rather than assemble its own copy.
     std::vector<std::pair<std::string, std::string>> reshadeCompileDefines(
-        VkExtent2D extent, VkFormat unormFormat, const std::vector<PreprocessorDefinition>& customDefs);
+        VkExtent2D extent, VkFormat unormFormat, VkColorSpaceKHR colorSpace,
+        const std::vector<PreprocessorDefinition>& customDefs);
 
     class ReshadeEffect : public Effect
     {
@@ -33,6 +34,7 @@ namespace vkBasalt
         ReshadeEffect(LogicalDevice*       pLogicalDevice,
                       VkFormat             format,
                       VkExtent2D           imageExtent,
+                      VkColorSpaceKHR      colorSpace,
                       std::vector<VkImage> inputImages,
                       std::vector<VkImage> outputImages,
                       EffectRegistry*      pEffectRegistry,
@@ -94,6 +96,7 @@ namespace vkBasalt
         reshadefx::module                     module;
         std::vector<VkDeviceMemory>           textureMemory;
 
+        VkColorSpaceKHR colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
         VkFormat    inputOutputFormatUNORM;
         VkFormat    inputOutputFormatSRGB;
         VkFormat    stencilFormat;

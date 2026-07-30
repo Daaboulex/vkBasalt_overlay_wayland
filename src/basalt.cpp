@@ -561,6 +561,7 @@ namespace vkBasalt
                     {
                         pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new ReshadeEffect(
                             pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent,
+                            pLogicalSwapchain->swapchainCreateInfo.imageColorSpace,
                             firstImages, secondImages, &effectRegistry, effectStrings[i], effectPath, customDefs)));
                     }
                     catch (const std::exception& e)
@@ -1154,7 +1155,8 @@ namespace vkBasalt
     // Caller HOLDS globalLock.
     std::vector<EffectCompileRequest> gatherEffectCompileRequests(const std::vector<std::string>& effectNames,
                                                                  VkExtent2D                      extent,
-                                                                 VkFormat                        unormFormat)
+                                                                 VkFormat                        unormFormat,
+                                                                 VkColorSpaceKHR                 colorSpace)
     {
         std::vector<EffectCompileRequest> requests;
 
@@ -1164,7 +1166,7 @@ namespace vkBasalt
             if (path.empty())
                 continue;
 
-            requests.push_back({std::move(path), reshadeCompileDefines(extent, unormFormat, effectRegistry.getPreprocessorDefs(name))});
+            requests.push_back({std::move(path), reshadeCompileDefines(extent, unormFormat, colorSpace, effectRegistry.getPreprocessorDefs(name))});
         }
 
         return requests;
@@ -1208,7 +1210,8 @@ namespace vkBasalt
 
             requests = gatherEffectCompileRequests(effectRegistry.getSelectedEffects(),
                                                    pLogicalSwapchain->imageExtent,
-                                                   convertToUNORM(pLogicalSwapchain->format));
+                                                   convertToUNORM(pLogicalSwapchain->format),
+                                                   pLogicalSwapchain->swapchainCreateInfo.imageColorSpace);
         }
 
         runEffectCompileWarmUp(requests);
@@ -1520,7 +1523,8 @@ namespace vkBasalt
                         continue;
 
                     std::vector<EffectCompileRequest> forSwapchain = gatherEffectCompileRequests(
-                        activeEffects, pSwapchain->imageExtent, convertToUNORM(pSwapchain->format));
+                        activeEffects, pSwapchain->imageExtent, convertToUNORM(pSwapchain->format),
+                        pSwapchain->swapchainCreateInfo.imageColorSpace);
                     requests.insert(requests.end(), forSwapchain.begin(), forSwapchain.end());
                 }
 

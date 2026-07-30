@@ -32,8 +32,22 @@
 namespace vkBasalt
 {
     std::vector<std::pair<std::string, std::string>> reshadeCompileDefines(
-        VkExtent2D extent, VkFormat unormFormat, const std::vector<PreprocessorDefinition>& customDefs)
+        VkExtent2D extent, VkFormat unormFormat, VkColorSpaceKHR colorSpace,
+        const std::vector<PreprocessorDefinition>& customDefs)
     {
+        // ReShade reports the swapchain's colour space to the shader. Shaders branch on it, so
+        // leaving it undefined silently compiles the wrong path: it evaluates to 0, which is their
+        // CSP_UNKNOWN. The numbers are ReShade's, not ours.
+        const char* colorSpaceValue = "0";
+        switch (colorSpace)
+        {
+            case VK_COLOR_SPACE_SRGB_NONLINEAR_KHR:        colorSpaceValue = "1"; break;
+            case VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT:  colorSpaceValue = "2"; break;
+            case VK_COLOR_SPACE_HDR10_ST2084_EXT:          colorSpaceValue = "3"; break;
+            case VK_COLOR_SPACE_HDR10_HLG_EXT:             colorSpaceValue = "4"; break;
+            default: break;
+        }
+
         std::vector<std::pair<std::string, std::string>> defines = {
             {"BUFFER_WIDTH", std::to_string(extent.width)},
             {"BUFFER_HEIGHT", std::to_string(extent.height)},
@@ -41,6 +55,7 @@ namespace vkBasalt
             {"BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)"},
             {"BUFFER_COLOR_DEPTH", (unormFormat == VK_FORMAT_A2R10G10B10_UNORM_PACK32) ? "10" : "8"},
             {"BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH"},
+            {"BUFFER_COLOR_SPACE", colorSpaceValue},
         };
 
         for (const auto& def : customDefs)
@@ -52,6 +67,7 @@ namespace vkBasalt
     ReshadeEffect::ReshadeEffect(LogicalDevice*       pLogicalDevice,
                                  VkFormat             format,
                                  VkExtent2D           imageExtent,
+                                 VkColorSpaceKHR      colorSpace,
                                  std::vector<VkImage> inputImages,
                                  std::vector<VkImage> outputImages,
                                  EffectRegistry*      pEffectRegistry,
@@ -63,6 +79,7 @@ namespace vkBasalt
 
         this->pLogicalDevice        = pLogicalDevice;
         this->imageExtent           = imageExtent;
+        this->colorSpace            = colorSpace;
         this->inputImages           = inputImages;
         this->outputImages          = outputImages;
         this->pEffectRegistry       = pEffectRegistry;
@@ -1540,7 +1557,7 @@ namespace vkBasalt
     void ReshadeEffect::createReshadeModule()
     {
         std::vector<std::pair<std::string, std::string>> defines =
-            reshadeCompileDefines(imageExtent, inputOutputFormatUNORM, customPreprocessorDefs);
+            reshadeCompileDefines(imageExtent, inputOutputFormatUNORM, colorSpace, customPreprocessorDefs);
         for (const auto& def : customPreprocessorDefs)
             Logger::debug("  custom macro: " + def.name + " = " + def.value);
 
