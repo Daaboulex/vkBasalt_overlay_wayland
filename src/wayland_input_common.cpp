@@ -12,6 +12,9 @@ namespace vkBasalt
     static wl_registry* registry = nullptr;
     static wl_seat* seat = nullptr;
     static bool commonInitialized = false;
+    static bool noDisplayWarned = false;
+    static unsigned handshakeAttempts = 0;
+    static constexpr unsigned maxHandshakeAttempts = 10;
 
     static uint64_t dispatchFrameId = 0;
     static uint64_t lastDispatchedFrame = 0;
@@ -88,11 +91,20 @@ namespace vkBasalt
         if (commonInitialized)
             return seat != nullptr;
 
-        // Not latched until the registry exists, so a failed early attempt
-        // (display not yet captured) is retried on the next call.
+        // Not latched until the handshake succeeds, so a failed attempt
+        // (display not yet captured, or a failed roundtrip) is retried.
         wl_display* display = getWaylandDisplay();
         if (!display)
+        {
+            if (!noDisplayWarned)
+            {
+                noDisplayWarned = true;
+                Logger::warn("Wayland: no display captured in this process -- overlay input unavailable. The layer can only "
+                             "borrow the display the application passes to vkCreateWaylandSurfaceKHR; under wine this needs "
+                             "the LD_AUDIT shim that vkbasalt-run sets.");
+            }
             return false;
+        }
 
         displayWrapper = (wl_display*)wl_proxy_create_wrapper(display);
         if (!displayWrapper)
@@ -111,11 +123,34 @@ namespace vkBasalt
         registry = wl_display_get_registry(displayWrapper);
         wl_registry_add_listener(registry, &registryListener, nullptr);
 
-        commonInitialized = true;
-
         // Two roundtrips: the first delivers the globals, the second the seat capabilities.
-        if (wl_display_roundtrip_queue(display, queue) < 0 || wl_display_roundtrip_queue(display, queue) < 0)
-            Logger::warn("Wayland: registry roundtrip failed (display error " + std::to_string(wl_display_get_error(display)) + ")");
+        bool handshake = wl_display_roundtrip_queue(display, queue) >= 0 && wl_display_roundtrip_queue(display, queue) >= 0;
+
+        if (!handshake)
+        {
+            // The compositor announces wl_seat once, during this handshake, so a
+            // failed one cannot be recovered by waiting for a later global.
+            handshakeAttempts++;
+            Logger::warn("Wayland: registry roundtrip failed (display error " + std::to_string(wl_display_get_error(display))
+                         + "), attempt " + std::to_string(handshakeAttempts) + " of " + std::to_string(maxHandshakeAttempts));
+
+            wl_registry_destroy(registry);
+            registry = nullptr;
+            wl_event_queue_destroy(queue);
+            queue = nullptr;
+            wl_proxy_wrapper_destroy(displayWrapper);
+            displayWrapper = nullptr;
+
+            if (handshakeAttempts >= maxHandshakeAttempts)
+            {
+                commonInitialized = true;
+                Logger::err("Wayland: registry handshake failed " + std::to_string(maxHandshakeAttempts)
+                            + " times -- giving up, overlay input stays unavailable in this process");
+            }
+            return false;
+        }
+
+        commonInitialized = true;
 
         if (seat)
             Logger::info("Wayland: shared input resources initialized");
@@ -185,6 +220,8 @@ namespace vkBasalt
         keyboardBind = nullptr;
         pointerBind = nullptr;
         commonInitialized = false;
+        noDisplayWarned = false;
+        handshakeAttempts = 0;
     }
 
 } // namespace vkBasalt
