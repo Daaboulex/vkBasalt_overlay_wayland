@@ -1,4 +1,29 @@
-# lsfg-order-testing -- test protocol
+# Testing
+
+## Automated, run these
+
+Four surfaces, none of which need a GPU. The first three are one command each;
+the flake checks run on every commit.
+
+| What | Command | Proves |
+| --- | --- | --- |
+| Build checks | `nix flake check` | Every invariant the layer relies on, each ablation-verified |
+| Shader corpus | `scripts/shader-corpus.sh` | Every shader in ReShade's official index still compiles, and the SPIR-V it emits is valid; diffed against `test/shader-corpus-baseline.txt` |
+| Layer order | `scripts/layer-matrix.sh` | The layer survives a frame-generation layer above and below it, on lavapipe with a mock that copies lsfg-vk's present behaviour |
+| Queue waits | `scripts/queue-wait-bench.sh` | What a queue drain costs against waiting on our own submission |
+
+The corpus needs network access, because it clones the shader packs. The other
+three do not.
+
+`scripts/shader-corpus.sh --record` accepts a run as the new baseline. Do that
+only when the change in verdicts is the point of the commit.
+
+## Manual: lsfg-order-testing protocol
+
+The section below is the hand protocol for testing against real lsfg-vk on
+hardware, which `scripts/layer-matrix.sh` approximates but cannot replace.
+
+### lsfg-order-testing protocol
 
 Goal of this branch: make the efficient layer order work --
 `game -> vkBasalt -> LSFG-VK -> (MangoHud)` -- so vkBasalt processes only the
