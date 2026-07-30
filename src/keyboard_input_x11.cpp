@@ -84,9 +84,18 @@ namespace vkBasalt
             }
             else
             {
-                display = std::unique_ptr<Display, std::function<void(Display*)>>(XOpenDisplay(disVar), [](Display* d) { XCloseDisplay(d); });
-                usesX11 = 1;
-                Logger::debug("X11 support");
+                Display* opened = XOpenDisplay(disVar);
+                if (!opened)
+                {
+                    usesX11 = 0;
+                    Logger::warn("X11: DISPLAY is set but the server is unreachable -- overlay key input unavailable");
+                }
+                else
+                {
+                    display = std::unique_ptr<Display, std::function<void(Display*)>>(opened, [](Display* d) { XCloseDisplay(d); });
+                    usesX11 = 1;
+                    Logger::debug("X11 support");
+                }
             }
         }
 

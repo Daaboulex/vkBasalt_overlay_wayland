@@ -470,7 +470,6 @@ namespace vkBasalt
         initInfo.PipelineInfoMain.RenderPass = renderPass;
 
         ImGui_ImplVulkan_Init(&initInfo);
-        backendInitialized = true;
 
         this->swapchainFormat = swapchainFormat;
         this->imageCount = imageCount;
@@ -510,6 +509,7 @@ namespace vkBasalt
                 Logger::err("Failed to create ImGui fence " + std::to_string(i) + ": " + std::to_string(vr));
         }
 
+        backendInitialized = true;
         Logger::debug("ImGui Vulkan backend initialized");
     }
 
@@ -517,6 +517,12 @@ namespace vkBasalt
     {
         if (!backendInitialized || !visible)
             return VK_NULL_HANDLE;
+
+        if (imageIndex >= commandBuffers.size() || imageIndex >= commandBufferFences.size())
+        {
+            Logger::err("ImGui overlay: image index outside the allocated command buffers");
+            return VK_NULL_HANDLE;
+        }
 
         currentWidth = width;
         currentHeight = height;

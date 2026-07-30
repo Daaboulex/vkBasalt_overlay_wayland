@@ -63,8 +63,6 @@ static std::unordered_map<wl_keyboard*, GameKeyboardData> gameKeyboards;
 
 static void wp_enter(void* data, wl_pointer* p, uint32_t serial, wl_surface* s, wl_fixed_t x, wl_fixed_t y)
 {
-    if (vkBasalt::isInputBlocked())
-        return;
     std::lock_guard<std::mutex> lock(gameDataMutex);
     auto it = gamePointers.find(p);
     if (it != gamePointers.end() && it->second.original.enter)
@@ -116,8 +114,6 @@ static void wp_axis(void* data, wl_pointer* p, uint32_t time, uint32_t axis, wl_
 
 static void wp_frame(void* data, wl_pointer* p)
 {
-    if (vkBasalt::isInputBlocked())
-        return;
     std::lock_guard<std::mutex> lock(gameDataMutex);
     auto it = gamePointers.find(p);
     if (it != gamePointers.end() && it->second.original.frame)
@@ -188,8 +184,10 @@ static const wl_pointer_listener wrapperPointerListener = {
     .axis_relative_direction = wp_axis_relative_direction,
 };
 
-// leave, keymap, modifiers, and repeat_info are always forwarded so the game's
-// input state stays consistent while blocked.
+// enter, leave, frame, keymap, modifiers, and repeat_info are always forwarded
+// so the game's input state stays consistent while blocked: a game that misses
+// enter believes the pointer is still outside its surface and never
+// re-establishes its own cursor clip, letting the cursor escape the window.
 
 static void wk_keymap(void* data, wl_keyboard* kb, uint32_t format, int32_t fd, uint32_t size)
 {
@@ -201,8 +199,6 @@ static void wk_keymap(void* data, wl_keyboard* kb, uint32_t format, int32_t fd, 
 
 static void wk_enter(void* data, wl_keyboard* kb, uint32_t serial, wl_surface* s, wl_array* keys)
 {
-    if (vkBasalt::isInputBlocked())
-        return;
     std::lock_guard<std::mutex> lock(gameDataMutex);
     auto it = gameKeyboards.find(kb);
     if (it != gameKeyboards.end() && it->second.original.enter)

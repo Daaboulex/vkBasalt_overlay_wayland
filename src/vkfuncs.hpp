@@ -3,6 +3,7 @@
     FORVKFUNC(DestroyInstance) \
     FORVKFUNC(EnumerateDeviceExtensionProperties) \
     FORVKFUNC(GetInstanceProcAddr) \
+    FORVKFUNC(GetPhysicalDeviceFeatures) \
     FORVKFUNC(GetPhysicalDeviceFormatProperties) \
     FORVKFUNC(GetPhysicalDeviceMemoryProperties) \
     FORVKFUNC(GetPhysicalDeviceQueueFamilyProperties) \

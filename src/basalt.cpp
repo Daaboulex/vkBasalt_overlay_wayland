@@ -720,6 +720,9 @@ namespace vkBasalt
         modifiedCreateInfo.pApplicationInfo = &appInfo;
         VkResult ret                        = createFunc(&modifiedCreateInfo, pAllocator, pInstance);
 
+        if (ret != VK_SUCCESS)
+            return ret;
+
         InstanceDispatch dispatchTable;
         fillDispatchTableInstance(*pInstance, gpa, &dispatchTable);
 
@@ -785,13 +788,22 @@ namespace vkBasalt
             physicalDevice, nullptr, &extensionCount, extensionProperties.data());
 
         bool supportsMutableFormat = false;
+        bool supportsSwapchain     = false;
+        bool supportsMaintenance2  = false;
         for (VkExtensionProperties properties : extensionProperties)
         {
             if (properties.extensionName == std::string("VK_KHR_swapchain_mutable_format"))
             {
                 Logger::debug("device supports VK_KHR_swapchain_mutable_format");
                 supportsMutableFormat = true;
-                break;
+            }
+            else if (properties.extensionName == std::string("VK_KHR_swapchain"))
+            {
+                supportsSwapchain = true;
+            }
+            else if (properties.extensionName == std::string("VK_KHR_maintenance2"))
+            {
+                supportsMaintenance2 = true;
             }
         }
 
@@ -806,10 +818,22 @@ namespace vkBasalt
                                                              modifiedCreateInfo.ppEnabledExtensionNames + modifiedCreateInfo.enabledExtensionCount);
         }
 
-        if (supportsMutableFormat)
+        if (supportsSwapchain)
+        {
+            addUniqueCString(enabledExtensionNames, "VK_KHR_swapchain");
+        }
+        if (supportsMutableFormat && supportsSwapchain)
         {
             Logger::debug("activating mutable_format");
             addUniqueCString(enabledExtensionNames, "VK_KHR_swapchain_mutable_format");
+            if (deviceProps.apiVersion < VK_API_VERSION_1_1 && supportsMaintenance2)
+            {
+                addUniqueCString(enabledExtensionNames, "VK_KHR_maintenance2");
+            }
+        }
+        else
+        {
+            supportsMutableFormat = false;
         }
         if (deviceProps.apiVersion < VK_API_VERSION_1_2 || instanceVersionMap[GetKey(physicalDevice)] < VK_API_VERSION_1_2)
         {
@@ -818,13 +842,41 @@ namespace vkBasalt
         modifiedCreateInfo.ppEnabledExtensionNames = enabledExtensionNames.data();
         modifiedCreateInfo.enabledExtensionCount   = enabledExtensionNames.size();
 
-        VkPhysicalDeviceFeatures deviceFeatures = {};
-        if (modifiedCreateInfo.pEnabledFeatures)
+        VkPhysicalDeviceFeatures supportedFeatures = {};
+        instanceDispatchMap[GetKey(physicalDevice)].GetPhysicalDeviceFeatures(physicalDevice, &supportedFeatures);
+
+        VkPhysicalDeviceFeatures2* appFeatures2 = nullptr;
+        for (VkBaseOutStructure* s = (VkBaseOutStructure*) modifiedCreateInfo.pNext; s; s = s->pNext)
         {
-            deviceFeatures = *(modifiedCreateInfo.pEnabledFeatures);
+            if (s->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2)
+            {
+                appFeatures2 = (VkPhysicalDeviceFeatures2*) s;
+                break;
+            }
         }
-        deviceFeatures.shaderImageGatherExtended = VK_TRUE;
-        modifiedCreateInfo.pEnabledFeatures      = &deviceFeatures;
+
+        bool alreadyRequested = appFeatures2 ? appFeatures2->features.shaderImageGatherExtended == VK_TRUE
+                                            : (modifiedCreateInfo.pEnabledFeatures
+                                               && modifiedCreateInfo.pEnabledFeatures->shaderImageGatherExtended == VK_TRUE);
+
+        VkPhysicalDeviceFeatures deviceFeatures = {};
+        if (!alreadyRequested && !supportedFeatures.shaderImageGatherExtended)
+        {
+            Logger::warn("device does not support shaderImageGatherExtended -- ReShade effects that gather with offsets will fail to compile");
+        }
+        else if (!alreadyRequested && appFeatures2)
+        {
+            appFeatures2->features.shaderImageGatherExtended = VK_TRUE;
+        }
+        else if (!alreadyRequested)
+        {
+            if (modifiedCreateInfo.pEnabledFeatures)
+            {
+                deviceFeatures = *(modifiedCreateInfo.pEnabledFeatures);
+            }
+            deviceFeatures.shaderImageGatherExtended = VK_TRUE;
+            modifiedCreateInfo.pEnabledFeatures      = &deviceFeatures;
+        }
 
         VkResult ret = createFunc(physicalDevice, &modifiedCreateInfo, pAllocator, pDevice);
 
