@@ -2,14 +2,15 @@
 
 ## Automated, run these
 
-Four surfaces, none of which need a GPU. The first three are one command each;
-the flake checks run on every commit.
+Five surfaces, none of which need a GPU. Four are one command each; the flake
+checks run on every commit.
 
 | What | Command | Proves |
 | --- | --- | --- |
 | Build checks | `nix flake check` | Every invariant the layer relies on, each ablation-verified |
 | Shader corpus | `scripts/shader-corpus.sh` | Every shader in ReShade's official index still compiles, and the SPIR-V it emits is valid; diffed against `test/shader-corpus-baseline.txt` |
 | Layer order | `scripts/layer-matrix.sh` | The layer survives a frame-generation layer above and below it, on lavapipe with a mock that copies lsfg-vk's present behaviour |
+| End to end | `scripts/e2e-smoke.sh` | The built layer loads into a real application, compiles and applies an effect, writes its cache under `$XDG_CACHE_HOME` and its config under `$XDG_CONFIG_HOME`, and creates nothing anywhere else |
 | Queue waits | `scripts/queue-wait-bench.sh` | What a queue drain costs against waiting on our own submission |
 
 The corpus needs network access, because it clones the shader packs. The other

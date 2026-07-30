@@ -1153,8 +1153,16 @@ namespace vkBasalt
                                                &memoryBarrier);
 
 
-        pLogicalDevice->vkd.CmdBindDescriptorSets(
-            commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &(inputDescriptorSets[imageIndex]), 0, nullptr);
+        // An effect with no samplers gets no descriptor sets allocated at all, so every one of
+        // these has to be checked before it is indexed. Reading past the end handed the driver a
+        // wild pointer and took the host process down with it.
+        const auto bindSet = [&](VkPipelineBindPoint bindPoint, uint32_t firstSet, const std::vector<VkDescriptorSet>& sets) {
+            if (imageIndex < sets.size())
+                pLogicalDevice->vkd.CmdBindDescriptorSets(
+                    commandBuffer, bindPoint, pipelineLayout, firstSet, 1, &sets[imageIndex], 0, nullptr);
+        };
+
+        bindSet(VK_PIPELINE_BIND_POINT_GRAPHICS, 1, inputDescriptorSets);
 
         if (bufferSize)
         {
@@ -1199,8 +1207,7 @@ namespace vkBasalt
 
                 pLogicalDevice->vkd.CmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, graphicsPipelines[i]);
 
-                pLogicalDevice->vkd.CmdBindDescriptorSets(
-                    commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 1, 1, &(inputDescriptorSets[imageIndex]), 0, nullptr);
+                bindSet(VK_PIPELINE_BIND_POINT_COMPUTE, 1, inputDescriptorSets);
 
                 if (bufferSize)
                 {
@@ -1208,11 +1215,7 @@ namespace vkBasalt
                         commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &bufferDescriptorSet, 0, nullptr);
                 }
 
-                if (!storageDescriptorSets.empty())
-                {
-                    pLogicalDevice->vkd.CmdBindDescriptorSets(
-                        commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 2, 1, &(storageDescriptorSets[imageIndex]), 0, nullptr);
-                }
+                bindSet(VK_PIPELINE_BIND_POINT_COMPUTE, 2, storageDescriptorSets);
 
                 pLogicalDevice->vkd.CmdDispatch(commandBuffer, passInfo.viewport_width, passInfo.viewport_height, passInfo.dispatch_z);
 
@@ -1250,15 +1253,9 @@ namespace vkBasalt
             if (switchSamplers[i] && outputWrites > 1)
             {
                 if (backBufferNext)
-                {
-                    pLogicalDevice->vkd.CmdBindDescriptorSets(
-                        commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &(backBufferDescriptorSets[imageIndex]), 0, nullptr);
-                }
+                    bindSet(VK_PIPELINE_BIND_POINT_GRAPHICS, 1, backBufferDescriptorSets);
                 else if (outputWrites > 2)
-                {
-                    pLogicalDevice->vkd.CmdBindDescriptorSets(
-                        commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &(outputDescriptorSets[imageIndex]), 0, nullptr);
-                }
+                    bindSet(VK_PIPELINE_BIND_POINT_GRAPHICS, 1, outputDescriptorSets);
                 backBufferNext = !backBufferNext;
             }
 
