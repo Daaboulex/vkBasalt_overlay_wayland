@@ -1,9 +1,5 @@
 FAIL AO
-FAIL Bessel_Bloom
-FAIL BilateralCS
 FAIL BulgePinch
-FAIL BX_ToyCurveTool
-FAIL BX_XChannelCurve
 FAIL BX_XIV_ChromakeyPlus
 FAIL CMAA_2
 FAIL crt-royale
@@ -11,7 +7,6 @@ FAIL CubeLUT1D
 FAIL CubeLUT3D
 FAIL Drunk
 FAIL FILMDECK
-FAIL FSR1_2X
 FAIL GI
 FAIL lilium__blue_noise_dithering
 FAIL lilium__cas_hdr
@@ -25,7 +20,6 @@ FAIL lilium__rcas_hdr
 FAIL lilium__sdr_trc_fix
 FAIL lilium__test_pattern_generator
 FAIL lilium__tone_mapping
-FAIL LocalContrastCS
 FAIL MartysMods_CHROMATICABERRATION
 FAIL MartysMods_FILMGRAIN
 FAIL MartysMods_FLOYDSTEINBERG
@@ -96,11 +90,14 @@ PASS BaBa_VividTone
 PASS BaBa_XeGTAO
 PASS BAYER
 PASS BeforeAfter
+PASS Bessel_Bloom
 PASS BilateralComic
+PASS BilateralCS
 PASS BloomingHDR
 PASS blur
 PASS Border
 PASS Bumpmapping
+PASS BX_ToyCurveTool
 PASS CA
 PASS CanvasFog
 PASS CanvasMask
@@ -233,6 +230,7 @@ PASS Flipbook
 PASS FocalDOF
 PASS FramerateLimiter
 PASS Frequency_CS
+PASS FSR1_2X
 PASS FXAA
 PASS GAUSSIAN
 PASS GaussianBloom
@@ -273,6 +271,7 @@ PASS LightPersistance
 PASS Limbo_Mod
 PASS LiquidLens
 PASS LocalContrast
+PASS LocalContrastCS
 PASS LumaLines
 PASS LumaSharpen
 PASS lumenite_AnamorphicBloom
@@ -426,6 +425,7 @@ WARN AdaptiveFog
 WARN ATMOSPHERE
 WARN BasicCRT
 WARN BETA_ZenRCAO
+WARN BX_XChannelCurve
 WARN Cathode
 WARN cDots
 WARN Chromaticity

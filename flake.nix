@@ -137,6 +137,19 @@
             touch $out
           '';
 
+          # The compiler emits compute entry points, so the renderer must either
+          # dispatch them or refuse them. Doing neither renders nothing at all.
+          checks.compute-pass-is-never-silently-ignored =
+            pkgs.runCommand "compute-pass-is-never-silently-ignored" { }
+              ''
+                src=${./src/effects/effect_reshade.cpp}
+                if ! grep -q 'CmdDispatch' "$src" && ! grep -q 'cs_entry_point' "$src"; then
+                  echo "a compute pass is neither dispatched nor refused -- such an effect would silently render nothing"
+                  exit 1
+                fi
+                touch $out
+              '';
+
           checks.reshade-input-map =
             pkgs.runCommand "reshade-input-map" { nativeBuildInputs = [ pkgs.gcc ]; }
               ''

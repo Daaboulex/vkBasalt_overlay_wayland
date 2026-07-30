@@ -2022,6 +2022,66 @@ IMPLEMENT_INTRINSIC_SPIRV(reversebits, 0, {
 		.result;
 	})
 
+// void tex2Dstore(storage s, int2 coords, float4/float value)
+DEFINE_INTRINSIC(tex2Dstore, 0, void, storage, int2, float4)
+DEFINE_INTRINSIC(tex2Dstore, 1, void, storage, int2, float)
+IMPLEMENT_INTRINSIC_GLSL(tex2Dstore, 0, {
+	code += "imageStore(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ", " + id_to_name(args[2].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_GLSL(tex2Dstore, 1, {
+	code += "imageStore(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ", vec4(" + id_to_name(args[2].base) + "))";
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex2Dstore, 0, {
+	code += id_to_name(args[0].base) + '[' + id_to_name(args[1].base) + "] = " + id_to_name(args[2].base);
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex2Dstore, 1, {
+	code += id_to_name(args[0].base) + '[' + id_to_name(args[1].base) + "] = " + id_to_name(args[2].base);
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex2Dstore, 0, {
+	add_instruction_without_result(spv::OpImageWrite)
+		.add(args[0].base)
+		.add(args[1].base)
+		.add(args[2].base);
+	return 0;
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex2Dstore, 1, {
+	// A format-less image write takes a full 4-component texel, so broadcast the scalar.
+	type comp_type = args[2].type;
+	comp_type.rows = 4;
+
+	const spv::Id data = add_instruction(spv::OpCompositeConstruct, convert_type(comp_type))
+		.add(args[2].base)
+		.add(args[2].base)
+		.add(args[2].base)
+		.add(args[2].base)
+		.result;
+
+	add_instruction_without_result(spv::OpImageWrite)
+		.add(args[0].base)
+		.add(args[1].base)
+		.add(data);
+	return 0;
+	})
+
+// void barrier()
+DEFINE_INTRINSIC(barrier, 0, void)
+IMPLEMENT_INTRINSIC_GLSL(barrier, 0, {
+	code += "barrier()";
+	})
+IMPLEMENT_INTRINSIC_HLSL(barrier, 0, {
+	code += "GroupMemoryBarrierWithGroupSync()";
+	})
+IMPLEMENT_INTRINSIC_SPIRV(barrier, 0, {
+	const spv::Id scope = emit_constant(spv::ScopeWorkgroup);
+	const spv::Id semantics = emit_constant(spv::MemorySemanticsWorkgroupMemoryMask | spv::MemorySemanticsAcquireReleaseMask);
+
+	add_instruction_without_result(spv::OpControlBarrier)
+		.add(scope) // Execution scope
+		.add(scope) // Memory scope
+		.add(semantics);
+	return 0;
+	})
+
 #undef COMMA
 #undef DEFINE_INTRINSIC
 #undef IMPLEMENT_INTRINSIC_GLSL

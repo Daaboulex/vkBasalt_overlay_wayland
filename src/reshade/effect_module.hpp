@@ -199,6 +199,16 @@ namespace reshadefx
 		uint8_t srgb = false;
 	};
 
+	// Image writes are unfiltered by definition, so unlike a sampler this carries no filter or address state.
+	struct storage_info
+	{
+		uint32_t id = 0;
+		uint32_t binding = 0;
+		std::string unique_name;
+		std::string texture_name;
+		uint32_t level = 0;
+	};
+
 	/// <summary>
 	/// An uniform variable defined in the shader code.
 	/// </summary>
@@ -216,10 +226,17 @@ namespace reshadefx
 	/// <summary>
 	/// A shader entry point function.
 	/// </summary>
+	enum class shader_type
+	{
+		vertex,
+		pixel,
+		compute,
+	};
+
 	struct entry_point
 	{
 		std::string name;
-		bool is_pixel_shader;
+		shader_type type;
 	};
 
 	/// <summary>
@@ -233,6 +250,8 @@ namespace reshadefx
 		reshadefx::type return_type;
 		std::string return_semantic;
 		std::vector<struct_member_info> parameter_list;
+		shader_type type = shader_type::pixel;
+		int num_threads[3] = { 0, 0, 0 };
 	};
 
 	/// <summary>
@@ -243,6 +262,7 @@ namespace reshadefx
 		std::string render_target_names[8] = {};
 		std::string vs_entry_point;
 		std::string ps_entry_point;
+		std::string cs_entry_point;
 		uint8_t clear_render_targets = false;
 		uint8_t srgb_write_enable = false;
 		uint8_t blend_enable = false;
@@ -265,6 +285,8 @@ namespace reshadefx
 		primitive_topology topology = primitive_topology::triangle_list;
 		uint32_t viewport_width = 0;
 		uint32_t viewport_height = 0;
+		// On a compute pass these three are the dispatch group counts, not a viewport.
+		uint32_t dispatch_z = 1;
 	};
 
 	/// <summary>
@@ -290,9 +312,11 @@ namespace reshadefx
 		std::vector<sampler_info> samplers;
 		std::vector<uniform_info> uniforms, spec_constants;
 		std::vector<technique_info> techniques;
+		std::vector<storage_info> storages;
 
 		uint32_t total_uniform_size = 0;
 		uint32_t num_sampler_bindings = 0;
 		uint32_t num_texture_bindings = 0;
+		uint32_t num_storage_bindings = 0;
 	};
 }

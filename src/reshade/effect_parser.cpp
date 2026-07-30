@@ -315,7 +315,7 @@ bool reshadefx::parser::accept_type_class(type &type)
 		type.base = type::t_sampler;
 		break;
 	case tokenid::storage:
-		type.base = type::t_sampler; // Treat storage as sampler for compilation (no compute dispatch)
+		type.base = type::t_storage;
 		break;
 	default:
 		return false;
@@ -324,7 +324,7 @@ bool reshadefx::parser::accept_type_class(type &type)
 	consume();
 
 	// Consume optional template parameter for sampler/storage types (e.g., sampler<int>, storage<float4>)
-	if (type.base == type::t_sampler && accept('<'))
+	if ((type.base == type::t_sampler || type.base == type::t_storage) && accept('<'))
 	{
 		reshadefx::type dummy;
 		if (!accept_type_class(dummy))
@@ -2496,7 +2496,7 @@ bool reshadefx::parser::parse_variable(type type, std::string name, bool global)
 		else
 		{
 			// Make all global variables 'uniform' by default, since they should be externally visible without the 'static' keyword
-			if (!type.has(type::q_uniform) && !(type.is_texture() || type.is_sampler()))
+			if (!type.has(type::q_uniform) && !(type.is_texture() || type.is_sampler() || type.is_storage()))
 				warning(location, 5000, '\'' + name + "': global variables are considered 'uniform' by default");
 
 			// Global variables that are not 'static' are always 'extern' and 'uniform'
@@ -2514,8 +2514,8 @@ bool reshadefx::parser::parse_variable(type type, std::string name, bool global)
 		if (type.has(type::q_uniform))
 			return error(location, 3047, '\'' + name + "': local variables cannot be declared 'uniform'"), false;
 
-		if (type.is_texture() || type.is_sampler())
-			return error(location, 3038, '\'' + name + "': local variables cannot be textures or samplers"), false;
+		if (type.is_texture() || type.is_sampler() || type.is_storage())
+			return error(location, 3038, '\'' + name + "': local variables cannot be textures, samplers or storages"), false;
 	}
 
 	// The variable name may be followed by an optional array size expression
@@ -2526,6 +2526,7 @@ bool reshadefx::parser::parse_variable(type type, std::string name, bool global)
 	expression initializer;
 	texture_info texture_info;
 	sampler_info sampler_info;
+	storage_info storage_info;
 
 	if (accept(':'))
 	{
@@ -2649,6 +2650,7 @@ bool reshadefx::parser::parse_variable(type type, std::string name, bool global)
 
 					texture_info = _codegen->find_texture(expression.base);
 					sampler_info.texture_name = texture_info.unique_name;
+						storage_info.texture_name = texture_info.unique_name;
 				}
 				else
 				{
@@ -2687,6 +2689,8 @@ bool reshadefx::parser::parse_variable(type type, std::string name, bool global)
 						sampler_info.max_lod = static_cast<float>(value);
 					else if (property_name == "MipLODBias" || property_name == "MipMapLodBias")
 						sampler_info.lod_bias = static_cast<float>(value);
+						else if (property_name == "MipLevel")
+							storage_info.level = value;
 					else
 						return error(property_location, 3004, "unrecognized property '" + property_name + '\''), consume_until('}'), false;
 				}
@@ -2741,6 +2745,20 @@ bool reshadefx::parser::parse_variable(type type, std::string name, bool global)
 
 		symbol = { symbol_type::variable, 0, type };
 		symbol.id = _codegen->define_sampler(location, sampler_info);
+	}
+	else if (type.is_storage())
+	{
+		assert(global);
+
+		if (storage_info.texture_name.empty())
+			return error(location, 3012, '\'' + name + "': missing 'Texture' property"), false;
+
+		// Add namespace scope to avoid name clashes
+		storage_info.unique_name = 'V' + current_scope().name + name;
+		std::replace(storage_info.unique_name.begin(), storage_info.unique_name.end(), ':', '_');
+
+		symbol = { symbol_type::variable, 0, type };
+		symbol.id = _codegen->define_storage(location, storage_info);
 	}
 	// Uniform variables are put into a global uniform buffer structure
 	else if (type.has(type::q_uniform))
@@ -2862,20 +2880,62 @@ bool reshadefx::parser::parse_technique_pass(pass_info &info)
 						error(location, 3020, "type mismatch, expected function name");
 					else {
 						const bool is_vs = state[0] == 'V';
-						const bool is_ps = state[0] == 'P' || state[0] == 'C'; // Treat ComputeShader as pixel shader for compilation
+						const bool is_cs = state[0] == 'C';
+						const bool is_ps = state[0] == 'P';
 
 						// Look up the matching function info for this function definition
 						function_info &function_info = _codegen->find_function(symbol.id);
 
-						// We potentially need to generate a special entry point function which translates between function parameters and input/output variables
-						_codegen->define_entry_point(function_info, is_ps);
-
-						// Consume optional dispatch size template for compute shaders: CS<X, Y, Z>
-						if (state[0] == 'C' && accept('<'))
+						// Thread group size, as ComputeShader = fn<X, Y[, Z]>
+						if (is_cs)
 						{
-							while (!peek('>') && !peek(tokenid::end_of_file) && !peek(';'))
-								consume();
-							expect('>');
+							int num_threads[3] = { 1, 1, 1 };
+
+							if (accept('<'))
+							{
+								for (int i = 0; i < 3; ++i)
+								{
+									expression dim;
+									// Precedence 8 keeps the closing '>' from being taken as a greater-than operator.
+									if (!parse_expression_multary(dim, 8))
+										return consume_until('}'), false;
+									if (!dim.is_constant || !dim.type.is_scalar())
+									{
+										parse_success = false;
+										error(dim.location, 3011, "compute shader thread group size must be a literal scalar expression");
+										break;
+									}
+									dim.add_cast_operation({ type::t_int, 1, 1 });
+									num_threads[i] = dim.constant.as_int[0];
+									if (!accept(','))
+										break;
+								}
+
+								if (!expect('>'))
+									return consume_until('}'), false;
+							}
+
+							// A zero group size would dispatch nothing at all, so refuse it rather than emit a shader that cannot run.
+							for (int i = 0; i < 3; ++i)
+								if (num_threads[i] < 1)
+								{
+									parse_success = false;
+									error(location, 3011, "compute shader thread group size must be at least 1 in every dimension");
+									num_threads[i] = 1;
+								}
+
+							function_info.type = shader_type::compute;
+							function_info.num_threads[0] = num_threads[0];
+							function_info.num_threads[1] = num_threads[1];
+							function_info.num_threads[2] = num_threads[2];
+
+							_codegen->define_entry_point(function_info, shader_type::compute);
+							info.cs_entry_point = function_info.unique_name;
+						}
+						else
+						{
+							// We potentially need to generate a special entry point function which translates between function parameters and input/output variables
+							_codegen->define_entry_point(function_info, is_vs ? shader_type::vertex : shader_type::pixel);
 						}
 
 						if (is_vs)
@@ -3035,8 +3095,14 @@ bool reshadefx::parser::parse_technique_pass(pass_info &info)
 				info.num_vertices = value;
 			else if (state == "PrimitiveType" || state == "PrimitiveTopology")
 				info.topology = static_cast<primitive_topology>(value);
-			else if (state == "DispatchSizeX" || state == "DispatchSizeY" || state == "DispatchSizeZ" || state == "GenerateMipMaps")
-				; // Compute shader pass states — accepted but ignored (no compute dispatch in fragment pipeline)
+			else if (state == "DispatchSizeX")
+				info.viewport_width = value;
+			else if (state == "DispatchSizeY")
+				info.viewport_height = value;
+			else if (state == "DispatchSizeZ")
+				info.dispatch_z = value;
+			else if (state == "GenerateMipMaps")
+				; // Effect textures are single-level here, so there is no mip chain to regenerate.
 			else if (state.compare(0, 11, "BlendEnable") == 0 && state.size() == 12 && state[11] >= '0' && state[11] <= '7')
 				info.blend_enable = value != 0; // Per-RT blend enable — apply to global blend state
 			else if ((state.compare(0, 8, "SrcBlend") == 0 || state.compare(0, 9, "DestBlend") == 0 ||
@@ -3053,15 +3119,27 @@ bool reshadefx::parser::parse_technique_pass(pass_info &info)
 
 	if (parse_success)
 	{
-		if (info.vs_entry_point.empty() && info.ps_entry_point.empty())
+		if (!info.cs_entry_point.empty())
+		{
+			if (!info.vs_entry_point.empty() || !info.ps_entry_point.empty())
+			{
+				parse_success = false;
+				error(pass_location, 3012, "pass cannot combine a compute shader with a vertex or pixel shader");
+			}
+			else if (info.viewport_width == 0 || info.viewport_height == 0)
+			{
+				parse_success = false;
+				error(pass_location, 3012, "pass is missing 'DispatchSizeX' or 'DispatchSizeY' property");
+			}
+		}
+		else if (info.vs_entry_point.empty() && info.ps_entry_point.empty())
 		{
 			parse_success = false;
 			error(pass_location, 3012, "pass is missing 'VertexShader' or 'PixelShader' property");
 		}
 		else if (info.vs_entry_point.empty() || info.ps_entry_point.empty())
 		{
-			// Compute-only pass or pass missing one shader — skip VS/PS signature validation
-			// but still register the pass for compilation purposes
+			// A pass with only one of the two still registers, so a half-written effect reports its real error rather than a signature mismatch.
 		}
 		else
 		{

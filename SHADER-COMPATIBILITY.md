@@ -3,7 +3,7 @@
 Measured, not estimated. Every `.fx` in the shader packs listed below was compiled
 through this layer's own compile environment and the result recorded.
 
-**Result as of 2026-07-30: 443 of 503 shaders compile (88%).**
+**Result as of 2026-07-30: 449 of 504 shaders compile (89%).**
 
 ## What was tested
 
@@ -32,7 +32,7 @@ retroluxfilm/reshade-vrtoolkit, smolbbsoop/smolbbsoopshaders,
 umar-afzaal/LumeniteFX, vortigern11/vort_Shaders, yplebedev/BFBFX,
 Zenteon/ZenteonFX
 
-## Why the 60 remaining shaders do not compile
+## Why the 55 remaining shaders do not compile
 
 **Declares a newer ReShade than this build implements (29, category
 `PREPROCESSOR`).** The shader's own `#error` fires and names what it wants. The
@@ -67,14 +67,17 @@ normal install hits neither.
 
 Compared against a build from before these changes, over the same corpus:
 
-- **454 passed before, 443 pass now.** Eleven shaders changed verdict, and one
-  (`RealLongExposure`) began passing.
-- **Seven of the eleven are compute shaders** — Bessel_Bloom, BilateralCS,
-  BX_ToyCurveTool, CMAA_2, FSR1_2X, LocalContrastCS, ReVeil. They previously
-  compiled only because atomics, storage writes and barriers were stubbed out to
-  no-op expressions. They would have rendered incorrectly with nothing reported.
-  They now refuse to load and explain why. An eighth, MartysMods_MXAO, was
-  already failing and now reports the same clear reason.
+- **454 passed before this work, 443 after the honesty fixes, 449 now.**
+- **Compute shaders now compile for real.** Bessel_Bloom, BilateralCS,
+  BX_ToyCurveTool, FSR1_2X and LocalContrastCS compile through the real compute
+  path: a `GLCompute` entry point with a `LocalSize` execution mode, storage
+  images, `tex2Dstore` and `barrier()`. They briefly stopped compiling when the
+  no-op stubs were removed, which was the correct intermediate state — a stub
+  renders wrong and says nothing.
+- **A compute pass is refused at load, not silently skipped.** This build
+  compiles compute but does not yet dispatch it, so an effect containing a
+  compute pass reports that and declines. A build check enforces that it can
+  never become silence.
 - **Four are prod80 shaders** — pCamera, pColorNoise, pColors, pPalettePosterize.
   None uses compute. They fail because `Oklab.fxh` declares
   `ReShade 5.1+ is required`, and that check is now honoured. Previously the
@@ -88,13 +91,16 @@ after upgrading recompiles.
 
 ## Reproducing this
 
-The corpus is not yet a build check. To re-measure:
+The corpus is a repeatable gate with a recorded baseline:
 
 ```sh
-g++ -std=c++20 -O1 -Isrc -Isrc/reshade -I<spirv-headers>/include \
-    tools/test_shaders.cpp src/reshade/*.cpp -o test_shaders
-./test_shaders <every directory containing .fx or .fxh>
+scripts/shader-corpus.sh            # re-run and diff against test/shader-corpus-baseline.txt
+scripts/shader-corpus.sh --record   # accept this run as the new baseline
 ```
+
+It clones the packages listed in `EffectPackages.ini`, so it needs network
+access and cannot be a sandboxed flake check. Any shader that changes verdict in
+either direction fails the run and is printed.
 
 `tools/test_shaders.cpp` shares its compile environment with the layer through
 `src/reshade_fx_env.hpp`, so a result here is a result the layer would reproduce.

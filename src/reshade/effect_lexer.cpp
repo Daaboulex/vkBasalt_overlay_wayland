@@ -283,6 +283,7 @@ static const std::unordered_map<std::string, tokenid> keyword_lookup = {
 	{ "static", tokenid::static_ },
 	{ "static_cast", tokenid::reserved },
 	{ "storage", tokenid::storage },
+	{ "storage1D", tokenid::storage },
 	{ "storage2D", tokenid::storage },
 	{ "storage3D", tokenid::storage },
 	{ "string", tokenid::string_ },

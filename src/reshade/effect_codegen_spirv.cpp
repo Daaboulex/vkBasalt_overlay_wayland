@@ -441,6 +441,21 @@ private:
 				type = convert_type({ type::t_texture, 0, 0, type::q_uniform });
 				type = add_instruction(spv::OpTypeSampledImage, 0, _types_and_constants).add(type).result;
 				break;
+			case type::t_storage:
+				assert(info.rows == 0 && info.cols == 0);
+				// The bound texture's format is not known at this point, so the image is format-less and the device must support unformatted access.
+				add_capability(spv::CapabilityStorageImageReadWithoutFormat);
+				add_capability(spv::CapabilityStorageImageWriteWithoutFormat);
+				type = convert_type({ type::t_float, 1, 1 });
+				type = add_instruction(spv::OpTypeImage, 0, _types_and_constants)
+					.add(type) // Sampled Type
+					.add(spv::Dim2D)
+					.add(0) // Not a depth image
+					.add(0) // Not an array
+					.add(0) // Not multi-sampled
+					.add(2) // Used without a sampler, read/write
+					.add(spv::ImageFormatUnknown).result;
+				break;
 			default:
 				return assert(false), 0;
 			}
@@ -577,6 +592,21 @@ private:
 		add_decoration(info.id, spv::DecorationBinding, { info.binding });
 
 		_module.samplers.push_back(info);
+
+		return info.id;
+	}
+	id   define_storage(const location &loc, storage_info &info) override
+	{
+		info.id = make_id();
+		info.binding = _module.num_storage_bindings++;
+
+		define_variable(info.id, loc, { type::t_storage, 0, 0, type::q_extern | type::q_uniform },
+			info.unique_name.c_str(), spv::StorageClassUniformConstant);
+
+		add_decoration(info.id, spv::DecorationDescriptorSet, { 2 });
+		add_decoration(info.id, spv::DecorationBinding, { info.binding });
+
+		_module.storages.push_back(info);
 
 		return info.id;
 	}
@@ -798,13 +828,14 @@ private:
 		return info.definition;
 	}
 
-	void define_entry_point(const function_info &func, bool is_ps) override
+	void define_entry_point(const function_info &func, shader_type stype) override
 	{
 		if (const auto it = std::find_if(_module.entry_points.begin(), _module.entry_points.end(),
 			[&func](const auto &ep) { return ep.name == func.unique_name; }); it != _module.entry_points.end())
 			return;
 
-		_module.entry_points.push_back({ func.unique_name, is_ps });
+		_module.entry_points.push_back({ func.unique_name, stype });
+		const bool is_ps = stype == shader_type::pixel;
 
 		id position_variable = 0;
 		std::vector<uint32_t> inputs_and_outputs;
@@ -825,6 +856,14 @@ private:
 				builtin = spv::BuiltInFragDepth;
 			if (semantic == "SV_VERTEXID")
 				builtin = _vulkan_semantics ? spv::BuiltInVertexIndex : spv::BuiltInVertexId;
+			if (semantic == "SV_DISPATCHTHREADID")
+				builtin = spv::BuiltInGlobalInvocationId;
+			if (semantic == "SV_GROUPID")
+				builtin = spv::BuiltInWorkgroupId;
+			if (semantic == "SV_GROUPTHREADID")
+				builtin = spv::BuiltInLocalInvocationId;
+			if (semantic == "SV_GROUPINDEX")
+				builtin = spv::BuiltInLocalInvocationIndex;
 			return builtin != spv::BuiltInMax;
 		};
 
@@ -996,7 +1035,7 @@ private:
 		}
 
 		// Add code to flip the output vertically
-		if (_invert_y && position_variable && !is_ps)
+		if (_invert_y && position_variable && stype == shader_type::vertex)
 		{
 			expression position;
 			position.reset_to_lvalue({}, position_variable, { type::t_float, 4, 1 });
@@ -1012,16 +1051,38 @@ private:
 		leave_function();
 
 		assert(!func.unique_name.empty());
+
+		spv::ExecutionModel model = spv::ExecutionModelVertex;
+		switch (stype)
+		{
+		case shader_type::vertex:
+			model = spv::ExecutionModelVertex;
+			break;
+		case shader_type::pixel:
+			model = spv::ExecutionModelFragment;
+			break;
+		case shader_type::compute:
+			model = spv::ExecutionModelGLCompute;
+			break;
+		}
+
 		add_instruction_without_result(spv::OpEntryPoint, _entries)
-			.add(is_ps ? spv::ExecutionModelFragment : spv::ExecutionModelVertex)
+			.add(model)
 			.add(entry_point.definition)
 			.add_string(func.unique_name.c_str())
 			.add(inputs_and_outputs.begin(), inputs_and_outputs.end());
 
-		if (is_ps)
+		if (stype == shader_type::pixel)
 			add_instruction_without_result(spv::OpExecutionMode, _execution_modes)
 				.add(entry_point.definition)
 				.add(spv::ExecutionModeOriginUpperLeft);
+		else if (stype == shader_type::compute)
+			add_instruction_without_result(spv::OpExecutionMode, _execution_modes)
+				.add(entry_point.definition)
+				.add(spv::ExecutionModeLocalSize)
+				.add(std::max(func.num_threads[0], 1))
+				.add(std::max(func.num_threads[1], 1))
+				.add(std::max(func.num_threads[2], 1));
 	}
 
 	id   emit_load(const expression &exp, bool) override

@@ -25,6 +25,7 @@ namespace reshadefx
 			t_string,
 			t_struct,
 			t_sampler,
+			t_storage,
 			t_texture,
 			t_function,
 		};
@@ -74,6 +75,7 @@ namespace reshadefx
 		bool is_struct() const { return base == t_struct; }
 		bool is_texture() const { return base == t_texture; }
 		bool is_sampler() const { return base == t_sampler; }
+		bool is_storage() const { return base == t_storage; }
 		bool is_function() const { return base == t_function; }
 
 		unsigned int components() const { return rows * cols; }

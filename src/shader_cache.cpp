@@ -31,7 +31,7 @@ namespace vkBasalt
     namespace
     {
         // Bump when the serialized layout, base macros, or stubs change.
-        constexpr uint32_t SCHEMA_VERSION = 2;
+        constexpr uint32_t SCHEMA_VERSION = 3;
         constexpr uint32_t MAGIC = 0x43424B56; // "VKBC"
         constexpr size_t MEMORY_CACHE_CAP = 16;
         constexpr size_t DISK_CACHE_CAP = 256;
@@ -239,7 +239,7 @@ namespace vkBasalt
             for (const auto& e : m.entry_points)
             {
                 w.str(e.name);
-                w.u8(e.is_pixel_shader ? 1 : 0);
+                w.u8((uint8_t) e.type);
             }
 
             w.u32((uint32_t)m.textures.size());
@@ -303,6 +303,7 @@ namespace vkBasalt
                         w.str(p.render_target_names[i]);
                     w.str(p.vs_entry_point);
                     w.str(p.ps_entry_point);
+                    w.str(p.cs_entry_point);
                     w.u8(p.clear_render_targets);
                     w.u8(p.srgb_write_enable);
                     w.u8(p.blend_enable);
@@ -325,6 +326,7 @@ namespace vkBasalt
                     w.u8((uint8_t)p.topology);
                     w.u32(p.viewport_width);
                     w.u32(p.viewport_height);
+                    w.u32(p.dispatch_z);
                 }
             }
 
@@ -347,7 +349,7 @@ namespace vkBasalt
             for (auto& e : m.entry_points)
             {
                 e.name = r.str();
-                e.is_pixel_shader = r.u8() != 0;
+                e.type = (reshadefx::shader_type) r.u8();
             }
 
             n = r.count();
@@ -416,6 +418,7 @@ namespace vkBasalt
                         p.render_target_names[i] = r.str();
                     p.vs_entry_point = r.str();
                     p.ps_entry_point = r.str();
+                    p.cs_entry_point = r.str();
                     p.clear_render_targets = r.u8();
                     p.srgb_write_enable = r.u8();
                     p.blend_enable = r.u8();
@@ -438,6 +441,7 @@ namespace vkBasalt
                     p.topology = (reshadefx::primitive_topology)r.u8();
                     p.viewport_width = r.u32();
                     p.viewport_height = r.u32();
+                    p.dispatch_z = r.u32();
                 }
             }
 

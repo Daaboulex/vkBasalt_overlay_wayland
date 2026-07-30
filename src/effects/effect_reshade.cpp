@@ -1392,6 +1392,21 @@ namespace vkBasalt
 
         module = compiled->module;
 
+        // The compiler emits compute entry points, but this renderer only dispatches graphics
+        // passes. Refuse here rather than build a graphics pipeline from empty entry point names.
+        for (const auto& technique : module.techniques)
+        {
+            for (const auto& pass : technique.passes)
+            {
+                if (pass.cs_entry_point.empty())
+                    continue;
+
+                Logger::err(shaderPath + ": technique '" + technique.name
+                            + "' has a compute pass, which this build compiles but cannot yet dispatch");
+                throw std::runtime_error("compute pass not supported yet: " + effectName);
+            }
+        }
+
         VkShaderModuleCreateInfo shaderCreateInfo;
         shaderCreateInfo.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         shaderCreateInfo.pNext    = nullptr;

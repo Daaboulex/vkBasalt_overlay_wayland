@@ -9,9 +9,7 @@ url="https://github.com/Daaboulex/vkBasalt_overlay_wayland"
 license=('zlib')
 depends=('gcc-libs' 'glslang' 'libx11' 'libxi' 'wayland' 'libxkbcommon' 'vulkan-icd-loader')
 makedepends=('git' 'meson' 'ninja' 'pkgconf' 'spirv-headers' 'vulkan-headers' 'wayland-protocols')
-# Both layers read ENABLE_VKBASALT, so installing both activates both: effects
-# apply twice and neither can be disabled without the other. The layer warns
-# when it detects the other in the same process; this stops it happening at all.
+# Every vkBasalt reads ENABLE_VKBASALT, so two installed means two active at once.
 provides=('vkbasalt')
 conflicts=('vkbasalt' 'vkbasalt-git' 'vkbasalt-overlay-git')
 source=("$pkgname::git+https://github.com/Daaboulex/vkBasalt_overlay_wayland.git")

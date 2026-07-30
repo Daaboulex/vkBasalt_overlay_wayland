@@ -55,6 +55,11 @@ namespace reshadefx
 		/// <param name="info">The sampler description.</param>
 		/// <returns>New SSA ID of the binding.</returns>
 		virtual id define_sampler(const location &loc, sampler_info &info) = 0;
+
+		/// <summary>
+		/// Define a new storage image binding.
+		/// </summary>
+		virtual id define_storage(const location &loc, storage_info &info) = 0;
 		/// <summary>
 		/// Define a new uniform variable.
 		/// </summary>
@@ -90,8 +95,8 @@ namespace reshadefx
 		/// Make a function a shader entry point.
 		/// </summary>
 		/// <param name="function">The function to use as entry point.</param>
-		/// <param name="is_ps"><c>true</c> if this is a pixel shader, <c>false</c> if it is a vertex shader.</param>
-		virtual void define_entry_point(const function_info &function, bool is_ps) = 0;
+		/// <param name="stype">Which shader stage this entry point is.</param>
+		virtual void define_entry_point(const function_info &function, shader_type stype) = 0;
 
 		/// <summary>
 		/// Resolve the access chain and add a load operation to the output.
