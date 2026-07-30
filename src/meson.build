@@ -44,6 +44,7 @@ vkBasalt_src = [
     'effects/effect_transfer.cpp',
     'effects/builtin/builtin_effects.cpp',
     'effects/builtin/effect_cas.cpp',
+    'effects/builtin/effect_rcas.cpp',
     'effects/builtin/effect_deband.cpp',
     'effects/builtin/effect_dls.cpp',
     'effects/builtin/effect_fxaa.cpp',

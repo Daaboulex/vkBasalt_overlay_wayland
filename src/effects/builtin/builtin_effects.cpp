@@ -1,6 +1,7 @@
 #include "builtin_effects.hpp"
 
 #include "effect_cas.hpp"
+#include "effect_rcas.hpp"
 #include "effect_dls.hpp"
 #include "effect_fxaa.hpp"
 #include "effect_smaa.hpp"
@@ -47,6 +48,21 @@ namespace vkBasalt
             [](LogicalDevice* dev, VkFormat fmt, VkExtent2D ext,
                std::vector<VkImage> in, std::vector<VkImage> out, Config* cfg) {
                 return std::make_shared<CasEffect>(dev, fmt, ext, in, out, cfg);
+            }
+        };
+
+        // RCAS - FSR1's sharpener: solves for maximum sharpness before clipping
+        // and limits sharpening of detected noise, where CAS maps local contrast
+        // to sharpness more simply. No scaling path by design.
+        effects["rcas"] = {
+            "rcas",
+            false,  // uses UNORM
+            {
+                {"rcasSharpness", "Sharpness", ParamType::Float, 0.4f, 0.0f, 1.0f}
+            },
+            [](LogicalDevice* dev, VkFormat fmt, VkExtent2D ext,
+               std::vector<VkImage> in, std::vector<VkImage> out, Config* cfg) {
+                return std::make_shared<RcasEffect>(dev, fmt, ext, in, out, cfg);
             }
         };
 

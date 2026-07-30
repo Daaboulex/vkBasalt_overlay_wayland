@@ -206,15 +206,17 @@ namespace vkBasalt
             wl_registry_destroy(registry);
             registry = nullptr;
         }
-        if (queue)
-        {
-            wl_event_queue_destroy(queue);
-            queue = nullptr;
-        }
+        // The wrapper is attached to the queue, so it goes first; destroying the
+        // queue underneath it is what libwayland warns about.
         if (displayWrapper)
         {
             wl_proxy_wrapper_destroy(displayWrapper);
             displayWrapper = nullptr;
+        }
+        if (queue)
+        {
+            wl_event_queue_destroy(queue);
+            queue = nullptr;
         }
 
         keyboardBind = nullptr;

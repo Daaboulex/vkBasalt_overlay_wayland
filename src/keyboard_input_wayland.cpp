@@ -254,8 +254,6 @@ namespace vkBasalt
         keyPressEvents.clear();
         keyboardLogged = false;
         noKeyboardWarned = false;
-
-        cleanupWaylandInputCommon();
     }
 
     uint32_t convertToKeySymWayland(std::string key)

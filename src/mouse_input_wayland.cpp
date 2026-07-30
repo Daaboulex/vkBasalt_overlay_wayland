@@ -207,8 +207,6 @@ namespace vkBasalt
         bindCallbackSet = false;
         mouseLogged = false;
         noPointerWarned = false;
-
-        cleanupWaylandInputCommon();
     }
 
     void mirrorButtonState(uint32_t button, bool pressed)

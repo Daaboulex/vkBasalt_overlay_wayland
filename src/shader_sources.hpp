@@ -9,6 +9,10 @@ namespace vkBasalt
 #include "cas.frag.h"
     };
 
+    const std::vector<uint32_t> rcas_frag = {
+#include "rcas.frag.h"
+    };
+
     const std::vector<uint32_t> deband_frag = {
 #include "deband.frag.h"
     };

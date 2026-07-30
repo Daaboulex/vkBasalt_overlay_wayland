@@ -956,8 +956,12 @@ namespace vkBasalt
 
         pLogicalDevice->imguiOverlay.reset();
 
+        // The keyboard and pointer proxies live on the shared event queue, so the
+        // queue is released here, after both have let go of it -- not by whichever
+        // of them happened to be cleaned up first.
         cleanupWaylandKeyboard();
         cleanupWaylandMouse();
+        cleanupWaylandInputCommon();
 
         if (pLogicalDevice->commandPool != VK_NULL_HANDLE)
         {
