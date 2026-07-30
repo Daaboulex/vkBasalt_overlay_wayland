@@ -9,6 +9,11 @@ namespace vkBasalt
 {
     void addUniqueCString(std::vector<const char*>& stringVector, const char* addString);
 
+    // True when the unforked vkBasalt is loaded in this process too. Both layers
+    // share ENABLE_VKBASALT, so installing both activates both: effects apply
+    // twice and neither can be disabled without the other. Probed once.
+    bool conflictingLayerLoaded();
+
     enum class Color
     {
         defaultColor,

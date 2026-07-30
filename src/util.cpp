@@ -2,9 +2,27 @@
 
 #include <iostream>
 #include <unistd.h>
+#include <dlfcn.h>
 
 namespace vkBasalt
 {
+    bool conflictingLayerLoaded()
+    {
+        static const bool present = [] {
+            for (const char* soname : {"libvkbasalt.so", "libvkbasalt.so.0"})
+            {
+                void* handle = dlopen(soname, RTLD_NOLOAD | RTLD_LAZY);
+                if (handle)
+                {
+                    dlclose(handle);
+                    return true;
+                }
+            }
+            return false;
+        }();
+        return present;
+    }
+
     void addUniqueCString(std::vector<const char*>& stringVector, const char* addString)
     {
         for (const char* other : stringVector)

@@ -1,6 +1,7 @@
 #include "imgui_overlay.hpp"
 #include "config_serializer.hpp"
 #include "logger.hpp"
+#include "util.hpp"
 
 #include <fstream>
 #include <filesystem>
@@ -424,6 +425,15 @@ namespace vkBasalt
         float avgFrameTime = frameTimeHistory.avg();
         float fps = avgFrameTime > 0 ? 1000.0f / avgFrameTime : 0;
         float fps1Low = frameTimeHistory.max() > 0 ? 1000.0f / frameTimeHistory.max() : 0;
+
+        if (conflictingLayerLoaded())
+        {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "Conflict: the unforked vkBasalt is loaded too");
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Both layers share ENABLE_VKBASALT, so both are active: effects apply twice and\n"
+                                  "DISABLE_VKBASALT cannot turn off one without the other. Uninstall one of them.");
+            ImGui::Separator();
+        }
 
         ImGui::Text("Performance");
         ImGui::Separator();

@@ -230,6 +230,13 @@ namespace vkBasalt
         if (pBaseConfig != nullptr)
             return;  // Already initialized
 
+        if (conflictingLayerLoaded())
+        {
+            Logger::warn("the unforked vkBasalt is loaded in this process as well. Both layers share ENABLE_VKBASALT, so both "
+                         "are active: effects apply twice and DISABLE_VKBASALT cannot turn off one without the other. "
+                         "Uninstall one of them.");
+        }
+
         {
             std::string baseDir = ConfigSerializer::getBaseConfigDir();
             if (!baseDir.empty())
