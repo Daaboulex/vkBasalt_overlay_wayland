@@ -24,13 +24,14 @@
 #include "reshade/effect_codegen.hpp"
 
 #include "logger.hpp"
+#include "reshade_fx_version.hpp"
 
 namespace vkBasalt
 {
     namespace
     {
         // Bump when the serialized layout, base macros, or stubs change.
-        constexpr uint32_t SCHEMA_VERSION = 1;
+        constexpr uint32_t SCHEMA_VERSION = 2;
         constexpr uint32_t MAGIC = 0x43424B56; // "VKBC"
         constexpr size_t MEMORY_CACHE_CAP = 16;
         constexpr size_t DISK_CACHE_CAP = 256;
@@ -590,7 +591,7 @@ namespace vkBasalt
 
         void addBaseMacros(reshadefx::preprocessor& pp)
         {
-            pp.add_macro_definition("__RESHADE__", std::to_string(INT_MAX));
+            pp.add_macro_definition("__RESHADE__", std::to_string(VKBASALT_RESHADE_FX_VERSION));
             pp.add_macro_definition("__RESHADE_PERFORMANCE_MODE__", "1");
             pp.add_macro_definition("__RENDERER__", "0x20000");
 
