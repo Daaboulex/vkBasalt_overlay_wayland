@@ -1103,6 +1103,16 @@ namespace vkBasalt
             createFakeSwapchainImages(pLogicalDevice, pLogicalSwapchain->swapchainCreateInfo, fakeImageCount, pLogicalSwapchain->fakeImageMemory);
         Logger::debug("created fake swapchain images");
 
+        if (pLogicalSwapchain->fakeImages.empty())
+        {
+            // The allocation was abandoned, so there is nothing to render into.
+            // Leave the application on the real swapchain images: no effects and
+            // no overlay, but a correct picture instead of a black window.
+            *pCount = std::min<uint32_t>(*pCount, pLogicalSwapchain->imageCount);
+            std::memcpy(pSwapchainImages, pLogicalSwapchain->images.data(), sizeof(VkImage) * (*pCount));
+            return *pCount < pLogicalSwapchain->imageCount ? VK_INCOMPLETE : VK_SUCCESS;
+        }
+
         if (!isFirstRun && !selectedEffects.empty())
         {
             Logger::debug("using pass-through during resize, will restore effects after debounce");
@@ -1328,11 +1338,22 @@ namespace vkBasalt
 
         updateOverlayState(pLogicalDevice, presentEffect);
 
+        bool appWaitsConsumed = false;
+
         for (unsigned int i = 0; i < pPresentInfo->swapchainCount; i++)
         {
             uint32_t          index             = pPresentInfo->pImageIndices[i];
             VkSwapchainKHR    swapchain         = pPresentInfo->pSwapchains[i];
             LogicalSwapchain* pLogicalSwapchain = swapchainMap[swapchain].get();
+
+            // Nothing was set up for this swapchain -- the image allocation was
+            // abandoned, so the application is presenting the real images itself
+            // and there is nothing of ours to submit.
+            if (pLogicalSwapchain->fakeImages.empty() || index >= pLogicalSwapchain->commandBuffersEffect.size()
+                || index >= pLogicalSwapchain->commandBuffersNoEffect.size())
+            {
+                continue;
+            }
 
             if (presentEffect)
             {
@@ -1342,9 +1363,14 @@ namespace vkBasalt
 
             VkSubmitInfo submitInfo = {};
             submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-            submitInfo.waitSemaphoreCount = i == 0 ? pPresentInfo->waitSemaphoreCount : 0;
-            submitInfo.pWaitSemaphores    = i == 0 ? pPresentInfo->pWaitSemaphores : nullptr;
-            submitInfo.pWaitDstStageMask  = i == 0 ? waitStages.data() : nullptr;
+            // The application's wait semaphores must be honoured exactly once,
+            // by the first submit we actually make -- which is not necessarily
+            // the first swapchain, since a swapchain we set nothing up for is
+            // skipped above.
+            submitInfo.waitSemaphoreCount = appWaitsConsumed ? 0 : pPresentInfo->waitSemaphoreCount;
+            submitInfo.pWaitSemaphores    = appWaitsConsumed ? nullptr : pPresentInfo->pWaitSemaphores;
+            submitInfo.pWaitDstStageMask  = appWaitsConsumed ? nullptr : waitStages.data();
+            appWaitsConsumed              = true;
             submitInfo.commandBufferCount = 1;
             submitInfo.pCommandBuffers    = presentEffect
                 ? &pLogicalSwapchain->commandBuffersEffect[index]
@@ -1364,9 +1390,15 @@ namespace vkBasalt
             presentSemaphores.push_back(finalSemaphore);
         }
 
-        VkPresentInfoKHR presentInfo   = *pPresentInfo;
-        presentInfo.waitSemaphoreCount = presentSemaphores.size();
-        presentInfo.pWaitSemaphores    = presentSemaphores.data();
+        VkPresentInfoKHR presentInfo = *pPresentInfo;
+        if (appWaitsConsumed)
+        {
+            presentInfo.waitSemaphoreCount = presentSemaphores.size();
+            presentInfo.pWaitSemaphores    = presentSemaphores.data();
+        }
+        // Nothing of ours was submitted, so the application's own semaphores are
+        // still the only thing the presentation engine must wait on; replacing
+        // them with an empty list would present before its rendering completed.
 
         // Release the global lock across the down-chain present: a frame
         // generation layer below us (lsfg-vk) acquires additional swapchain

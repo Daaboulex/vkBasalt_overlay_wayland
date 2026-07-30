@@ -44,11 +44,30 @@ namespace vkBasalt
         imageCreateInfo.pQueueFamilyIndices   = swapchainCreateInfo.pQueueFamilyIndices;
         imageCreateInfo.initialLayout         = VK_IMAGE_LAYOUT_UNDEFINED;
 
+        // Any failure here returns an empty vector: the caller then leaves the
+        // application on the real swapchain rather than handing it images that
+        // are not backed by memory, which presents as a black window.
+        auto abandon = [&](const std::string& why) {
+            Logger::err("fake swapchain images: " + why + " -- effects disabled for this swapchain, passing frames through");
+            if (deviceMemory != VK_NULL_HANDLE)
+            {
+                pLogicalDevice->vkd.FreeMemory(pLogicalDevice->device, deviceMemory, nullptr);
+                deviceMemory = VK_NULL_HANDLE;
+            }
+            for (VkImage image : fakeImages)
+            {
+                if (image != VK_NULL_HANDLE)
+                    pLogicalDevice->vkd.DestroyImage(pLogicalDevice->device, image, nullptr);
+            }
+            return std::vector<VkImage>();
+        };
+
         VkResult result;
         for (uint32_t i = 0; i < count; i++)
         {
             result = pLogicalDevice->vkd.CreateImage(pLogicalDevice->device, &imageCreateInfo, nullptr, &(fakeImages[i]));
-            ASSERT_VULKAN(result);
+            if (result != VK_SUCCESS)
+                return abandon("image " + std::to_string(i) + " of " + std::to_string(count) + " failed: " + std::to_string(result));
         }
 
         // Allocate a bunch of memory for all images at one
@@ -71,12 +90,18 @@ namespace vkBasalt
             findMemoryTypeIndex(pLogicalDevice, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
         result = pLogicalDevice->vkd.AllocateMemory(pLogicalDevice->device, &memoryAllocateInfo, nullptr, &deviceMemory);
-        ASSERT_VULKAN(result);
+        if (result != VK_SUCCESS)
+        {
+            deviceMemory = VK_NULL_HANDLE;
+            return abandon(std::to_string(memoryAllocateInfo.allocationSize) + " bytes for " + std::to_string(count)
+                           + " images failed: " + std::to_string(result));
+        }
 
         for (uint32_t i = 0; i < count; i++)
         {
             result = pLogicalDevice->vkd.BindImageMemory(pLogicalDevice->device, fakeImages[i], deviceMemory, memoryRequirements.size * i);
-            ASSERT_VULKAN(result);
+            if (result != VK_SUCCESS)
+                return abandon("binding image " + std::to_string(i) + " failed: " + std::to_string(result));
         }
         return fakeImages;
     }
