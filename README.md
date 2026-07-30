@@ -136,6 +136,19 @@ nixpkgs.overlays = [ inputs.vkBasalt_overlay_wayland.overlays.default ];
 
 <!-- END generated:installation -->
 
+### Arch and CachyOS
+
+A PKGBUILD is in `packaging/arch/`:
+
+```sh
+cd packaging/arch && makepkg -si
+```
+
+It conflicts with `vkbasalt` and `vkbasalt-overlay-git` on purpose. All of them
+read `ENABLE_VKBASALT`, so two installed at once means two active in the same
+process: effects apply twice and disabling one disables neither. The layer warns
+when it finds another in its process, but not installing both is better.
+
 ### 32-bit games
 
 The layer only applies to games whose architecture it was built for. For 32-bit
