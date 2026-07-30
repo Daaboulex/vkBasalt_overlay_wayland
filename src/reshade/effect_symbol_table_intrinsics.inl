@@ -352,6 +352,54 @@ IMPLEMENT_INTRINSIC_SPIRV(asint, 0, {
 		.result;
 	})
 
+// ret f32tof16(x)
+// Backported from a later reshadefx; see src/reshade_fx_version.hpp. The half
+// occupies the low 16 bits, so the packed pair is masked back down.
+DEFINE_INTRINSIC(f32tof16, 0, uint, float)
+IMPLEMENT_INTRINSIC_GLSL(f32tof16, 0, {
+	code += "(packHalf2x16(vec2(" + id_to_name(args[0].base) + ", 0.0)) & 0xFFFFu)";
+	})
+IMPLEMENT_INTRINSIC_HLSL(f32tof16, 0, {
+	code += "f32tof16(" + id_to_name(args[0].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_SPIRV(f32tof16, 0, {
+	const spv::Id zero = emit_constant(0.0f);
+	const spv::Id pair = add_instruction(spv::OpCompositeConstruct, convert_type({ type::t_float, 2, 1 }))
+		.add(args[0].base)
+		.add(zero)
+		.result;
+	const spv::Id packed = add_instruction(spv::OpExtInst, convert_type({ type::t_uint, 1, 1 }))
+		.add(_glsl_ext)
+		.add(spv::GLSLstd450PackHalf2x16)
+		.add(pair)
+		.result;
+	return add_instruction(spv::OpBitwiseAnd, convert_type(res_type))
+		.add(packed)
+		.add(emit_constant(0xFFFFu))
+		.result;
+	})
+
+// ret f16tof32(x)
+// Backported from a later reshadefx; see src/reshade_fx_version.hpp.
+DEFINE_INTRINSIC(f16tof32, 0, float, uint)
+IMPLEMENT_INTRINSIC_GLSL(f16tof32, 0, {
+	code += "unpackHalf2x16(" + id_to_name(args[0].base) + ").x";
+	})
+IMPLEMENT_INTRINSIC_HLSL(f16tof32, 0, {
+	code += "f16tof32(" + id_to_name(args[0].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_SPIRV(f16tof32, 0, {
+	const spv::Id pair = add_instruction(spv::OpExtInst, convert_type({ type::t_float, 2, 1 }))
+		.add(_glsl_ext)
+		.add(spv::GLSLstd450UnpackHalf2x16)
+		.add(args[0].base)
+		.result;
+	return add_instruction(spv::OpCompositeExtract, convert_type(res_type))
+		.add(pair)
+		.add(0u)
+		.result;
+	})
+
 // ret asuint(x)
 DEFINE_INTRINSIC(asuint, 0, uint, float)
 DEFINE_INTRINSIC(asuint, 0, uint2, float2)
