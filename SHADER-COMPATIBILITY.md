@@ -3,9 +3,9 @@
 Measured, not estimated. Every `.fx` in the shader packs listed below was compiled
 through this layer's own compile environment and the result recorded.
 
-**Result as of 2026-07-30: 434 of 504 shaders compile to valid SPIR-V (86%).**
+**Result as of 2026-07-30: 451 of 504 shaders compile to valid SPIR-V (89%).**
 
-A further 27 compile but emit SPIR-V a driver would reject; they are counted as
+A further 10 compile but emit SPIR-V a driver would reject; they are counted as
 failures here, not as passes. 43 do not compile. Compiling is not the same as
 working, so the corpus validates every module it emits and an invalid one is
 demoted rather than reported green.

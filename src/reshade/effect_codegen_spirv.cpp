@@ -1839,6 +1839,41 @@ private:
 
 		return inst.result;
 	}
+	// Vulkan allows the non-constant Offset image operand only on a gather, so for a sample the
+	// offset has to be folded into the coordinate, which needs the texel size to normalise it.
+	spv::Id fold_offset_into_coords(spv::Id sampler, spv::Id coords, spv::Id offset)
+	{
+		add_capability(spv::CapabilityImageQuery);
+
+		const auto int2_type = type{ type::t_int, 2, 1 };
+		const auto float2_type = type{ type::t_float, 2, 1 };
+
+		constant lod_data = {};
+		const spv::Id lod = emit_constant({ type::t_int, 1, 1 }, lod_data);
+
+		const spv::Id image = add_instruction(spv::OpImage, convert_type({ type::t_texture }))
+			.add(sampler)
+			.result;
+		const spv::Id size = add_instruction(spv::OpImageQuerySizeLod, convert_type(int2_type))
+			.add(image)
+			.add(lod)
+			.result;
+		const spv::Id size_float = add_instruction(spv::OpConvertSToF, convert_type(float2_type))
+			.add(size)
+			.result;
+		const spv::Id offset_float = add_instruction(spv::OpConvertSToF, convert_type(float2_type))
+			.add(offset)
+			.result;
+		const spv::Id delta = add_instruction(spv::OpFDiv, convert_type(float2_type))
+			.add(offset_float)
+			.add(size_float)
+			.result;
+
+		return add_instruction(spv::OpFAdd, convert_type(float2_type))
+			.add(coords)
+			.add(delta)
+			.result;
+	}
 	id   emit_call_intrinsic(const location &loc, id intrinsic, const type &res_type, const std::vector<expression> &args) override
 	{
 #ifndef NDEBUG

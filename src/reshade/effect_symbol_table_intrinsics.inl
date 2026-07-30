@@ -1612,11 +1612,19 @@ IMPLEMENT_INTRINSIC_SPIRV(tex2D, 1, {
 	if (!args[2].is_constant)
 		add_capability(spv::CapabilityImageGatherExtended);
 
+	if (args[2].is_constant)
+		return add_instruction(spv::OpImageSampleImplicitLod, convert_type(res_type))
+			.add(args[0].base)
+			.add(args[1].base)
+			.add(spv::ImageOperandsConstOffsetMask)
+			.add(args[2].base)
+			.result;
+
+	const spv::Id folded_coords = fold_offset_into_coords(args[0].base, args[1].base, args[2].base);
+
 	return add_instruction(spv::OpImageSampleImplicitLod, convert_type(res_type))
 		.add(args[0].base)
-		.add(args[1].base)
-		.add(args[2].is_constant ? spv::ImageOperandsConstOffsetMask : spv::ImageOperandsOffsetMask)
-		.add(args[2].base)
+		.add(folded_coords)
 		.result;
 	})
 
@@ -1638,11 +1646,19 @@ IMPLEMENT_INTRINSIC_SPIRV(tex2Doffset, 0, {
 	if (!args[2].is_constant)
 		add_capability(spv::CapabilityImageGatherExtended);
 
+	if (args[2].is_constant)
+		return add_instruction(spv::OpImageSampleImplicitLod, convert_type(res_type))
+			.add(args[0].base)
+			.add(args[1].base)
+			.add(spv::ImageOperandsConstOffsetMask)
+			.add(args[2].base)
+			.result;
+
+	const spv::Id folded_coords = fold_offset_into_coords(args[0].base, args[1].base, args[2].base);
+
 	return add_instruction(spv::OpImageSampleImplicitLod, convert_type(res_type))
 		.add(args[0].base)
-		.add(args[1].base)
-		.add(args[2].is_constant ? spv::ImageOperandsConstOffsetMask : spv::ImageOperandsOffsetMask)
-		.add(args[2].base)
+		.add(folded_coords)
 		.result;
 	})
 
@@ -1706,12 +1722,22 @@ IMPLEMENT_INTRINSIC_SPIRV(tex2Dlod, 1, {
 		.add(3)
 		.result;
 
+	if (args[2].is_constant)
+		return add_instruction(spv::OpImageSampleExplicitLod, convert_type(res_type))
+			.add(args[0].base)
+			.add(xy)
+			.add(spv::ImageOperandsLodMask | spv::ImageOperandsConstOffsetMask)
+			.add(lod)
+			.add(args[2].base)
+			.result;
+
+	const spv::Id folded_coords = fold_offset_into_coords(args[0].base, xy, args[2].base);
+
 	return add_instruction(spv::OpImageSampleExplicitLod, convert_type(res_type))
 		.add(args[0].base)
-		.add(xy)
-		.add(spv::ImageOperandsLodMask | (args[2].is_constant ? spv::ImageOperandsConstOffsetMask : spv::ImageOperandsOffsetMask))
+		.add(folded_coords)
+		.add(spv::ImageOperandsLodMask)
 		.add(lod)
-		.add(args[2].base)
 		.result;
 	})
 
@@ -1744,12 +1770,22 @@ IMPLEMENT_INTRINSIC_SPIRV(tex2Dlodoffset, 0, {
 		.add(3) // .w
 		.result;
 
+	if (args[2].is_constant)
+		return add_instruction(spv::OpImageSampleExplicitLod, convert_type(res_type))
+			.add(args[0].base)
+			.add(xy)
+			.add(spv::ImageOperandsLodMask | spv::ImageOperandsConstOffsetMask)
+			.add(lod)
+			.add(args[2].base)
+			.result;
+
+	const spv::Id folded_coords = fold_offset_into_coords(args[0].base, xy, args[2].base);
+
 	return add_instruction(spv::OpImageSampleExplicitLod, convert_type(res_type))
 		.add(args[0].base)
-		.add(xy)
-		.add(spv::ImageOperandsLodMask | (args[2].is_constant ? spv::ImageOperandsConstOffsetMask : spv::ImageOperandsOffsetMask))
+		.add(folded_coords)
+		.add(spv::ImageOperandsLodMask)
 		.add(lod)
-		.add(args[2].base)
 		.result;
 	})
 
@@ -1883,7 +1919,8 @@ IMPLEMENT_INTRINSIC_HLSL(tex2Dfetch, 3, {
 			id_to_name(args[1].base) + " + 0.5) * " + id_to_name(args[0].base) + ".pixelsize.x, 0.5 * " + id_to_name(args[0].base) + ".pixelsize.y, 0, 0))";
 	})
 IMPLEMENT_INTRINSIC_SPIRV(tex2Dfetch, 3, {
-	const spv::Id zero = emit_constant(0);
+	constant zero_data = {};
+	const spv::Id zero = emit_constant({ type::t_int, 1, 1 }, zero_data);
 	const spv::Id coords = add_instruction(spv::OpCompositeConstruct, convert_type({ type::t_int, 2, 1 }))
 		.add(args[1].base)
 		.add(zero)

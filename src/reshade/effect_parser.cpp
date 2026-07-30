@@ -1287,6 +1287,11 @@ bool reshadefx::parser::parse_expression_multary(expression &lhs, unsigned int l
 					return error(rhs.location, 3022, "scalar, vector, or matrix expected"), false;
 			}
 
+			// SPIR-V has no arithmetic or bitwise operation on booleans, and HLSL promotes them to
+			// int. Without this the operation is emitted with a boolean result type and is invalid.
+			if (type.is_boolean() && !is_bool_result && op != tokenid::ampersand_ampersand && op != tokenid::pipe_pipe)
+				type.base = type::t_int;
+
 			// Perform implicit type conversion
 			if (lhs.type.components() > type.components())
 				warning(lhs.location, 3206, "implicit truncation of vector type");
