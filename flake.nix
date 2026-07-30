@@ -125,6 +125,14 @@
             touch $out
           '';
 
+          checks.pointer-constraints-are-wired = pkgs.runCommand "pointer-constraints-are-wired" { } ''
+            grep -q 'confinePointer()' ${./src/overlay/imgui_overlay.cpp} \
+              || { echo "confinePointer has no caller -- the constraints module is compiled but dead"; exit 1; }
+            grep -q 'releasePointer()' ${./src/overlay/imgui_overlay.cpp} \
+              || { echo "releasePointer has no caller -- confinement would never be lifted"; exit 1; }
+            touch $out
+          '';
+
           packages = {
             vkbasalt-overlay = mkVkbasaltOverlay pkgs;
 

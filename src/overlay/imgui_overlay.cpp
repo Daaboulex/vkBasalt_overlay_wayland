@@ -183,6 +183,15 @@ namespace vkBasalt
         visible = !visible;
         setInputBlocked(visible);
 
+        // Keeps the cursor inside the game window while the overlay owns it, so
+        // it cannot be lost to another monitor mid-interaction.
+        if (isWayland())
+        {
+            if (visible)
+                confinePointer();
+            else
+                releasePointer();
+        }
 
         saveToPersistentState();
     }
