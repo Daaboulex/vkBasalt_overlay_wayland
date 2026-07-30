@@ -150,6 +150,8 @@ namespace reshadefx
 		std::string semantic;
 		reshadefx::location location;
 		uint32_t definition = 0;
+		reshadefx::constant default_value = {};
+		bool has_default_value = false;
 	};
 
 	/// <summary>

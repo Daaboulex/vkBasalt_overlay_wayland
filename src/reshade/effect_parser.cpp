@@ -888,6 +888,17 @@ bool reshadefx::parser::parse_expression_unary(expression &exp)
 				return false;
 			}
 
+			// Resolution accepts a call that leaves off trailing parameters carrying a default
+			// value, so those have to be supplied here before anything counts the arguments.
+			if (symbol.function != nullptr)
+			{
+				for (size_t i = arguments.size(); i < symbol.function->parameter_list.size(); ++i)
+				{
+					const struct_member_info &param = symbol.function->parameter_list[i];
+					arguments.emplace_back().reset_to_rvalue_constant(location, param.default_value, param.type);
+				}
+			}
+
 			assert(symbol.function != nullptr);
 
 			std::vector<expression> parameters(arguments.size());
@@ -2418,8 +2429,6 @@ bool reshadefx::parser::parse_function(type type, std::string name)
 			error(param.location, 3072, '\'' + param.name + "': array dimensions of function parameters must be explicit");
 		}
 
-		// Handle optional default parameter value (e.g., float x = 0.0)
-		// Skip the default value — it's not used, but must be consumed for parsing
 		if (accept('='))
 		{
 			expression default_value;
@@ -2429,6 +2438,19 @@ bool reshadefx::parser::parse_function(type type, std::string name)
 				expect_parenthesis = false;
 				consume_until(')');
 				break;
+			}
+
+			default_value.add_cast_operation(param.type);
+
+			if (!default_value.is_constant)
+			{
+				parse_success = false;
+				error(default_value.location, 3011, '\'' + param.name + "': default value must be a literal expression");
+			}
+			else
+			{
+				param.default_value = default_value.constant;
+				param.has_default_value = true;
 			}
 		}
 

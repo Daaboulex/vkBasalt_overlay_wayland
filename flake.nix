@@ -152,17 +152,22 @@
 
           # Compiles a shader exercising every compute feature and validates the
           # SPIR-V it produces, so a silently-wrong emission fails the build.
-          # A macro argument's tokens must not be glued together. accept() skips space tokens and
-          # drops them, so expanding through it turned "float val" into "floatval".
-          checks.macro-arguments-keep-their-spacing =
-            pkgs.runCommand "macro-arguments-keep-their-spacing"
+          # Each file here is a language feature that was once miscompiled or rejected. They are
+          # small on purpose: when one fails, the feature it isolates is the one that broke.
+          checks.language-features-compile =
+            pkgs.runCommand "language-features-compile"
               { nativeBuildInputs = [ self'.packages.vkbasalt-overlay ]; }
               ''
-                mkdir -p shaders
-                cp ${./test/macro_spacing.fx} shaders/macro_spacing.fx
+                cp -r ${./test/language} shaders
                 vkbasalt-test-shaders shaders > report.txt 2>&1 || true
-                grep -q '^PASS  macro_spacing' report.txt \
-                  || { cat report.txt; echo "a macro argument's tokens are being glued together again"; exit 1; }
+
+                expected=$(ls shaders/*.fx | wc -l)
+                actual=$(grep -c '^PASS  ' report.txt || true)
+                if [ "$expected" != "$actual" ]; then
+                  cat report.txt
+                  echo "expected all $expected language feature shaders to compile, $actual did"
+                  exit 1
+                fi
                 touch $out
               '';
 

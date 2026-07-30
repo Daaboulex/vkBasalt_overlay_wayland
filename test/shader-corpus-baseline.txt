@@ -1,11 +1,9 @@
-FAIL AO
 FAIL BulgePinch
 FAIL BX_XIV_ChromakeyPlus
 FAIL crt-royale
 FAIL CubeLUT1D
 FAIL CubeLUT3D
 FAIL Drunk
-FAIL GI
 FAIL lilium__blue_noise_dithering
 FAIL lilium__cas_hdr
 FAIL lilium__filmgrain
@@ -47,6 +45,7 @@ PASS AdaptiveTonemapper
 PASS AdvancedAutoHDR
 PASS Anaglyph_to_SBS_or_TAB
 PASS anamorpho
+PASS AO
 PASS ArcaneBloom
 PASS AreaCopy
 PASS AreaDiscard
@@ -222,6 +221,7 @@ PASS FXAA
 PASS GAUSSIAN
 PASS GaussianBloom
 PASS GaussianBlurCS
+PASS GI
 PASS GlobalAlpha
 PASS GloomAO
 PASS GoldenRatio

@@ -365,9 +365,23 @@ bool reshadefx::symbol_table::resolve_function_call(const std::string &name, con
 					continue;
 				}
 			}
-			else if (arguments.size() != function->parameter_list.size())
+			else if (arguments.size() > function->parameter_list.size())
 			{
 				continue;
+			}
+			// A call may leave off trailing parameters that carry a default value.
+			else if (arguments.size() < function->parameter_list.size())
+			{
+				bool defaulted = true;
+				for (size_t i = arguments.size(); i < function->parameter_list.size(); ++i)
+					if (!function->parameter_list[i].has_default_value)
+					{
+						defaulted = false;
+						break;
+					}
+
+				if (!defaulted)
+					continue;
 			}
 
 			// A new possibly-matching function was found, compare it against the current result
