@@ -102,6 +102,20 @@
             settings.configuration.MD033.enabled = false;
           };
 
+          checks.settings-writer-owns-its-file = pkgs.runCommand "settings-writer-owns-its-file" { } ''
+            src=${./src/config_serializer.cpp}
+            writer=$(sed -n '/ConfigSerializer::saveSettings/,/^    }/p' "$src")
+            if ! grep -q 'baseDir + "/settings.conf"' <<< "$writer"; then
+              echo "saveSettings must write baseDir/settings.conf"
+              exit 1
+            fi
+            if grep -q 'ofstream file(baseDir + "/vkBasalt.conf")\|configPath = baseDir + "/vkBasalt.conf"' <<< "$writer"; then
+              echo "saveSettings targets vkBasalt.conf -- that truncates the user's effects config"
+              exit 1
+            fi
+            touch $out
+          '';
+
           packages = {
             vkbasalt-overlay = mkVkbasaltOverlay pkgs;
 

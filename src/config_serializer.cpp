@@ -156,12 +156,18 @@ namespace vkBasalt
     {
         VkBasaltSettings settings;
 
-        std::string userConfig = getBaseConfigDir() + "/vkBasalt.conf";
+        std::string baseDir     = getBaseConfigDir();
+        std::string homePath    = std::getenv("HOME") ? std::getenv("HOME") : "";
+        const char* dataHomeEnv = std::getenv("XDG_DATA_HOME");
+        std::string dataHome    = dataHomeEnv ? std::string(dataHomeEnv) + "/vkBasalt-overlay" : homePath + "/.local/share/vkBasalt-overlay";
 
-        const std::array<std::string, 3> configPaths = {
-            userConfig,
+        const std::array<std::string, 6> configPaths = {
+            baseDir + "/settings.conf",
+            baseDir + "/vkBasalt.conf",
+            dataHome + "/vkBasalt.conf",
             std::string(SYSCONFDIR) + "/vkBasalt-overlay/vkBasalt.conf",
             std::string(SYSCONFDIR) + "/vkBasalt-overlay.conf",
+            std::string(DATADIR) + "/vkBasalt-overlay/vkBasalt.conf",
         };
 
         std::string configPath;
@@ -248,15 +254,16 @@ namespace vkBasalt
 
         mkdir(baseDir.c_str(), 0755);
 
-        std::string configPath = baseDir + "/vkBasalt.conf";
+        std::string configPath = baseDir + "/settings.conf";
         std::ofstream file(configPath);
         if (!file.is_open())
         {
-            Logger::err("Could not open vkBasalt.conf for writing: " + configPath);
+            Logger::err("Could not open settings.conf for writing: " + configPath);
             return false;
         }
 
-        file << "# vkBasalt configuration\n\n";
+        file << "# vkBasalt overlay settings -- written by the overlay.\n";
+        file << "# Effects and shader paths live in vkBasalt.conf, which this never rewrites.\n\n";
 
         file << "# Overlay settings\n";
         file << "overlayBlockInput = " << (settings.overlayBlockInput ? "true" : "false") << "\n";
@@ -289,7 +296,7 @@ namespace vkBasalt
 
         mkdir(baseDir.c_str(), 0755);
 
-        std::string configPath = baseDir + "/vkBasalt.conf";
+        std::string configPath = baseDir + "/settings.conf";
 
         struct stat st;
         if (stat(configPath.c_str(), &st) == 0)
