@@ -1120,13 +1120,58 @@ namespace vkBasalt
 
     // Compiling an effect costs a measured 4.4ms at the median and 214ms at worst. Doing it under
     // globalLock blocks every other intercepted call, including the vkCreateImage a texture thread
-    // makes once depth capture is on. The compile cache carries its own mutex, so filling it here,
-    // with no lock held, leaves the compile under the lock a cache hit. A miss is harmless: it
-    // simply compiles under the lock as before, so correctness never depends on this having run.
+    // makes once depth capture is on. The compile cache carries its own mutex, so filling it with
+    // no lock held leaves the compile under the lock a cache hit. A miss is harmless: it compiles
+    // under the lock as before, so correctness never depends on any of this having run.
+    struct EffectCompileRequest
+    {
+        std::string                                      shaderPath;
+        std::vector<std::pair<std::string, std::string>> defines;
+    };
+
+    // Caller HOLDS globalLock.
+    std::vector<EffectCompileRequest> gatherEffectCompileRequests(const std::vector<std::string>& effectNames,
+                                                                 VkExtent2D                      extent,
+                                                                 VkFormat                        unormFormat)
+    {
+        std::vector<EffectCompileRequest> requests;
+
+        for (const std::string& name : effectNames)
+        {
+            std::string path = effectRegistry.getEffectFilePath(name);
+            if (path.empty())
+                continue;
+
+            requests.push_back({std::move(path), reshadeCompileDefines(extent, unormFormat, effectRegistry.getPreprocessorDefs(name))});
+        }
+
+        return requests;
+    }
+
+    // Caller HOLDS NO lock.
+    void runEffectCompileWarmUp(const std::vector<EffectCompileRequest>& requests)
+    {
+        if (requests.empty())
+            return;
+
+        const std::vector<std::string> includePaths = ConfigSerializer::loadShaderManagerConfig().discoveredShaderPaths;
+
+        for (const EffectCompileRequest& request : requests)
+        {
+            try
+            {
+                getOrCompileReshadeEffect(request.shaderPath, request.defines, includePaths);
+            }
+            catch (const std::exception& e)
+            {
+                Logger::debug(std::string("compile cache warm-up skipped an effect: ") + e.what());
+            }
+        }
+    }
+
     void warmEffectCompileCache(VkSwapchainKHR swapchain)
     {
-        std::vector<std::string> shaderPaths;
-        std::vector<std::vector<std::pair<std::string, std::string>>> shaderDefines;
+        std::vector<EffectCompileRequest> requests;
 
         {
             scoped_lock l(globalLock);
@@ -1139,36 +1184,12 @@ namespace vkBasalt
             if (!pLogicalSwapchain->fakeImages.empty())
                 return;
 
-            const VkExtent2D extent = pLogicalSwapchain->imageExtent;
-            const VkFormat unormFormat = convertToUNORM(pLogicalSwapchain->format);
-
-            for (const std::string& name : effectRegistry.getSelectedEffects())
-            {
-                std::string path = effectRegistry.getEffectFilePath(name);
-                if (path.empty())
-                    continue;
-
-                shaderPaths.push_back(std::move(path));
-                shaderDefines.push_back(reshadeCompileDefines(extent, unormFormat, effectRegistry.getPreprocessorDefs(name)));
-            }
+            requests = gatherEffectCompileRequests(effectRegistry.getSelectedEffects(),
+                                                   pLogicalSwapchain->imageExtent,
+                                                   convertToUNORM(pLogicalSwapchain->format));
         }
 
-        if (shaderPaths.empty())
-            return;
-
-        const std::vector<std::string> includePaths = ConfigSerializer::loadShaderManagerConfig().discoveredShaderPaths;
-
-        for (size_t i = 0; i < shaderPaths.size(); i++)
-        {
-            try
-            {
-                getOrCompileReshadeEffect(shaderPaths[i], shaderDefines[i], includePaths);
-            }
-            catch (const std::exception& e)
-            {
-                Logger::debug(std::string("compile cache warm-up skipped an effect: ") + e.what());
-            }
-        }
+        runEffectCompileWarmUp(requests);
     }
 
     VKAPI_ATTR VkResult VKAPI_CALL vkBasalt_GetSwapchainImagesKHR(VkDevice       device,
@@ -1450,6 +1471,36 @@ namespace vkBasalt
                 std::vector<std::string> activeEffects = pLogicalDevice->imguiOverlay
                     ? pLogicalDevice->imguiOverlay->getActiveEffects()
                     : pConfig->getOption<std::vector<std::string>>("effects", {});
+
+                // A reload is where a newly added effect is compiled for the first time, so this is
+                // the cold path. Compile it before the reload rather than during, with the lock let
+                // go in between.
+                std::vector<EffectCompileRequest> requests;
+                for (const auto& [_, pSwapchain] : swapchainMap)
+                {
+                    if (!pSwapchain || pSwapchain->fakeImages.empty())
+                        continue;
+
+                    std::vector<EffectCompileRequest> forSwapchain = gatherEffectCompileRequests(
+                        activeEffects, pSwapchain->imageExtent, convertToUNORM(pSwapchain->format));
+                    requests.insert(requests.end(), forSwapchain.begin(), forSwapchain.end());
+                }
+
+                if (!requests.empty())
+                {
+                    l.unlock();
+                    runEffectCompileWarmUp(requests);
+                    l.lock();
+
+                    // The device could have gone away while the lock was released. Presenting to a
+                    // destroyed device is not possible and reporting success for it would be a lie.
+                    const auto deviceIt = deviceMap.find(GetKey(queue));
+                    if (deviceIt == deviceMap.end() || deviceIt->second.get() != pLogicalDevice)
+                    {
+                        Logger::err("device was destroyed while effects were being compiled");
+                        return VK_ERROR_DEVICE_LOST;
+                    }
+                }
 
                 reloadAllSwapchains(pLogicalDevice, activeEffects);
             }

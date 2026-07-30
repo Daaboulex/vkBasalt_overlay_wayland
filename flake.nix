@@ -201,6 +201,26 @@
           # The application holds the first imageCount fake images for the swapchain's life, so the
           # pool may only ever be appended to. Freeing or reordering it hands the application dead
           # handles, which is a use-after-free in the game's own present path.
+          # Compiling under globalLock is what stalled every other intercepted call. The warm-up
+          # exists to stop that, so a compile started from anywhere else in the layer, or from the
+          # reload path without letting the lock go first, puts the stall straight back.
+          checks.compiles-never-hold-the-lock = pkgs.runCommand "compiles-never-hold-the-lock" { } ''
+            src=${./src/basalt.cpp}
+
+            warm=$(sed -n '/void runEffectCompileWarmUp/,/^    }/p' "$src")
+            grep -q 'getOrCompileReshadeEffect' <<< "$warm" \
+              || { echo "runEffectCompileWarmUp no longer compiles anything"; exit 1; }
+
+            outside=$(grep -c 'getOrCompileReshadeEffect' "$src")
+            inside=$(grep -c 'getOrCompileReshadeEffect' <<< "$warm")
+            [ "$outside" = "$inside" ] \
+              || { echo "the layer compiles an effect outside runEffectCompileWarmUp -- that call may be holding globalLock"; exit 1; }
+
+            grep -q 'l.unlock();' <<< "$(grep -B4 'runEffectCompileWarmUp(requests);' "$src")" \
+              || { echo "the reload warms the cache without releasing globalLock first, which is the whole point of warming"; exit 1; }
+            touch $out
+          '';
+
           checks.effect-image-pool-only-appends = pkgs.runCommand "effect-image-pool-only-appends" { } ''
             body=$(sed -n '/bool growFakeSwapchainImages/,/^    }/p' ${./src/basalt.cpp})
             [ -n "$body" ] || { echo "growFakeSwapchainImages is gone -- the pool can no longer grow"; exit 1; }
