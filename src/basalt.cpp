@@ -589,7 +589,20 @@ namespace vkBasalt
     {
         LogicalDevice* pLogicalDevice = pLogicalSwapchain->pLogicalDevice;
 
-        pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
+        // Only the layer's own passes touch what is about to be destroyed. Draining the whole queue
+        // also waits out the application's next frame, measured at 45 percent of the wait.
+        std::vector<VkFence> pending;
+        for (VkFence fence : pLogicalSwapchain->effectFences)
+            if (fence != VK_NULL_HANDLE)
+                pending.push_back(fence);
+
+        const uint64_t reloadWaitNs = 2'000'000'000ull;
+        if (pending.empty()
+            || pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, pending.size(), pending.data(), VK_TRUE, reloadWaitNs)
+                   != VK_SUCCESS)
+        {
+            pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
+        }
 
         pLogicalSwapchain->effects.clear();
         pLogicalSwapchain->defaultTransfer.reset();
@@ -1317,6 +1330,22 @@ namespace vkBasalt
             pLogicalDevice, pLogicalSwapchain->effects, depth.image, depth.imageView, depth.format, pLogicalSwapchain->commandBuffersEffect);
         Logger::debug("wrote CommandBuffers");
 
+        pLogicalSwapchain->effectFences.resize(pLogicalSwapchain->imageCount);
+        {
+            VkFenceCreateInfo fenceInfo = {};
+            fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+            fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+            for (uint32_t i = 0; i < pLogicalSwapchain->imageCount; i++)
+            {
+                if (pLogicalDevice->vkd.CreateFence(pLogicalDevice->device, &fenceInfo, nullptr,
+                                                    &pLogicalSwapchain->effectFences[i]) != VK_SUCCESS)
+                {
+                    Logger::err("failed to create effect fence " + std::to_string(i));
+                    pLogicalSwapchain->effectFences[i] = VK_NULL_HANDLE;
+                }
+            }
+        }
+
         pLogicalSwapchain->semaphores = createSemaphores(pLogicalDevice, pLogicalSwapchain->imageCount);
         pLogicalSwapchain->overlaySemaphores = createSemaphores(pLogicalDevice, pLogicalSwapchain->imageCount);
         Logger::debug("created semaphores");
@@ -1566,6 +1595,23 @@ namespace vkBasalt
                     effect->updateEffect();
             }
 
+            // This command buffer is about to be submitted again, so the previous submission of it
+            // must have finished. Re-acquiring the image usually means it already has, making this
+            // wait free, but "usually" is not a synchronisation guarantee.
+            VkFence effectFence = index < pLogicalSwapchain->effectFences.size()
+                ? pLogicalSwapchain->effectFences[index]
+                : VK_NULL_HANDLE;
+
+            if (effectFence != VK_NULL_HANDLE)
+            {
+                if (pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, 1, &effectFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS
+                    || pLogicalDevice->vkd.ResetFences(pLogicalDevice->device, 1, &effectFence) != VK_SUCCESS)
+                {
+                    Logger::err("effect fence wait or reset failed for image " + std::to_string(index));
+                    effectFence = VK_NULL_HANDLE;
+                }
+            }
+
             VkSubmitInfo submitInfo = {};
             submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
             // The application's wait semaphores must be honoured exactly once,
@@ -1583,9 +1629,24 @@ namespace vkBasalt
             submitInfo.signalSemaphoreCount = 1;
             submitInfo.pSignalSemaphores    = &pLogicalSwapchain->semaphores[index];
 
-            VkResult vr = pLogicalDevice->vkd.QueueSubmit(pLogicalDevice->queue, 1, &submitInfo, VK_NULL_HANDLE);
+            VkResult vr = pLogicalDevice->vkd.QueueSubmit(pLogicalDevice->queue, 1, &submitInfo, effectFence);
             if (vr != VK_SUCCESS)
+            {
+                // The fence was reset for a submission that never happened, so nothing will ever
+                // signal it. Put it back to signalled, or the next wait on it never returns.
+                if (effectFence != VK_NULL_HANDLE)
+                {
+                    pLogicalDevice->vkd.DestroyFence(pLogicalDevice->device, effectFence, nullptr);
+
+                    VkFenceCreateInfo fenceInfo = {};
+                    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+                    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+                    if (pLogicalDevice->vkd.CreateFence(pLogicalDevice->device, &fenceInfo, nullptr,
+                                                        &pLogicalSwapchain->effectFences[index]) != VK_SUCCESS)
+                        pLogicalSwapchain->effectFences[index] = VK_NULL_HANDLE;
+                }
                 return vr;
+            }
 
             VkSemaphore finalSemaphore;
             vr = submitOverlayFrame(pLogicalDevice, pLogicalSwapchain, index, finalSemaphore);

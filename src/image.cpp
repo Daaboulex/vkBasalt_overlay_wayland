@@ -5,6 +5,34 @@
 
 namespace vkBasalt
 {
+    // Waits for this one submission rather than draining the queue. A drain also waits out whatever
+    // the application has already queued, measured at 45 percent of the wait. Falls back to a drain
+    // if a fence cannot be had, which is slower but equally correct.
+    static void submitAndWait(LogicalDevice* pLogicalDevice, VkCommandBuffer commandBuffer)
+    {
+        VkSubmitInfo submitInfo       = {};
+        submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers    = &commandBuffer;
+
+        VkFenceCreateInfo fenceInfo = {};
+        fenceInfo.sType             = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+
+        VkFence fence = VK_NULL_HANDLE;
+        if (pLogicalDevice->vkd.CreateFence(pLogicalDevice->device, &fenceInfo, nullptr, &fence) != VK_SUCCESS)
+            fence = VK_NULL_HANDLE;
+
+        const VkResult submitted = pLogicalDevice->vkd.QueueSubmit(pLogicalDevice->queue, 1, &submitInfo, fence);
+
+        if (submitted == VK_SUCCESS && fence != VK_NULL_HANDLE)
+            pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, 1, &fence, VK_TRUE, UINT64_MAX);
+        else
+            pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
+
+        if (fence != VK_NULL_HANDLE)
+            pLogicalDevice->vkd.DestroyFence(pLogicalDevice->device, fence, nullptr);
+    }
+
     std::vector<VkImage> createImages(LogicalDevice*        pLogicalDevice,
                                       uint32_t              count,
                                       VkExtent3D            extent,
@@ -164,14 +192,7 @@ namespace vkBasalt
 
         pLogicalDevice->vkd.EndCommandBuffer(commandBuffer);
 
-        VkSubmitInfo submitInfo = {};
-
-        submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers    = &commandBuffer;
-
-        pLogicalDevice->vkd.QueueSubmit(pLogicalDevice->queue, 1, &submitInfo, VK_NULL_HANDLE);
-        pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
+        submitAndWait(pLogicalDevice, commandBuffer);
 
         pLogicalDevice->vkd.FreeCommandBuffers(pLogicalDevice->device, pLogicalDevice->commandPool, 1, &commandBuffer);
         pLogicalDevice->vkd.FreeMemory(pLogicalDevice->device, stagingMemory, nullptr);
@@ -224,13 +245,7 @@ namespace vkBasalt
 
         pLogicalDevice->vkd.EndCommandBuffer(commandBuffer);
 
-        VkSubmitInfo submitInfo       = {};
-        submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers    = &commandBuffer;
-
-        pLogicalDevice->vkd.QueueSubmit(pLogicalDevice->queue, 1, &submitInfo, VK_NULL_HANDLE);
-        pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
+        submitAndWait(pLogicalDevice, commandBuffer);
 
         pLogicalDevice->vkd.FreeCommandBuffers(pLogicalDevice->device, pLogicalDevice->commandPool, 1, &commandBuffer);
     }

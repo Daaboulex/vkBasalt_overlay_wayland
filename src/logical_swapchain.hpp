@@ -35,6 +35,9 @@ namespace vkBasalt
         std::vector<std::shared_ptr<Effect>> effects;
         std::shared_ptr<Effect>              defaultTransfer;
         std::vector<VkDeviceMemory>          fakeImageMemory;
+        // One per swapchain image, so a reload waits for the layer's own passes rather than draining
+        // the whole queue, and so a command buffer is never re-recorded while it is still pending.
+        std::vector<VkFence>                 effectFences;
 
         void destroy();
         void reloadEffects(Config* pConfig);

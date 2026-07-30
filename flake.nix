@@ -208,6 +208,24 @@
           # view was only appended when the image being bound was the one created last. An
           # application creating images from several threads made them drift, after which the layer
           # paired an image with another image's view and destroyed the wrong one.
+          # Draining the queue also waits out whatever the application has already submitted, which
+          # measured at 45 percent of the wait. Waiting on the layer's own submission is the same
+          # guarantee for the objects being freed, without the rest.
+          checks.waits-are-scoped-to-our-own-work = pkgs.runCommand "waits-are-scoped-to-our-own-work" { } ''
+            reload=$(sed -n '/void reloadEffectsForSwapchain/,/^        Logger::info("reloading/p' ${./src/basalt.cpp})
+            grep -q 'WaitForFences' <<< "$reload" \
+              || { echo "the reload drains the queue again instead of waiting on the layer's own passes"; exit 1; }
+
+            grep -q 'QueueSubmit(pLogicalDevice->queue, 1, &submitInfo, effectFence)' ${./src/basalt.cpp} \
+              || { echo "the effect submission carries no fence, so nothing can wait on just that work"; exit 1; }
+
+            grep -cE 'QueueWaitIdle' ${./src/image.cpp} | grep -qx 1 \
+              || { echo "image.cpp should hold exactly one QueueWaitIdle, the fallback inside submitAndWait"; exit 1; }
+            grep -q 'static void submitAndWait' ${./src/image.cpp} \
+              || { echo "the one-shot uploads no longer share a single scoped wait"; exit 1; }
+            touch $out
+          '';
+
           checks.depth-tracking-cannot-drift = pkgs.runCommand "depth-tracking-cannot-drift" { } ''
             grep -qE 'depthFormats|depthImageViews' ${./src/logical_device.hpp} ${./src/basalt.cpp} \
               && { echo "depth tracking is back to parallel vectors -- they drift apart when images are created from several threads"; exit 1; }

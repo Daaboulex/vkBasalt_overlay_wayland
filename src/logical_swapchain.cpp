@@ -27,6 +27,8 @@ namespace vkBasalt
 
             for (unsigned int i = 0; i < imageCount; i++)
             {
+                if (i < effectFences.size() && effectFences[i] != VK_NULL_HANDLE)
+                    pLogicalDevice->vkd.DestroyFence(pLogicalDevice->device, effectFences[i], nullptr);
                 pLogicalDevice->vkd.DestroySemaphore(pLogicalDevice->device, semaphores[i], nullptr);
                 pLogicalDevice->vkd.DestroySemaphore(pLogicalDevice->device, overlaySemaphores[i], nullptr);
             }
