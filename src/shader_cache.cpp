@@ -785,13 +785,6 @@ namespace vkBasalt
                 return e;
             }
 
-            if (std::string reason = reshadeUnsupportedFeature(preprocessor.output()); !reason.empty())
-            {
-                e->error = reason;
-                recordIncludes();
-                return e;
-            }
-
             e->usedMacros = preprocessor.used_macro_definitions();
             recordIncludes();
 
@@ -801,7 +794,9 @@ namespace vkBasalt
 
             if (!parser.parse(std::move(preprocessor.output()), codegen.get()))
             {
-                e->error = "Parse errors: " + parser.errors();
+                std::string parseErr = parser.errors();
+                std::string reason = reshadeUnsupportedFeature(parseErr);
+                e->error = reason.empty() ? "Parse errors: " + parseErr : reason;
                 return e;
             }
 

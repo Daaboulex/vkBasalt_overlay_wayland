@@ -141,7 +141,8 @@ enum class ErrorCategory
     Preprocessor,
     Parse,
     Signal,
-    Exception
+    Exception,
+    Unsupported
 };
 
 static const char* categoryName(ErrorCategory cat)
@@ -152,6 +153,7 @@ static const char* categoryName(ErrorCategory cat)
         case ErrorCategory::Parse:        return "PARSE";
         case ErrorCategory::Signal:       return "SIGNAL";
         case ErrorCategory::Exception:    return "EXCEPTION";
+        case ErrorCategory::Unsupported:  return "UNSUPPORTED";
     }
     return "UNKNOWN";
 }
@@ -236,8 +238,13 @@ static TestResult testShader(
         if (!parser.parse(preprocessor.output(), codegen.get()))
         {
             result.success = false;
-            result.errorMessage = "Parse errors: " + parser.errors();
-            result.category = ErrorCategory::Parse;
+            // Same translation the layer applies, so a verdict here is a verdict there.
+            {
+                std::string parseErr = parser.errors();
+                std::string reason = vkBasalt::reshadeUnsupportedFeature(parseErr);
+                result.errorMessage = reason.empty() ? "Parse errors: " + parseErr : reason;
+                result.category = reason.empty() ? ErrorCategory::Parse : ErrorCategory::Unsupported;
+            }
             s_jmpActive = 0;
             return result;
         }

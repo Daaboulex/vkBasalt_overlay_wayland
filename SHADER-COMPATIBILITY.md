@@ -34,19 +34,28 @@ Zenteon/ZenteonFX
 
 ## Why the 60 remaining shaders do not compile
 
-**Declares a newer ReShade than this build implements (18).** The shader's own
-`#error` fires and names what it wants. The FX compiler here is ReShade 4.7.0
-(see `src/reshade_fx_version.hpp`), so a shader requiring 5.1 or 6.0 refuses to
-load and says so. This is deliberate: reporting a version we do not implement
-made these shaders compile against a compiler their authors had ruled out.
+**Declares a newer ReShade than this build implements (29, category
+`PREPROCESSOR`).** The shader's own `#error` fires and names what it wants. The
+FX compiler here is ReShade 4.7.0 (see `src/reshade_fx_version.hpp`), so a shader
+requiring 5.1 or 6.0 refuses to load and says so. This is deliberate: reporting a
+version we do not implement made these shaders compile against a compiler their
+authors had ruled out. Eight of this group are the include-path artifacts
+described below rather than version gates.
 
-**Needs compute shaders (7).** Storage-image writes (`tex2Dstore`) and compute
-barriers. This layer's pipeline is fragment-only, so these cannot run. They are
-refused before compiling with a sentence naming the requirement, rather than
-producing an unknown-identifier error or — worse — a silently wrong image.
+**Needs compute shaders (8, category `UNSUPPORTED`).** Storage-image writes
+(`tex2Dstore`) and compute barriers. This layer's pipeline is fragment-only, so
+these cannot run. The compiler error is translated into the requirement — *needs
+ReShade 4.8 or newer (uses storage-image writes); this build implements 4.7* —
+rather than reported as an unknown identifier, or, as it was previously, compiled
+against no-op stubs into an image that renders incorrectly with nothing said.
 
-**Other language gaps (25).** Individual parse errors in the shaders or their
-includes, from FX syntax this compiler predates.
+The translation reads the compiler's error, never the shader source. Scanning the
+source for these tokens refuses shaders that merely mention one in a comment or
+behind their own fallback define; measured against this corpus that cost six
+working shaders, which is why it is done the other way round.
+
+**Other language gaps (22, category `PARSE`).** Individual parse errors in the
+shaders or their includes, from FX syntax this compiler predates.
 
 **Harness artifacts, not product defects (9).** Eight shaders expect
 `ReShade.fxh` one directory above their own, a layout the corpus run does not
@@ -64,7 +73,8 @@ Compared against a build from before these changes, over the same corpus:
   BX_ToyCurveTool, CMAA_2, FSR1_2X, LocalContrastCS, ReVeil. They previously
   compiled only because atomics, storage writes and barriers were stubbed out to
   no-op expressions. They would have rendered incorrectly with nothing reported.
-  They now refuse to load and explain why.
+  They now refuse to load and explain why. An eighth, MartysMods_MXAO, was
+  already failing and now reports the same clear reason.
 - **Four are prod80 shaders** — pCamera, pColorNoise, pColors, pPalettePosterize.
   None uses compute. They fail because `Oklab.fxh` declares
   `ReShade 5.1+ is required`, and that check is now honoured. Previously the

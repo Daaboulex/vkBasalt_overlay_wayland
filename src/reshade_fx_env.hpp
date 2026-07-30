@@ -42,10 +42,14 @@ namespace vkBasalt
                          "#define ddy_coarse(x) ddy(x)\n");
     }
 
-    // A shader needing a feature this build does not implement gets a plain
-    // sentence naming the ReShade version it wants, rather than a compiler error
-    // about an identifier the reader has never heard of. Empty when supported.
-    inline std::string reshadeUnsupportedFeature(const std::string& source)
+    // Translates a compiler error into a plain sentence naming the ReShade
+    // version the shader wants, rather than an identifier the reader has never
+    // heard of. Empty when the failure is something else.
+    //
+    // This reads the ERROR, never the source. Scanning the source for these
+    // tokens refuses shaders that merely mention one in a comment or behind
+    // their own fallback define, and those compile perfectly well.
+    inline std::string reshadeUnsupportedFeature(const std::string& compilerError)
     {
         struct Feature
         {
@@ -66,7 +70,7 @@ namespace vkBasalt
 
         for (const auto& f : features)
         {
-            if (source.find(f.token) == std::string::npos)
+            if (compilerError.find(f.token) == std::string::npos)
                 continue;
 
             int major = VKBASALT_RESHADE_FX_VERSION / 10000;
