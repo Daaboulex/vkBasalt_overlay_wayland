@@ -133,6 +133,17 @@
             touch $out
           '';
 
+          checks.reshade-input-map =
+            pkgs.runCommand "reshade-input-map" { nativeBuildInputs = [ pkgs.gcc ]; }
+              ''
+                mkdir -p src test
+                cp ${./src/reshade_input_map.hpp} src/reshade_input_map.hpp
+                cp ${./test/reshade_input_map_test.cpp} test/reshade_input_map_test.cpp
+                g++ -std=c++20 -O1 -Wall -Werror -o runner test/reshade_input_map_test.cpp
+                ./runner
+                touch $out
+              '';
+
           packages = {
             vkbasalt-overlay = mkVkbasaltOverlay pkgs;
 

@@ -9,6 +9,7 @@
 #include <memory>
 
 #include "vulkan_include.hpp"
+#include "reshade_input_map.hpp"
 
 #include "reshade/effect_module.hpp"
 
@@ -100,12 +101,25 @@ namespace vkBasalt
         int min = 0;
     };
 
+    // Refreshes the shared mouse reading once per frame. Without it every mouse
+    // uniform in every effect would poll the display server separately.
+    void beginReshadeInputFrame();
+
+    // ReShade's key and mousebutton sources carry a keycode annotation and a
+    // mode of "", "press" or "toggle". Press and toggle are edge-triggered, so
+    // each uniform keeps the previous frame's reading of its own key.
     class KeyUniform : public ReshadeUniform
     {
     public:
         KeyUniform(reshadefx::uniform_info uniformInfo);
         void virtual update(void* mapedBuffer) override;
         virtual ~KeyUniform();
+
+    private:
+        uint32_t keysym = 0;
+        KeyMode  mode   = KeyMode::held;
+        bool     wasDown = false;
+        bool     toggled = false;
     };
 
     class MouseButtonUniform : public ReshadeUniform
@@ -114,6 +128,12 @@ namespace vkBasalt
         MouseButtonUniform(reshadefx::uniform_info uniformInfo);
         void virtual update(void* mapedBuffer) override;
         virtual ~MouseButtonUniform();
+
+    private:
+        int     button  = 0;
+        KeyMode mode    = KeyMode::held;
+        bool    wasDown = false;
+        bool    toggled = false;
     };
 
     class MousePointUniform : public ReshadeUniform

@@ -9,6 +9,9 @@
 #include <algorithm>
 
 #include "logger.hpp"
+#include "mouse_input.hpp"
+#include "keyboard_input.hpp"
+#include "reshade_input_map.hpp"
 
 namespace vkBasalt
 {
@@ -90,6 +93,55 @@ namespace vkBasalt
             }
         }
         return uniforms;
+    }
+
+    namespace
+    {
+        struct SharedMouse
+        {
+            MouseState current;
+            MouseState previous;
+            bool       primed = false;
+        };
+        SharedMouse sharedMouse;
+
+        KeyMode modeFromAnnotation(const reshadefx::uniform_info& uniformInfo)
+        {
+            auto mode =
+                std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "mode"; });
+            if (mode == uniformInfo.annotations.end())
+                return KeyMode::held;
+            if (mode->value.string_data == "press")
+                return KeyMode::press;
+            if (mode->value.string_data == "toggle")
+                return KeyMode::toggle;
+            return KeyMode::held;
+        }
+
+        int keycodeFromAnnotation(const reshadefx::uniform_info& uniformInfo)
+        {
+            auto keycode =
+                std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "keycode"; });
+            if (keycode == uniformInfo.annotations.end())
+                return 0;
+            return keycode->type.is_floating_point() ? static_cast<int>(keycode->value.as_float[0]) : keycode->value.as_int[0];
+        }
+
+    } // namespace
+
+    void beginReshadeInputFrame()
+    {
+        MouseState now = getMouseState();
+        if (!sharedMouse.primed)
+        {
+            sharedMouse.previous = now;
+            sharedMouse.primed   = true;
+        }
+        else
+        {
+            sharedMouse.previous = sharedMouse.current;
+        }
+        sharedMouse.current = now;
     }
 
     FrameTimeUniform::FrameTimeUniform(reshadefx::uniform_info uniformInfo)
@@ -308,10 +360,15 @@ namespace vkBasalt
         }
         offset = uniformInfo.offset;
         size   = uniformInfo.size;
+        mode   = modeFromAnnotation(uniformInfo);
+        keysym = keysymForVirtualKey(keycodeFromAnnotation(uniformInfo));
+        if (!keysym)
+            Logger::warn("ReShade key uniform requests virtual-key " + std::to_string(keycodeFromAnnotation(uniformInfo))
+                         + ", which has no keysym mapping -- it will read as not pressed");
     }
     void KeyUniform::update(void* mapedBuffer)
     {
-        VkBool32 keyDown = VK_FALSE; // TODO
+        VkBool32 keyDown = keysym ? (VkBool32) applyKeyMode(mode, isKeyPressed(keysym), wasDown, toggled) : VK_FALSE;
         std::memcpy((uint8_t*) mapedBuffer + offset, &(keyDown), sizeof(VkBool32));
     }
     KeyUniform::~KeyUniform()
@@ -327,10 +384,21 @@ namespace vkBasalt
         }
         offset = uniformInfo.offset;
         size   = uniformInfo.size;
+        mode   = modeFromAnnotation(uniformInfo);
+        button = keycodeFromAnnotation(uniformInfo);
     }
     void MouseButtonUniform::update(void* mapedBuffer)
     {
-        VkBool32 keyDown = VK_FALSE; // TODO
+        bool isDown = false;
+        switch (button)
+        {
+            case 0: isDown = sharedMouse.current.leftButton; break;
+            case 1: isDown = sharedMouse.current.rightButton; break;
+            case 2: isDown = sharedMouse.current.middleButton; break;
+            default: isDown = false; break;
+        }
+
+        VkBool32 keyDown = (VkBool32) applyKeyMode(mode, isDown, wasDown, toggled);
         std::memcpy((uint8_t*) mapedBuffer + offset, &(keyDown), sizeof(VkBool32));
     }
     MouseButtonUniform::~MouseButtonUniform()
@@ -349,7 +417,7 @@ namespace vkBasalt
     }
     void MousePointUniform::update(void* mapedBuffer)
     {
-        float point[2] = {0.0f, 0.0f}; // TODO
+        float point[2] = {static_cast<float>(sharedMouse.current.x), static_cast<float>(sharedMouse.current.y)};
         std::memcpy((uint8_t*) mapedBuffer + offset, point, sizeof(float) * 2);
     }
     MousePointUniform::~MousePointUniform()
@@ -368,7 +436,8 @@ namespace vkBasalt
     }
     void MouseDeltaUniform::update(void* mapedBuffer)
     {
-        float delta[2] = {0.0f, 0.0f}; // TODO
+        float delta[2] = {static_cast<float>(sharedMouse.current.x - sharedMouse.previous.x),
+                          static_cast<float>(sharedMouse.current.y - sharedMouse.previous.y)};
         std::memcpy((uint8_t*) mapedBuffer + offset, delta, sizeof(float) * 2);
     }
     MouseDeltaUniform::~MouseDeltaUniform()

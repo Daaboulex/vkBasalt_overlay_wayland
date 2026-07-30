@@ -1204,6 +1204,7 @@ namespace vkBasalt
 
         // Mark new input frame so dispatch deduplication resets
         beginWaylandInputFrame();
+        beginReshadeInputFrame();
 
         // Guard: if no device for this queue, pass through
         auto devIt = deviceMap.find(GetKey(queue));
