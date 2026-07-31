@@ -365,6 +365,29 @@
                 touch $out
               '';
 
+          checks.precision-is-never-relaxed =
+            pkgs.runCommand "precision-is-never-relaxed"
+              {
+                nativeBuildInputs = [
+                  self'.packages.vkbasalt-overlay
+                  pkgs.spirv-tools
+                ];
+              }
+              ''
+                cp -r ${./test/language} shaders
+                mkdir spv
+                vkbasalt-test-shaders --dump-spirv spv shaders > /dev/null 2>&1 || true
+
+                for m in spv/*.spv; do
+                  [ -e "$m" ] || continue
+                  if spirv-dis "$m" | grep -q RelaxedPrecision; then
+                    echo "$m relaxes precision -- a driver may then accumulate bloom at fp16, which flickers"
+                    exit 1
+                  fi
+                done
+                touch $out
+              '';
+
           checks.compute-spirv-is-valid =
             pkgs.runCommand "compute-spirv-is-valid"
               {

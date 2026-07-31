@@ -191,6 +191,9 @@ private:
 	bool _vulkan_semantics = false;
 	bool _uniforms_to_spec_constants = false;
 	bool _enable_16bit_types = false;
+	// A shader asking for half or min16float still computes at full precision here: letting a
+	// driver drop to fp16 makes bloom accumulation flicker at low exposure.
+	bool _relax_min_precision = false;
 	bool _flip_vert_y = false;
 
 	spirv_basic_block _entries;
@@ -1017,7 +1020,7 @@ private:
 
 			add_member_name(res, index, member.name.c_str());
 
-			if (!_enable_16bit_types && member.type.is_numeric() && member.type.precision() < 32)
+			if (_relax_min_precision && !_enable_16bit_types && member.type.is_numeric() && member.type.precision() < 32)
 				add_member_decoration(res, index, spv::DecorationRelaxedPrecision);
 		}
 
@@ -1248,7 +1251,7 @@ private:
 		if (name != nullptr && *name != '\0')
 			add_name(res, name);
 
-		if (!_enable_16bit_types && type.is_numeric() && type.precision() < 32)
+		if (_relax_min_precision && !_enable_16bit_types && type.is_numeric() && type.precision() < 32)
 			add_decoration(res, spv::DecorationRelaxedPrecision);
 
 		_storage_lookup[res] = { storage, format };
@@ -2333,7 +2336,7 @@ private:
 
 				if (res_type.has(type::q_precise))
 					add_decoration(inst, spv::DecorationNoContraction);
-				if (!_enable_16bit_types && res_type.precision() < 32)
+				if (_relax_min_precision && !_enable_16bit_types && res_type.precision() < 32)
 					add_decoration(inst, spv::DecorationRelaxedPrecision);
 
 				ids.push_back(inst);
@@ -2351,7 +2354,7 @@ private:
 
 		if (res_type.has(type::q_precise))
 			add_decoration(inst, spv::DecorationNoContraction);
-		if (!_enable_16bit_types && res_type.precision() < 32)
+		if (_relax_min_precision && !_enable_16bit_types && res_type.precision() < 32)
 			add_decoration(inst, spv::DecorationRelaxedPrecision);
 
 		return inst;
