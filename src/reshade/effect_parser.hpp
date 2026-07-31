@@ -1,12 +1,11 @@
 /*
- * Copyright (C) 2014 Patrick Mours. All rights reserved.
- * License: https://github.com/crosire/reshade#license
+ * Copyright (C) 2014 Patrick Mours
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #pragma once
 
 #include "effect_symbol_table.hpp"
-#include <memory> // std::unique_ptr
 
 namespace reshadefx
 {
@@ -21,17 +20,16 @@ namespace reshadefx
 		~parser();
 
 		/// <summary>
-		/// Parse the provided input string.
+		/// Parses the provided source code and generate code for it.
 		/// </summary>
-		/// <param name="source">The string to analyze.</param>
-		/// <param name="backend">The code generation implementation to use.</param>
-		/// <returns>A boolean value indicating whether parsing was successful or not.</returns>
+		/// <param name="source">Source code string to parse.</param>
+		/// <param name="backend">Code generation implementation to use.</param>
+		/// <returns><see langword="true"/> if parsing was successfull, <see langword="false"/> otherwise.</returns>
 		bool parse(std::string source, class codegen *backend);
 
 		/// <summary>
-		/// Get the list of error messages.
+		/// Gets the list of error messages.
 		/// </summary>
-		std::string &errors() { return _errors; }
 		const std::string &errors() const { return _errors; }
 
 	private:
@@ -51,7 +49,7 @@ namespace reshadefx
 		bool expect(char tok) { return expect(static_cast<tokenid>(tok)); }
 		bool expect(tokenid tokid);
 
-		bool accept_symbol(std::string &identifier, scope &scope, symbol &symbol);
+		bool accept_symbol(std::string &identifier, scoped_symbol &symbol);
 		bool accept_type_class(type &type);
 		bool accept_type_qualifiers(type &type);
 		bool accept_unary_op();
@@ -59,14 +57,14 @@ namespace reshadefx
 		bool peek_multary_op(unsigned int &precedence) const;
 		bool accept_assignment_op();
 
-		bool parse_top();
+		bool parse_top(bool &parse_success);
 		bool parse_struct();
-		bool parse_function(type type, std::string name);
+		bool parse_function(type type, std::string name, shader_type stype, int num_threads[3]);
 		bool parse_variable(type type, std::string name, bool global = false);
 		bool parse_technique();
-		bool parse_technique_pass(pass_info &info);
+		bool parse_technique_pass(pass &info);
 		bool parse_type(type &type);
-		bool parse_array_size(type &type);
+		bool parse_array_length(type &type);
 		bool parse_expression(expression &expression);
 		bool parse_expression_unary(expression &expression);
 		bool parse_expression_multary(expression &expression, unsigned int precedence = 0);
@@ -75,11 +73,15 @@ namespace reshadefx
 		bool parse_statement(bool scoped);
 		bool parse_statement_block(bool scoped);
 
-		codegen *_codegen = nullptr;
 		std::string _errors;
-		token _token, _token_next, _token_backup;
-		std::unique_ptr<class lexer> _lexer, _lexer_backup;
-		reshadefx::type _current_return_type;
+
+		class lexer *_lexer = nullptr;
+		class codegen *_codegen = nullptr;
+
+		token _token;
+		token _token_next;
+		token _token_backup;
+
 		std::vector<uint32_t> _loop_break_target_stack;
 		std::vector<uint32_t> _loop_continue_target_stack;
 	};

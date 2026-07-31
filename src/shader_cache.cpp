@@ -168,7 +168,7 @@ namespace vkBasalt
             w.u32(t.cols);
             w.u32(t.qualifiers);
             w.i32(t.array_length);
-            w.u32(t.definition);
+            w.u32(t.struct_definition);
         }
 
         reshadefx::type getType(Reader& r)
@@ -179,7 +179,7 @@ namespace vkBasalt
             t.cols = r.u32();
             t.qualifiers = r.u32();
             t.array_length = r.i32();
-            t.definition = r.u32();
+            t.struct_definition = r.u32();
             return t;
         }
 
@@ -228,25 +228,20 @@ namespace vkBasalt
             return v;
         }
 
-        void putModule(Writer& w, const reshadefx::module& m)
+        void putModule(Writer& w, const reshadefx::effect_module& m)
         {
-            w.str(m.hlsl);
-
-            w.u32((uint32_t)m.spirv.size());
-            w.bytes(m.spirv.data(), m.spirv.size() * sizeof(uint32_t));
 
             w.u32((uint32_t)m.entry_points.size());
             for (const auto& e : m.entry_points)
             {
-                w.str(e.name);
-                w.u8((uint8_t) e.type);
+                w.str(e.first);
+                w.u8((uint8_t) e.second);
             }
 
             w.u32((uint32_t)m.textures.size());
             for (const auto& t : m.textures)
             {
                 w.u32(t.id);
-                w.u32(t.binding);
                 w.str(t.semantic);
                 w.str(t.unique_name);
                 putAnnotations(w, t.annotations);
@@ -260,8 +255,6 @@ namespace vkBasalt
             for (const auto& s : m.samplers)
             {
                 w.u32(s.id);
-                w.u32(s.binding);
-                w.u32(s.texture_binding);
                 w.str(s.unique_name);
                 w.str(s.texture_name);
                 putAnnotations(w, s.annotations);
@@ -275,7 +268,7 @@ namespace vkBasalt
                 w.u8(s.srgb);
             }
 
-            auto putUniforms = [&](const std::vector<reshadefx::uniform_info>& v) {
+            auto putUniforms = [&](const std::vector<reshadefx::uniform>& v) {
                 w.u32((uint32_t)v.size());
                 for (const auto& u : v)
                 {
@@ -306,50 +299,43 @@ namespace vkBasalt
                     w.str(p.cs_entry_point);
                     w.u8(p.clear_render_targets);
                     w.u8(p.srgb_write_enable);
-                    w.u8(p.blend_enable);
+                    w.u8(p.blend_enable[0]);
                     w.u8(p.stencil_enable);
-                    w.u8(p.color_write_mask);
+                    w.u8(p.render_target_write_mask[0]);
                     w.u8(p.stencil_read_mask);
                     w.u8(p.stencil_write_mask);
-                    w.u8((uint8_t)p.blend_op);
-                    w.u8((uint8_t)p.blend_op_alpha);
-                    w.u8((uint8_t)p.src_blend);
-                    w.u8((uint8_t)p.dest_blend);
-                    w.u8((uint8_t)p.src_blend_alpha);
-                    w.u8((uint8_t)p.dest_blend_alpha);
+                    w.u8((uint8_t)p.color_blend_op[0]);
+                    w.u8((uint8_t)p.alpha_blend_op[0]);
+                    w.u8((uint8_t)p.source_color_blend_factor[0]);
+                    w.u8((uint8_t)p.dest_color_blend_factor[0]);
+                    w.u8((uint8_t)p.source_alpha_blend_factor[0]);
+                    w.u8((uint8_t)p.dest_alpha_blend_factor[0]);
                     w.u8((uint8_t)p.stencil_comparison_func);
                     w.u32(p.stencil_reference_value);
-                    w.u8((uint8_t)p.stencil_op_pass);
-                    w.u8((uint8_t)p.stencil_op_fail);
-                    w.u8((uint8_t)p.stencil_op_depth_fail);
+                    w.u8((uint8_t)p.stencil_pass_op);
+                    w.u8((uint8_t)p.stencil_fail_op);
+                    w.u8((uint8_t)p.stencil_depth_fail_op);
                     w.u32(p.num_vertices);
                     w.u8((uint8_t)p.topology);
                     w.u32(p.viewport_width);
                     w.u32(p.viewport_height);
-                    w.u32(p.dispatch_z);
+                    w.u32(p.viewport_dispatch_z);
                 }
             }
 
             w.u32(m.total_uniform_size);
-            w.u32(m.num_sampler_bindings);
-            w.u32(m.num_texture_bindings);
         }
 
-        reshadefx::module getModule(Reader& r)
+        reshadefx::effect_module getModule(Reader& r)
         {
-            reshadefx::module m;
-            m.hlsl = r.str();
+            reshadefx::effect_module m;
 
             uint32_t n = r.count();
-            m.spirv.resize(n);
-            r.bytes(m.spirv.data(), n * sizeof(uint32_t));
-
-            n = r.count();
             m.entry_points.resize(n);
             for (auto& e : m.entry_points)
             {
-                e.name = r.str();
-                e.type = (reshadefx::shader_type) r.u8();
+                e.first = r.str();
+                e.second = (reshadefx::shader_type) r.u8();
             }
 
             n = r.count();
@@ -357,7 +343,6 @@ namespace vkBasalt
             for (auto& t : m.textures)
             {
                 t.id = r.u32();
-                t.binding = r.u32();
                 t.semantic = r.str();
                 t.unique_name = r.str();
                 t.annotations = getAnnotations(r);
@@ -372,12 +357,10 @@ namespace vkBasalt
             for (auto& s : m.samplers)
             {
                 s.id = r.u32();
-                s.binding = r.u32();
-                s.texture_binding = r.u32();
                 s.unique_name = r.str();
                 s.texture_name = r.str();
                 s.annotations = getAnnotations(r);
-                s.filter = (reshadefx::texture_filter)r.u32();
+                s.filter = (reshadefx::filter_mode)r.u32();
                 s.address_u = (reshadefx::texture_address_mode)r.u32();
                 s.address_v = (reshadefx::texture_address_mode)r.u32();
                 s.address_w = (reshadefx::texture_address_mode)r.u32();
@@ -387,7 +370,7 @@ namespace vkBasalt
                 s.srgb = r.u8();
             }
 
-            auto getUniforms = [&](std::vector<reshadefx::uniform_info>& v) {
+            auto getUniforms = [&](std::vector<reshadefx::uniform>& v) {
                 uint32_t k = r.count();
                 v.resize(k);
                 for (auto& u : v)
@@ -421,33 +404,31 @@ namespace vkBasalt
                     p.cs_entry_point = r.str();
                     p.clear_render_targets = r.u8();
                     p.srgb_write_enable = r.u8();
-                    p.blend_enable = r.u8();
+                    p.blend_enable[0] = r.u8();
                     p.stencil_enable = r.u8();
-                    p.color_write_mask = r.u8();
+                    p.render_target_write_mask[0] = r.u8();
                     p.stencil_read_mask = r.u8();
                     p.stencil_write_mask = r.u8();
-                    p.blend_op = (reshadefx::pass_blend_op)r.u8();
-                    p.blend_op_alpha = (reshadefx::pass_blend_op)r.u8();
-                    p.src_blend = (reshadefx::pass_blend_func)r.u8();
-                    p.dest_blend = (reshadefx::pass_blend_func)r.u8();
-                    p.src_blend_alpha = (reshadefx::pass_blend_func)r.u8();
-                    p.dest_blend_alpha = (reshadefx::pass_blend_func)r.u8();
-                    p.stencil_comparison_func = (reshadefx::pass_stencil_func)r.u8();
+                    p.color_blend_op[0] = (reshadefx::blend_op)r.u8();
+                    p.alpha_blend_op[0] = (reshadefx::blend_op)r.u8();
+                    p.source_color_blend_factor[0] = (reshadefx::blend_factor)r.u8();
+                    p.dest_color_blend_factor[0] = (reshadefx::blend_factor)r.u8();
+                    p.source_alpha_blend_factor[0] = (reshadefx::blend_factor)r.u8();
+                    p.dest_alpha_blend_factor[0] = (reshadefx::blend_factor)r.u8();
+                    p.stencil_comparison_func = (reshadefx::stencil_func)r.u8();
                     p.stencil_reference_value = r.u32();
-                    p.stencil_op_pass = (reshadefx::pass_stencil_op)r.u8();
-                    p.stencil_op_fail = (reshadefx::pass_stencil_op)r.u8();
-                    p.stencil_op_depth_fail = (reshadefx::pass_stencil_op)r.u8();
+                    p.stencil_pass_op = (reshadefx::stencil_op)r.u8();
+                    p.stencil_fail_op = (reshadefx::stencil_op)r.u8();
+                    p.stencil_depth_fail_op = (reshadefx::stencil_op)r.u8();
                     p.num_vertices = r.u32();
                     p.topology = (reshadefx::primitive_topology)r.u8();
                     p.viewport_width = r.u32();
                     p.viewport_height = r.u32();
-                    p.dispatch_z = r.u32();
+                    p.viewport_dispatch_z = r.u32();
                 }
             }
 
             m.total_uniform_size = r.u32();
-            m.num_sampler_bindings = r.u32();
-            m.num_texture_bindings = r.u32();
             return m;
         }
 
@@ -477,6 +458,13 @@ namespace vkBasalt
             w.u8(e.usesDepth ? 1 : 0);
             w.str(e.warnings);
             putModule(w, e.module);
+            w.u32((uint32_t) e.entryPointSpirv.size());
+            for (const auto& [entryPointName, words] : e.entryPointSpirv)
+            {
+                w.str(entryPointName);
+                w.u32((uint32_t) words.size());
+                w.bytes(words.data(), words.size() * sizeof(uint32_t));
+            }
             return w.buf;
         }
 
@@ -510,6 +498,17 @@ namespace vkBasalt
             e->usesDepth = r.u8() != 0;
             e->warnings = r.str();
             e->module = getModule(r);
+            {
+                const uint32_t moduleCount = r.count();
+                for (uint32_t i = 0; i < moduleCount; i++)
+                {
+                    std::string entryPointName = r.str();
+                    const uint32_t words = r.count();
+                    std::vector<uint32_t> code(words);
+                    r.bytes(code.data(), words * sizeof(uint32_t));
+                    e->entryPointSpirv[std::move(entryPointName)] = std::move(code);
+                }
+            }
             return e;
         }
 
@@ -597,7 +596,7 @@ namespace vkBasalt
         // A shader counts as depth-using only when an entry point reaches a
         // DEPTH-semantic sampler in the SPIR-V; a raw OpLoad scan false-positives
         // on unreachable helpers that ReShade.fxh declares.
-        bool moduleUsesDepth(const reshadefx::module& module)
+        bool moduleUsesDepth(const reshadefx::effect_module& module, const std::map<std::string, std::vector<uint32_t>>& entryPointSpirv)
         {
             std::string depthTexName;
             for (const auto& tex : module.textures)
@@ -611,8 +610,7 @@ namespace vkBasalt
             if (depthTexName.empty())
                 return false;
 
-            auto isSamplerUsedInSpirv = [&](uint32_t samplerId) -> bool {
-                const auto& code = module.spirv;
+            auto isSamplerUsedInOneModule = [&](uint32_t samplerId, const std::vector<uint32_t>& code) -> bool {
                 if (code.size() < 5)
                     return false;
 
@@ -690,6 +688,14 @@ namespace vkBasalt
                             worklist.push(callee);
                     }
                 }
+                return false;
+            };
+
+            // Each entry point is its own module now, and the sampler counts if any of them reads it.
+            auto isSamplerUsedInSpirv = [&](uint32_t samplerId) -> bool {
+                for (const auto& [entryPointName, code] : entryPointSpirv)
+                    if (isSamplerUsedInOneModule(samplerId, code))
+                        return true;
                 return false;
             };
 
@@ -794,7 +800,8 @@ namespace vkBasalt
 
             reshadefx::parser parser;
             std::unique_ptr<reshadefx::codegen> codegen(reshadefx::create_codegen_spirv(
-                true /* vulkan semantics */, true /* debug info */, true /* uniforms to spec constants */, true /* flip vertex shader */));
+                true /* vulkan semantics */, true /* debug info */, true /* uniforms to spec constants */,
+                false /* 16-bit types */, true /* flip vertex shader */));
 
             if (!parser.parse(std::move(preprocessor.output()), codegen.get()))
             {
@@ -808,20 +815,34 @@ namespace vkBasalt
             if (!parseErrors.empty())
                 e->warnings = "Warnings: " + parseErrors;
 
-            codegen->write_result(e->module);
+            e->module = codegen->module();
+
+            for (const auto& entryPoint : e->module.entry_points)
+            {
+                std::string binary, assembly, errors;
+                if (!codegen->assemble_code_for_entry_point(entryPoint.first, binary, assembly, errors))
+                {
+                    e->error = "could not assemble entry point " + entryPoint.first + ": " + errors;
+                    return e;
+                }
+
+                std::vector<uint32_t>& words = e->entryPointSpirv[entryPoint.first];
+                words.resize(binary.size() / sizeof(uint32_t));
+                std::memcpy(words.data(), binary.data(), words.size() * sizeof(uint32_t));
+            }
 
             if (e->module.techniques.empty())
             {
                 e->error = "shader has no techniques";
                 return e;
             }
-            if (e->module.spirv.empty())
+            if (e->entryPointSpirv.empty())
             {
                 e->error = "shader produced empty SPIR-V";
                 return e;
             }
 
-            e->usesDepth = moduleUsesDepth(e->module);
+            e->usesDepth = moduleUsesDepth(e->module, e->entryPointSpirv);
             return e;
         }
     } // anonymous namespace

@@ -5,6 +5,7 @@
 #include <string>
 #include <iostream>
 #include <vector>
+#include <map>
 #include <unordered_map>
 #include <memory>
 
@@ -79,7 +80,14 @@ namespace vkBasalt
         std::vector<VkDescriptorSet>          storageDescriptorSets;
         std::vector<std::vector<VkImageView>> storageImageViewVector;
         std::vector<std::string>              storageTextureNames;
-        VkShaderModule                        shaderModule;
+        // This compiler assembles one module per entry point, each stripped of what the others
+        // need, so a pipeline stage takes the module belonging to its own entry point.
+        std::map<std::string, VkShaderModule>  shaderModules;
+        VkShaderModule shaderModuleFor(const std::string& entryPoint) const
+        {
+            const auto it = shaderModules.find(entryPoint);
+            return it != shaderModules.end() ? it->second : VK_NULL_HANDLE;
+        }
         VkDescriptorPool                      descriptorPool;
         std::vector<VkRenderPass>             renderPasses;
         std::vector<std::vector<std::string>> renderTargets;
@@ -93,7 +101,8 @@ namespace vkBasalt
         std::string                           effectName;
         std::string                           effectPath;  // Path to .fx file (may differ from effectName)
         std::vector<PreprocessorDefinition>   customPreprocessorDefs;  // User-defined macros
-        reshadefx::module                     module;
+        reshadefx::effect_module                     module;
+
         std::vector<VkDeviceMemory>           textureMemory;
 
         VkColorSpaceKHR colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
@@ -118,10 +127,10 @@ namespace vkBasalt
 
         void          createReshadeModule();
         VkFormat      convertReshadeFormat(reshadefx::texture_format texFormat);
-        VkCompareOp   convertReshadeCompareOp(reshadefx::pass_stencil_func compareOp);
-        VkStencilOp   convertReshadeStencilOp(reshadefx::pass_stencil_op stencilOp);
-        VkBlendOp     convertReshadeBlendOp(reshadefx::pass_blend_op blendOp);
-        VkBlendFactor convertReshadeBlendFactor(reshadefx::pass_blend_func blendFactor);
+        VkCompareOp   convertReshadeCompareOp(reshadefx::stencil_func compareOp);
+        VkStencilOp   convertReshadeStencilOp(reshadefx::stencil_op stencilOp);
+        VkBlendOp     convertReshadeBlendOp(reshadefx::blend_op blendOp);
+        VkBlendFactor convertReshadeBlendFactor(reshadefx::blend_factor blendFactor);
     };
 } // namespace vkBasalt
 

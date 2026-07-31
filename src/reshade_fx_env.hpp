@@ -18,24 +18,15 @@ namespace vkBasalt
         pp.add_macro_definition("__RESHADE_PERFORMANCE_MODE__", "1");
         pp.add_macro_definition("__RENDERER__", "0x20000");
 
-        // Spellings this reshadefx version lacks but can express exactly. 4.8.0
-        // split tex2Dgather per component; the component-index form is the same
-        // operation. append_string because add_macro_definition cannot express
-        // function-like macros.
-        //
-        // Nothing needing real compute is stubbed. Expanding atomics and barriers
-        // to no-ops let such shaders compile and render silently wrong; they are
-        // named by reshadeUnsupportedFeature instead.
-        pp.append_string("#define tex2DgatherR(s, coords) tex2Dgather(s, coords, 0)\n"
-                         "#define tex2DgatherG(s, coords) tex2Dgather(s, coords, 1)\n"
-                         "#define tex2DgatherB(s, coords) tex2Dgather(s, coords, 2)\n"
-                         "#define tex2DgatherA(s, coords) tex2Dgather(s, coords, 3)\n"
-                         "#define float2x3 matrix<float, 2, 3>\n"
-                         "#define float2x4 matrix<float, 2, 4>\n"
-                         "#define float3x2 matrix<float, 3, 2>\n"
-                         "#define float3x4 matrix<float, 3, 4>\n"
-                         "#define float4x2 matrix<float, 4, 2>\n"
-                         "#define float4x3 matrix<float, 4, 3>\n"
+        // This compiler takes a sampling offset as an extra argument rather than under a separate
+        // name, so the older spellings are aliased onto it. The per-component gathers are native
+        // here and must not be redefined, or they resolve to a function that no longer exists.
+        pp.append_string("#define tex2Doffset(s, coords, offset) tex2D(s, coords, offset)\n"
+                         "#define tex2Dlodoffset(s, coords, offset) tex2Dlod(s, coords, offset)\n"
+                         "#define tex2DgatherRoffset(s, coords, offset) tex2DgatherR(s, coords, offset)\n"
+                         "#define tex2DgatherGoffset(s, coords, offset) tex2DgatherG(s, coords, offset)\n"
+                         "#define tex2DgatherBoffset(s, coords, offset) tex2DgatherB(s, coords, offset)\n"
+                         "#define tex2DgatherAoffset(s, coords, offset) tex2DgatherA(s, coords, offset)\n"
                          "#define ddx_fine(x) ddx(x)\n"
                          "#define ddy_fine(x) ddy(x)\n"
                          "#define ddx_coarse(x) ddx(x)\n"

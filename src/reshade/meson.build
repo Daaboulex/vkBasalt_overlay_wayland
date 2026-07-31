@@ -2,7 +2,8 @@ reshade_src = [
     'effect_codegen_spirv.cpp',
     'effect_expression.cpp',
     'effect_lexer.cpp',
-    'effect_parser.cpp',
+    'effect_parser_exp.cpp',
+    'effect_parser_stmt.cpp',
     'effect_preprocessor.cpp',
     'effect_symbol_table.cpp',
 ]

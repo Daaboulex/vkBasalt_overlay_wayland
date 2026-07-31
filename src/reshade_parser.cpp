@@ -98,7 +98,7 @@ namespace vkBasalt
         }
 
         std::unique_ptr<EffectParam> convertSpecConstant(
-            const reshadefx::uniform_info& spec,
+            const reshadefx::uniform& spec,
             const std::string& effectName,
             Config* pConfig)
         {
@@ -287,7 +287,7 @@ namespace vkBasalt
             return nullptr;
         }
 
-        bool shouldSkipSpecConstant(const reshadefx::uniform_info& spec)
+        bool shouldSkipSpecConstant(const reshadefx::uniform& spec)
         {
             if (spec.name.empty())
                 return true;
@@ -354,7 +354,7 @@ namespace vkBasalt
             return params;
         }
 
-        const reshadefx::module& module = compiled->module;
+        const reshadefx::effect_module& module = compiled->module;
 
         // float2/3/4 arrive as consecutive same-named scalar spec_constants; combine them.
         for (size_t i = 0; i < module.spec_constants.size(); i++)

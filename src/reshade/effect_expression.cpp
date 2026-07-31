@@ -1,31 +1,29 @@
 /*
- * Copyright (C) 2014 Patrick Mours. All rights reserved.
- * License: https://github.com/crosire/reshade#license
+ * Copyright (C) 2014 Patrick Mours
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include "effect_lexer.hpp"
-#include "effect_codegen.hpp"
-#include <cmath> // fmod
+#include "effect_expression.hpp"
+#include <cmath> // std::fmod
 #include <cassert>
-#include <cstring> // memcpy, memset
-#include <algorithm> // std::min, std::max
 #include <stdexcept>
-
-// Override assert to throw instead of abort — lets callers catch compilation failures gracefully
+#include <string>
 #undef assert
 #define assert(expr) ((expr) ? (void)0 : throw std::runtime_error("expression assertion failed: " #expr " at " __FILE__ ":" + std::to_string(__LINE__)))
 
+#include <cstring> // std::memcpy, std::memset
+#include <algorithm> // std::max, std::min
+
 reshadefx::type reshadefx::type::merge(const type &lhs, const type &rhs)
 {
-	type result = { std::max(lhs.base, rhs.base) };
+	type result;
+	result.base = std::max(lhs.base, rhs.base);
 
-	// Struct types take priority — use struct's rows/cols/definition directly
-	if (lhs.is_struct() || rhs.is_struct())
+	// Non-numeric types cannot be vectors or matrices
+	if (!result.is_numeric())
 	{
-		const type &struct_side = lhs.is_struct() ? lhs : rhs;
-		result.rows = struct_side.rows;
-		result.cols = struct_side.cols;
-		result.definition = struct_side.definition;
+		result.rows = 0;
+		result.cols = 0;
 	}
 	// If one side of the expression is scalar, it needs to be promoted to the same dimension as the other side
 	else if ((lhs.rows == 1 && lhs.cols == 1) || (rhs.rows == 1 && rhs.cols == 1))
@@ -42,6 +40,14 @@ reshadefx::type reshadefx::type::merge(const type &lhs, const type &rhs)
 	// Some qualifiers propagate to the result
 	result.qualifiers = (lhs.qualifiers & type::q_precise) | (rhs.qualifiers & type::q_precise);
 
+	// Cannot merge array types, assume no arrays
+	result.array_length = 0;
+	assert(lhs.array_length == 0 && rhs.array_length == 0);
+
+	// In case this is a structure, assume they are the same
+	result.struct_definition = rhs.struct_definition;
+	assert(lhs.struct_definition == rhs.struct_definition || lhs.struct_definition == 0);
+
 	return result;
 }
 
@@ -50,47 +56,116 @@ std::string reshadefx::type::description() const
 	std::string result;
 	switch (base)
 	{
-	case reshadefx::type::t_void:
+	case t_void:
 		result = "void";
 		break;
-	case reshadefx::type::t_bool:
+	case t_bool:
 		result = "bool";
 		break;
-	case reshadefx::type::t_int:
+	case t_min16int:
+		result = "min16int";
+		break;
+	case t_int:
 		result = "int";
 		break;
-	case reshadefx::type::t_uint:
+	case t_min16uint:
+		result = "min16uint";
+		break;
+	case t_uint:
 		result = "uint";
 		break;
-	case reshadefx::type::t_float:
+	case t_min16float:
+		result = "min16float";
+		break;
+	case t_float:
 		result = "float";
 		break;
-	case reshadefx::type::t_string:
+	case t_string:
 		result = "string";
 		break;
-	case reshadefx::type::t_struct:
+	case t_struct:
 		result = "struct";
 		break;
-	case reshadefx::type::t_sampler:
-		result = "sampler";
+	case t_texture1d:
+		result = "texture1D";
 		break;
-	case reshadefx::type::t_texture:
-		result = "texture";
+	case t_texture2d:
+		result = "texture2D";
 		break;
-	case reshadefx::type::t_function:
-		result = "function";
+	case t_texture3d:
+		result = "texture3D";
+		break;
+	case t_sampler1d_int:
+		result = "sampler1D<int" + std::to_string(rows) + '>';
+		break;
+	case t_sampler2d_int:
+		result = "sampler2D<int" + std::to_string(rows) + '>';
+		break;
+	case t_sampler3d_int:
+		result = "sampler3D<int" + std::to_string(rows) + '>';
+		break;
+	case t_sampler1d_uint:
+		result = "sampler1D<uint" + std::to_string(rows) + '>';
+		break;
+	case t_sampler2d_uint:
+		result = "sampler2D<uint" + std::to_string(rows) + '>';
+		break;
+	case t_sampler3d_uint:
+		result = "sampler3D<uint" + std::to_string(rows) + '>';
+		break;
+	case t_sampler1d_float:
+		result = "sampler1D<float" + std::to_string(rows) + '>';
+		break;
+	case t_sampler2d_float:
+		result = "sampler2D<float" + std::to_string(rows) + '>';
+		break;
+	case t_sampler3d_float:
+		result = "sampler3D<float" + std::to_string(rows) + '>';
+		break;
+	case t_storage1d_int:
+		result = "storage1D<int" + std::to_string(rows) + '>';
+		break;
+	case t_storage2d_int:
+		result = "storage2D<int" + std::to_string(rows) + '>';
+		break;
+	case t_storage3d_int:
+		result = "storage3D<int" + std::to_string(rows) + '>';
+		break;
+	case t_storage1d_uint:
+		result = "storage1D<uint" + std::to_string(rows) + '>';
+		break;
+	case t_storage2d_uint:
+		result = "storage2D<uint" + std::to_string(rows) + '>';
+		break;
+	case t_storage3d_uint:
+		result = "storage3D<uint" + std::to_string(rows) + '>';
+		break;
+	case t_storage1d_float:
+		result = "storage1D<float" + std::to_string(rows) + '>';
+		break;
+	case t_storage2d_float:
+		result = "storage2D<float" + std::to_string(rows) + '>';
+		break;
+	case t_storage3d_float:
+		result = "storage3D<float" + std::to_string(rows) + '>';
+		break;
+	case t_function:
+		assert(false);
 		break;
 	}
 
-	if (rows > 1 || cols > 1)
-		result += std::to_string(rows);
-	if (cols > 1)
-		result += 'x' + std::to_string(cols);
+	if (is_numeric())
+	{
+		if (rows > 1 || cols > 1)
+			result += std::to_string(rows);
+		if (cols > 1)
+			result += 'x' + std::to_string(cols);
+	}
 
 	if (is_array())
 	{
 		result += '[';
-		if (array_length > 0)
+		if (is_bounded_array())
 			result += std::to_string(array_length);
 		result += ']';
 	}
@@ -106,6 +181,13 @@ void reshadefx::expression::reset_to_lvalue(const reshadefx::location &loc, uint
 	is_lvalue = true;
 	is_constant = false;
 	chain.clear();
+
+	// Make sure uniform l-values cannot be assigned to by making them constant
+	if (in_type.has(type::q_uniform))
+		type.qualifiers |= type::q_const;
+
+	// Strip away global variable qualifiers
+	type.qualifiers &= ~(type::q_extern | type::q_static | type::q_uniform | type::q_groupshared);
 }
 void reshadefx::expression::reset_to_rvalue(const reshadefx::location &loc, uint32_t in_base, const reshadefx::type &in_type)
 {
@@ -116,6 +198,9 @@ void reshadefx::expression::reset_to_rvalue(const reshadefx::location &loc, uint
 	is_lvalue = false;
 	is_constant = false;
 	chain.clear();
+
+	// Strip away global variable qualifiers
+	type.qualifiers &= ~(type::q_extern | type::q_static | type::q_uniform | type::q_groupshared);
 }
 
 void reshadefx::expression::reset_to_rvalue_constant(const reshadefx::location &loc, bool data)
@@ -213,7 +298,7 @@ void reshadefx::expression::add_cast_operation(const reshadefx::type &cast_type)
 					constant.as_float[i] = static_cast<float>(constant.as_int[i]);
 		};
 
-		for (auto &element : constant.array_data)
+		for (struct constant &element : constant.array_data)
 			cast_constant(element, type, cast_type);
 
 		cast_constant(constant, type, cast_type);
@@ -226,6 +311,7 @@ void reshadefx::expression::add_cast_operation(const reshadefx::type &cast_type)
 	}
 
 	type = cast_type;
+	type.qualifiers |= type::q_const; // Casting always makes expression not modifiable
 }
 void reshadefx::expression::add_member_access(unsigned int index, const reshadefx::type &in_type)
 {
@@ -239,9 +325,10 @@ void reshadefx::expression::add_member_access(unsigned int index, const reshadef
 }
 void reshadefx::expression::add_dynamic_index_access(uint32_t index_expression)
 {
-	assert((type.is_numeric() || type.is_array()) && !is_constant);
+	assert(!is_constant); // Cannot have dynamic indexing into constant in SPIR-V
+	assert(type.is_array() || (type.is_numeric() && !type.is_scalar()));
 
-	auto prev_type = type;
+	struct type prev_type = type;
 
 	if (type.is_array())
 	{
@@ -261,17 +348,13 @@ void reshadefx::expression::add_dynamic_index_access(uint32_t index_expression)
 }
 void reshadefx::expression::add_constant_index_access(unsigned int index)
 {
-	// Scalar indexing with [0] is valid and is a no-op
-	if (type.is_scalar() && index == 0)
-		return;
+	assert(type.is_array() || (type.is_numeric() && !type.is_scalar()));
 
-	assert((type.is_numeric() || type.is_array()) && !type.is_scalar());
-
-	auto prev_type = type;
+	struct type prev_type = type;
 
 	if (type.is_array())
 	{
-		assert(type.array_length < 0 || index < static_cast<unsigned int>(type.array_length));
+		assert(index < type.array_length);
 
 		type.array_length = 0;
 	}
@@ -313,11 +396,18 @@ void reshadefx::expression::add_constant_index_access(unsigned int index)
 void reshadefx::expression::add_swizzle_access(const signed char swizzle[4], unsigned int length)
 {
 	assert(type.is_numeric() && !type.is_array());
+	assert(length <= 4);
 
-	const auto prev_type = type;
+	const struct type prev_type = type;
 
 	type.rows = length;
 	type.cols = 1;
+
+	// To form a l-value, swizzling must contain no duplicate components
+	for (unsigned int i = 0; i < length; ++i)
+		for (unsigned int k = i + 1; k < length; ++k)
+			if (swizzle[k] == swizzle[i])
+				type.qualifiers |= type::q_const;
 
 	if (is_constant)
 	{
@@ -332,6 +422,10 @@ void reshadefx::expression::add_swizzle_access(const signed char swizzle[4], uns
 	else if (length == 1 && prev_type.is_vector()) // Use indexing when possible since the code generation logic is simpler in SPIR-V
 	{
 		chain.push_back({ operation::op_constant_index, prev_type, type, static_cast<uint32_t>(swizzle[0]) });
+	}
+	else if (prev_type.is_matrix())
+	{
+		chain.push_back({ operation::op_matrix_swizzle, prev_type, type, 0, { swizzle[0], swizzle[1], swizzle[2], swizzle[3] } });
 	}
 	else
 	{
