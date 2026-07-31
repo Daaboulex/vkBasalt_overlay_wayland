@@ -111,7 +111,9 @@ step "probing the pointer before anything runs"
     export PATH="$TOOLS/bin:$PATH"
     export ENABLE_VKBASALT=1
     export VKBASALT_LOG_LEVEL=debug
-    exec vkcube --wsi xlib >/dev/null 2>"$WORK/run.log"
+    # A full-size window rendered without a frame cap saturates a software X
+    # server and starves every other client's requests, the probe included.
+    exec vkcube --wsi xlib --width 64 --height 64 >/dev/null 2>"$WORK/run.log"
 ) &
 app_pid=$!
 step "started the application, waiting for it to present"
