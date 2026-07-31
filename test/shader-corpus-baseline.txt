@@ -1,8 +1,6 @@
 FAIL BaBa_SSR
 FAIL BulgePinch
 FAIL BX_XIV_ChromakeyPlus
-FAIL CubeLUT1D
-FAIL CubeLUT3D
 FAIL Drunk
 FAIL lilium__blue_noise_dithering
 FAIL lilium__cas_hdr
@@ -16,10 +14,6 @@ FAIL lilium__rcas_hdr
 FAIL lilium__sdr_trc_fix
 FAIL lilium__test_pattern_generator
 FAIL lilium__tone_mapping
-FAIL pCamera
-FAIL pColorNoise
-FAIL pColors
-FAIL pPalettePosterize
 FAIL RadialSlitScan
 FAIL Ripple
 FAIL SlitScan
@@ -164,6 +158,8 @@ PASS CRT-Yeetron
 PASS CRT_Yeetron
 PASS cSolidColor
 PASS cThreshold
+PASS CubeLUT1D
+PASS CubeLUT3D
 PASS Cursor
 PASS CurvedMonitor
 PASS Curves
@@ -339,6 +335,9 @@ PASS Overlay
 PASS PAL
 PASS PandaFX
 PASS PatternShading
+PASS pCamera
+PASS pColorNoise
+PASS pColors
 PASS PD80_01A_RT_Correct_Contrast
 PASS PD80_01B_RT_Correct_Color
 PASS PD80_01_Color_Gamut
@@ -377,6 +376,7 @@ PASS Pirate_FXAA
 PASS PixelShifter
 PASS Polynomial_Barrel_Distortion_for_HMDs
 PASS PowerVR2
+PASS pPalettePosterize
 PASS PPFX_Bloom
 PASS PPFX_Godrays
 PASS PPFX_SSDO
