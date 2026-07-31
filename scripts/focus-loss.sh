@@ -9,9 +9,10 @@
 # overlay, takes focus away, and asks a second client whether the grab is still
 # held.
 #
-# It reports inconclusive on a bare Xvfb: the layer reads key state through
-# XInput2 and XQueryKeymap, and no synthetic press has yet made it toggle without
-# a window manager. Run it on a session with one to reach a verdict.
+# It reports inconclusive today. vkcube renders uncapped into a software X
+# server, which starves a second client's connection, so the probe times out
+# rather than answering. Throttling the application, or probing over a connection
+# opened before it starts, is what this needs next.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
