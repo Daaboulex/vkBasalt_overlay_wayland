@@ -69,8 +69,10 @@ if [ -n "$WM" ]; then
 fi
 
 export DISPLAY="$DISPLAY_NUM"
-probe() { DISPLAY="$DISPLAY_NUM" "$WORK/grab_probe"; }
+probe() { timeout 10 env DISPLAY="$DISPLAY_NUM" "$WORK/grab_probe" 2>/dev/null || echo "probe-timeout"; }
+step() { echo "  .. $1"; }
 
+step "probing the pointer before anything runs"
 [ "$(probe)" = "free" ] || { echo "the pointer was already grabbed before the layer started"; exit 1; }
 
 (
@@ -86,23 +88,28 @@ probe() { DISPLAY="$DISPLAY_NUM" "$WORK/grab_probe"; }
     exec vkcube --wsi xlib >/dev/null 2>"$WORK/run.log"
 ) &
 app_pid=$!
+step "started the application, waiting for it to present"
 sleep 8
 
 # Xvfb has no window manager, so nothing holds input focus and a synthetic key
 # would go nowhere. The window is focused first.
-app_window=$("$XDOTOOL/bin/xdotool" search --onlyvisible --class vkcube 2>/dev/null | head -1)
+step "looking for the application window"
+app_window=$(timeout 10 "$XDOTOOL/bin/xdotool" search --onlyvisible --class vkcube 2>/dev/null | head -1)
+step "window: ${app_window:-none found}"
 if [ -n "$app_window" ]; then
-    "$XDOTOOL/bin/xdotool" windowfocus "$app_window" 2>/dev/null || true
-    "$XDOTOOL/bin/xdotool" windowraise "$app_window" 2>/dev/null || true
+    timeout 10 "$XDOTOOL/bin/xdotool" windowfocus "$app_window" 2>/dev/null || true
+    timeout 10 "$XDOTOOL/bin/xdotool" windowraise "$app_window" 2>/dev/null || true
 fi
 sleep 1
 # The layer samples key state rather than consuming events, so an instantaneous
 # synthetic press falls between two samples. The key is held instead.
-"$XDOTOOL/bin/xdotool" keydown --clearmodifiers Home 2>/dev/null || true
+step "sending the toggle key"
+timeout 10 "$XDOTOOL/bin/xdotool" keydown --clearmodifiers Home 2>/dev/null || true
 sleep 1
-"$XDOTOOL/bin/xdotool" keyup --clearmodifiers Home 2>/dev/null || true
+timeout 10 "$XDOTOOL/bin/xdotool" keyup --clearmodifiers Home 2>/dev/null || true
 sleep 3
 
+step "probing after the toggle"
 after_toggle=$(probe)
 echo "  after opening the overlay:   pointer $after_toggle"
 
@@ -122,6 +129,7 @@ if [ -n "$app_window" ]; then
 fi
 sleep 3
 
+step "probing after focus went away"
 after_focus_loss=$(probe)
 echo "  after focus went elsewhere:  pointer $after_focus_loss"
 
