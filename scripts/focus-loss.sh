@@ -114,8 +114,12 @@ if [ "$after_toggle" != "held" ]; then
     exit 0
 fi
 
-"$XDOTOOL/bin/xdotool" windowunmap "$("$XDOTOOL/bin/xdotool" getactivewindow 2>/dev/null)" 2>/dev/null || true
-"$XDOTOOL/bin/xdotool" windowfocus --sync 1 2>/dev/null || true
+# Focus is moved by unmapping the window that holds it. Every xdotool call here
+# is bounded: an unbounded --sync waits for a window that may never be focused,
+# and the layer holds a keyboard grab by this point.
+if [ -n "$app_window" ]; then
+    timeout 10 "$XDOTOOL/bin/xdotool" windowunmap "$app_window" 2>/dev/null || true
+fi
 sleep 3
 
 after_focus_loss=$(probe)
