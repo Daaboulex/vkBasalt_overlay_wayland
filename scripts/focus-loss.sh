@@ -26,6 +26,7 @@ XDOTOOL=$(nix build nixpkgs#xdotool --no-link --print-out-paths 2>/dev/null)
 XLIB=$(nix build nixpkgs#xorg.libX11.out --no-link --print-out-paths 2>/dev/null)
 XLIBDEV=$(nix build nixpkgs#xorg.libX11.dev --no-link --print-out-paths 2>/dev/null)
 XPROTO=$(nix build nixpkgs#xorg.xorgproto --no-link --print-out-paths 2>/dev/null)
+WM=$(nix build nixpkgs#xorg.twm --no-link --print-out-paths 2>/dev/null)
 for v in "$TOOLS" "$LOADER" "$XSERVER" "$XDOTOOL" "$XLIB" "$XLIBDEV" "$XPROTO"; do
     [ -n "$v" ] || { echo "could not get the x server, xdotool, xlib and vulkan tools"; exit 1; }
 done
@@ -35,7 +36,7 @@ WORK=$(mktemp -d "$ROOT/.cache/focus.XXXXXX" 2>/dev/null) || {
 } || exit 1
 DISPLAY_NUM=":78"
 cleanup() {
-    kill -9 "${app_pid:-0}" "${xvfb_pid:-0}" 2>/dev/null || true
+    kill -9 "${app_pid:-0}" "${wm_pid:-0}" "${xvfb_pid:-0}" 2>/dev/null || true
     rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -58,6 +59,14 @@ EOF
 "$XSERVER/bin/Xvfb" "$DISPLAY_NUM" -screen 0 1280x720x24 >/dev/null 2>&1 &
 xvfb_pid=$!
 sleep 2
+
+# Without a window manager nothing owns input focus, and a synthetic key has
+# nowhere to land.
+if [ -n "$WM" ]; then
+    DISPLAY="$DISPLAY_NUM" "$WM/bin/twm" >/dev/null 2>&1 &
+    wm_pid=$!
+    sleep 2
+fi
 
 export DISPLAY="$DISPLAY_NUM"
 probe() { DISPLAY="$DISPLAY_NUM" "$WORK/grab_probe"; }
