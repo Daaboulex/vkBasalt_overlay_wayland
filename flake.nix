@@ -358,7 +358,7 @@
               || { echo "__RESHADE__ must come from VKBASALT_RESHADE_FX_VERSION, not a literal"; exit 1; }
             grep -q 'INT_MAX' <<< "$(sed -n '/add_macro_definition("__RESHADE__"/p' "$env")" \
               && { echo "__RESHADE__ claims INT_MAX -- every shader version gate opens and modern paths reach a 4.7 compiler"; exit 1; }
-            grep -q 'define VKBASALT_RESHADE_FX_VERSION 40700' ${./src/reshade_fx_version.hpp} \
+            grep -q 'define VKBASALT_RESHADE_FX_VERSION 40800' ${./src/reshade_fx_version.hpp} \
               || { echo "the declared FX level changed -- confirm src/reshade was resynced to match"; exit 1; }
 
             # The layer and the standalone tester must share one compile

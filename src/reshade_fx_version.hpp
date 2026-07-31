@@ -3,12 +3,18 @@
 // The ReShade FX feature level this build implements, in ReShade's own encoding
 // (major * 10000 + minor * 100 + revision). Shaders gate on it as __RESHADE__.
 //
-// src/reshade is vendored from crosire/reshade at 39350df, which is the v4.7.0
-// tag, plus f32tof16 and f16tof32 backported into the intrinsic table. Re-syncing
-// that tree means raising this to the version synced, or shaders silently keep
-// taking the older path. 4.8.0 is the first release with real compute-shader
-// support; this tree still compiles a ComputeShader as a pixel shader and has no
-// storage-image writes or barriers, so 40700 remains the honest ceiling -- the
-// backported pair does not move it, because a shader gated on 4.8 wants compute,
-// not two conversion functions.
-#define VKBASALT_RESHADE_FX_VERSION 40700
+// src/reshade is vendored from crosire/reshade v6.7.3, so the language itself is
+// current. This number is deliberately lower, because a shader gates on it to ask
+// what the RUNTIME provides, not what the compiler parses. It is the highest
+// version whose runtime contract this layer actually keeps:
+//
+//   4.8  real compute-shader support -- kept: passes declaring ComputeShader are
+//        dispatched, storage images are written and barriers are emitted, and the
+//        SPIR-V is validated by checks.compute-spirv-is-valid.
+//   6.0  .cube LUT files as a texture source -- NOT kept.
+//   6.5  HDR swapchain colour space behind BUFFER_COLOR_SPACE -- NOT kept.
+//
+// 5.x is not claimed yet: its shader-facing runtime additions have not been read
+// from the release notes, and this number is never raised on the assumption that
+// nothing was added. Raise it only for a version whose contract is kept and shown.
+#define VKBASALT_RESHADE_FX_VERSION 40800

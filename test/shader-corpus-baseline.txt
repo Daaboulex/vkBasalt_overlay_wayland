@@ -21,7 +21,6 @@ FAIL pColorNoise
 FAIL pColors
 FAIL pPalettePosterize
 FAIL RadialSlitScan
-FAIL ReVeil
 FAIL Ripple
 FAIL SlitScan
 FAIL SplicedRadials
@@ -399,6 +398,7 @@ PASS RetroCRT
 PASS RetroFog
 PASS RetroTint
 PASS RetroTV
+PASS ReVeil
 PASS RGBLCD
 PASS scanlines-fract
 PASS SCurve
