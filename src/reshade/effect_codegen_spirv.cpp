@@ -1425,11 +1425,38 @@ private:
 				}
 				else
 				{
-					const spv::Id input_var = create_varying_variable(param.type, param.semantic, spv::StorageClassInput);
+					// FragCoord is a four-component float whatever the shader declared it as, and
+					// decorating a narrower variable with it is invalid. Declare the real thing and
+					// narrow afterwards.
+					type varying_type = param.type;
+					if (semantic_to_builtin(param.semantic, func.type) == spv::BuiltInFragCoord)
+						varying_type = { type::t_float, 4, 1 };
+
+					const spv::Id input_var = create_varying_variable(varying_type, param.semantic, spv::StorageClassInput);
 
 					param_value =
-						add_instruction(spv::OpLoad, convert_type(param.type))
+						add_instruction(spv::OpLoad, convert_type(varying_type))
 							.add(input_var);
+
+					if (varying_type.rows != param.type.rows)
+					{
+						if (param.type.rows == 1)
+						{
+							param_value =
+								add_instruction(spv::OpCompositeExtract, convert_type(param.type))
+									.add(param_value)
+									.add(0u);
+						}
+						else
+						{
+							spirv_instruction &shuffle = add_instruction(spv::OpVectorShuffle, convert_type(param.type))
+								.add(param_value)
+								.add(param_value);
+							for (unsigned int i = 0; i < param.type.rows; ++i)
+								shuffle.add(i);
+							param_value = shuffle;
+						}
+					}
 				}
 
 				add_instruction_without_result(spv::OpStore)
