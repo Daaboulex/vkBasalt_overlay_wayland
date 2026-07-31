@@ -18,7 +18,7 @@ namespace vkBasalt
     // Thread-safe RNG (avoids std::rand() which is not thread-safe)
     static thread_local std::mt19937 tlRng{std::random_device{}()};
 
-    void enumerateReshadeUniforms(reshadefx::module module)
+    void enumerateReshadeUniforms(reshadefx::effect_module module)
     {
         for (auto& uniform : module.uniforms)
         {
@@ -36,7 +36,7 @@ namespace vkBasalt
         }
     }
 
-    std::vector<std::shared_ptr<ReshadeUniform>> createReshadeUniforms(reshadefx::module module)
+    std::vector<std::shared_ptr<ReshadeUniform>> createReshadeUniforms(reshadefx::effect_module module)
     {
         std::vector<std::shared_ptr<ReshadeUniform>> uniforms;
         for (auto& uniform : module.uniforms)
@@ -105,7 +105,7 @@ namespace vkBasalt
         };
         SharedMouse sharedMouse;
 
-        KeyMode modeFromAnnotation(const reshadefx::uniform_info& uniformInfo)
+        KeyMode modeFromAnnotation(const reshadefx::uniform& uniformInfo)
         {
             auto mode =
                 std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "mode"; });
@@ -118,7 +118,7 @@ namespace vkBasalt
             return KeyMode::held;
         }
 
-        int keycodeFromAnnotation(const reshadefx::uniform_info& uniformInfo)
+        int keycodeFromAnnotation(const reshadefx::uniform& uniformInfo)
         {
             auto keycode =
                 std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "keycode"; });
@@ -144,7 +144,7 @@ namespace vkBasalt
         sharedMouse.current = now;
     }
 
-    FrameTimeUniform::FrameTimeUniform(reshadefx::uniform_info uniformInfo)
+    FrameTimeUniform::FrameTimeUniform(reshadefx::uniform uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
         if (source->value.string_data != "frametime")
@@ -167,7 +167,7 @@ namespace vkBasalt
     {
     }
 
-    FrameCountUniform::FrameCountUniform(reshadefx::uniform_info uniformInfo)
+    FrameCountUniform::FrameCountUniform(reshadefx::uniform uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
         if (source->value.string_data != "framecount")
@@ -186,7 +186,7 @@ namespace vkBasalt
     {
     }
 
-    DateUniform::DateUniform(reshadefx::uniform_info uniformInfo)
+    DateUniform::DateUniform(reshadefx::uniform uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
         if (source->value.string_data != "date")
@@ -222,7 +222,7 @@ namespace vkBasalt
     {
     }
 
-    TimerUniform::TimerUniform(reshadefx::uniform_info uniformInfo)
+    TimerUniform::TimerUniform(reshadefx::uniform uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
         if (source->value.string_data != "timer")
@@ -244,7 +244,7 @@ namespace vkBasalt
     {
     }
 
-    PingPongUniform::PingPongUniform(reshadefx::uniform_info uniformInfo)
+    PingPongUniform::PingPongUniform(reshadefx::uniform uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
         if (source->value.string_data != "pingpong")
@@ -318,7 +318,7 @@ namespace vkBasalt
     {
     }
 
-    RandomUniform::RandomUniform(reshadefx::uniform_info uniformInfo)
+    RandomUniform::RandomUniform(reshadefx::uniform uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
         if (source->value.string_data != "random")
@@ -351,7 +351,7 @@ namespace vkBasalt
     {
     }
 
-    KeyUniform::KeyUniform(reshadefx::uniform_info uniformInfo)
+    KeyUniform::KeyUniform(reshadefx::uniform uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
         if (source->value.string_data != "key")
@@ -375,7 +375,7 @@ namespace vkBasalt
     {
     }
 
-    MouseButtonUniform::MouseButtonUniform(reshadefx::uniform_info uniformInfo)
+    MouseButtonUniform::MouseButtonUniform(reshadefx::uniform uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
         if (source->value.string_data != "mousebutton")
@@ -405,7 +405,7 @@ namespace vkBasalt
     {
     }
 
-    MousePointUniform::MousePointUniform(reshadefx::uniform_info uniformInfo)
+    MousePointUniform::MousePointUniform(reshadefx::uniform uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
         if (source->value.string_data != "mousepoint")
@@ -424,7 +424,7 @@ namespace vkBasalt
     {
     }
 
-    MouseDeltaUniform::MouseDeltaUniform(reshadefx::uniform_info uniformInfo)
+    MouseDeltaUniform::MouseDeltaUniform(reshadefx::uniform uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
         if (source->value.string_data != "mousedelta")
@@ -444,7 +444,7 @@ namespace vkBasalt
     {
     }
 
-    DepthUniform::DepthUniform(reshadefx::uniform_info uniformInfo)
+    DepthUniform::DepthUniform(reshadefx::uniform uniformInfo)
     {
         auto source = std::find_if(uniformInfo.annotations.begin(), uniformInfo.annotations.end(), [](const auto& a) { return a.name == "source"; });
         if (source->value.string_data != "bufready_depth")

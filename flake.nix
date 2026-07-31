@@ -186,12 +186,16 @@
                 vkbasalt-test-shaders --dump-spirv "$PWD" shaders > report.txt 2>&1 || true
                 grep -q '^PASS  compute_smoke' report.txt || { cat report.txt; echo "the compute smoke shader stopped compiling"; exit 1; }
 
-                spirv-val --target-env vulkan1.1 compute_smoke.spv || { echo "the compute SPIR-V this compiler emits is invalid"; exit 1; }
+                for spv in compute_smoke__*.spv; do
+                  spirv-val --target-env vulkan1.1 "$spv" \
+                    || { echo "the compute SPIR-V this compiler emits is invalid: $spv"; exit 1; }
+                done
 
-                spirv-dis compute_smoke.spv > dis.txt
+                cat compute_smoke__*.spv > /dev/null
+                spirv-dis compute_smoke__*SmokeCS*.spv > dis.txt
                 grep -q 'OpEntryPoint GLCompute' dis.txt \
                   || { echo "no GLCompute entry point -- the compute function was compiled as a graphics stage"; exit 1; }
-                grep -qE 'OpExecutionMode %[0-9]+ LocalSize 8 8 1' dis.txt \
+                grep -qE 'OpExecutionMode .* LocalSize 8 8 1' dis.txt \
                   || { echo "the <8, 8> thread group size did not reach the LocalSize execution mode"; exit 1; }
                 grep -q 'OpImageWrite' dis.txt \
                   || { echo "tex2Dstore did not become an image write"; exit 1; }

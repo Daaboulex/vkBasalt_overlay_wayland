@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <memory>
 #include <string>
 #include <utility>
@@ -11,7 +12,10 @@ namespace vkBasalt
 {
     struct CompiledReshadeEffect
     {
-        reshadefx::module module;
+        reshadefx::effect_module module;
+        // One module per entry point: this compiler assembles each separately, with the code the
+        // others need stripped out.
+        std::map<std::string, std::vector<uint32_t>> entryPointSpirv;
         std::vector<std::pair<std::string, uint64_t>> includedFiles;
         std::vector<std::pair<std::string, std::string>> usedMacros;
         bool usesDepth = false;

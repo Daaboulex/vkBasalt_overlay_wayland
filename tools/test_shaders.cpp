@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <queue>
 #include <set>
@@ -252,7 +253,7 @@ static TestResult testShader(
 
         reshadefx::parser parser;
         auto codegen = std::unique_ptr<reshadefx::codegen>(
-            reshadefx::create_codegen_spirv(true, true, true, true));
+            reshadefx::create_codegen_spirv(true, true, true, false, true));
 
         if (!parser.parse(preprocessor.output(), codegen.get()))
         {
@@ -274,14 +275,29 @@ static TestResult testShader(
             result.errorMessage = "Warnings: " + parseErrors;
         }
 
-        reshadefx::module module;
-        codegen->write_result(module);
+        reshadefx::effect_module module = codegen->module();
+
+        std::map<std::string, std::vector<uint32_t>> entryPointSpirv;
+        for (const auto& entryPoint : module.entry_points)
+        {
+            std::string binary, assembly, errors;
+            if (!codegen->assemble_code_for_entry_point(entryPoint.first, binary, assembly, errors))
+                continue;
+
+            std::vector<uint32_t>& words = entryPointSpirv[entryPoint.first];
+            words.resize(binary.size() / sizeof(uint32_t));
+            std::memcpy(words.data(), binary.data(), words.size() * sizeof(uint32_t));
+        }
 
         if (!g_dumpSpirvDir.empty())
         {
-            std::filesystem::path out = std::filesystem::path(g_dumpSpirvDir) / (result.name + ".spv");
-            std::ofstream spv(out, std::ios::binary);
-            spv.write(reinterpret_cast<const char*>(module.spirv.data()), module.spirv.size() * sizeof(uint32_t));
+            for (const auto& [entryPointName, words] : entryPointSpirv)
+            {
+                std::filesystem::path out =
+                    std::filesystem::path(g_dumpSpirvDir) / (result.name + "__" + entryPointName + ".spv");
+                std::ofstream spv(out, std::ios::binary);
+                spv.write(reinterpret_cast<const char*>(words.data()), words.size() * sizeof(uint32_t));
+            }
         }
 
         {
@@ -297,8 +313,7 @@ static TestResult testShader(
 
             if (!depthTexName.empty())
             {
-                auto isSamplerUsedInSpirv = [&](uint32_t samplerId) -> bool {
-                    const auto& code = module.spirv;
+                auto isSamplerUsedInOneModule = [&](uint32_t samplerId, const std::vector<uint32_t>& code) -> bool {
                     if (code.size() < 5)
                         return false;
 
@@ -349,6 +364,13 @@ static TestResult testShader(
                         for (uint32_t c : it->second.callees)
                             if (visited.insert(c).second) q.push(c);
                     }
+                    return false;
+                };
+
+                auto isSamplerUsedInSpirv = [&](uint32_t samplerId) -> bool {
+                    for (const auto& [entryPointName, code] : entryPointSpirv)
+                        if (isSamplerUsedInOneModule(samplerId, code))
+                            return true;
                     return false;
                 };
 
