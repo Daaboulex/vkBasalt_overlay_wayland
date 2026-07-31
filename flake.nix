@@ -129,6 +129,15 @@
             touch $out
           '';
 
+          checks.input-is-released-on-teardown = pkgs.runCommand "input-is-released-on-teardown" { } ''
+            body=$(sed -n '/ImGuiOverlay::~ImGuiOverlay/,/ImGui overlay destroyed/p' ${./src/overlay/imgui_overlay.cpp})
+            grep -q 'setInputBlocked(false)' <<< "$body" \
+              || { echo "tearing down with the overlay open leaves input blocked and the game unplayable"; exit 1; }
+            grep -q 'releasePointer()' <<< "$body" \
+              || { echo "tearing down with the overlay open leaves the cursor confined to the window"; exit 1; }
+            touch $out
+          '';
+
           checks.pointer-constraints-are-wired = pkgs.runCommand "pointer-constraints-are-wired" { } ''
             grep -q 'confinePointer()' ${./src/overlay/imgui_overlay.cpp} \
               || { echo "confinePointer has no caller -- the constraints module is compiled but dead"; exit 1; }

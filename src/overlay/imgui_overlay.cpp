@@ -175,6 +175,16 @@ namespace vkBasalt
         if (descriptorPool != VK_NULL_HANDLE)
             pLogicalDevice->vkd.DestroyDescriptorPool(pLogicalDevice->device, descriptorPool, nullptr);
 
+        // Tearing down while the overlay owns input would leave the grab and the
+        // pointer confinement in place with nothing left to lift them.
+        if (visible)
+        {
+            visible = false;
+            setInputBlocked(false);
+            if (isWayland())
+                releasePointer();
+        }
+
         Logger::info("ImGui overlay destroyed");
     }
 
