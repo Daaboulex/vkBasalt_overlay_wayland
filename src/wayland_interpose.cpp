@@ -160,6 +160,16 @@ static void wp_axis_value120(void* data, wl_pointer* p, uint32_t axis, int32_t v
         it->second.original.axis_value120(it->second.userData, p, axis, value120);
 }
 
+static void wp_warp(void* /*data*/, wl_pointer* p, wl_fixed_t sx, wl_fixed_t sy)
+{
+    if (vkBasalt::isInputBlocked())
+        return;
+    std::lock_guard<std::mutex> lock(gameDataMutex);
+    auto it = gamePointers.find(p);
+    if (it != gamePointers.end() && it->second.original.warp)
+        it->second.original.warp(it->second.userData, p, sx, sy);
+}
+
 static void wp_axis_relative_direction(void* data, wl_pointer* p, uint32_t axis, uint32_t direction)
 {
     if (vkBasalt::isInputBlocked())
@@ -182,6 +192,7 @@ static const wl_pointer_listener wrapperPointerListener = {
     .axis_discrete = wp_axis_discrete,
     .axis_value120 = wp_axis_value120,
     .axis_relative_direction = wp_axis_relative_direction,
+    .warp = wp_warp,
 };
 
 // enter, leave, frame, keymap, modifiers, and repeat_info are always forwarded

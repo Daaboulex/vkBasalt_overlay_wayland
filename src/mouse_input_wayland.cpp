@@ -66,6 +66,14 @@ namespace vkBasalt
         motionSinceLastPoll = true;
     }
 
+    static void pointerWarp(void* /*data*/, wl_pointer* /*pointer*/,
+                            wl_fixed_t sx, wl_fixed_t sy)
+    {
+        pointerX = wl_fixed_to_int(sx);
+        pointerY = wl_fixed_to_int(sy);
+        motionSinceLastPoll = true;
+    }
+
     static void pointerButton(void* /*data*/, wl_pointer* /*pointer*/,
                               uint32_t /*serial*/, uint32_t /*time*/,
                               uint32_t button, uint32_t state)
@@ -156,6 +164,7 @@ namespace vkBasalt
         .axis_discrete = pointerAxisDiscrete,
         .axis_value120 = pointerAxisValue120,
         .axis_relative_direction = pointerAxisRelativeDirection,
+        .warp = pointerWarp,
     };
 
     static void bindPointer(wl_seat* seat)
