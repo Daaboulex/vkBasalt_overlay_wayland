@@ -77,13 +77,17 @@ mkfifo "$WORK/cmd"
 "$WORK/grab_probe" < "$WORK/cmd" > "$WORK/answers" 2>&1 &
 probe_pid=$!
 exec 3> "$WORK/cmd"
-answers_seen=1
 
+# The count is read from the file rather than kept in a variable, because every
+# caller runs in a command substitution and a variable would not survive it.
 ask() {
-    answers_seen=$((answers_seen + 1))
+    local before after waited
+    before=$(wc -l < "$WORK/answers" 2>/dev/null || echo 0)
     echo "$1" >&3
-    local waited=0
-    while [ "$(wc -l < "$WORK/answers" 2>/dev/null || echo 0)" -lt "$answers_seen" ]; do
+    waited=0
+    while :; do
+        after=$(wc -l < "$WORK/answers" 2>/dev/null || echo 0)
+        [ "$after" -gt "$before" ] && break
         sleep 0.2
         waited=$((waited + 1))
         [ "$waited" -gt 100 ] && { echo "probe-timeout"; return; }
