@@ -154,6 +154,18 @@
             touch $out
           '';
 
+          checks.optional-gpu-probe-stays-optional =
+            pkgs.runCommand "optional-gpu-probe-stays-optional" { }
+              ''
+                src=${./src/overlay/view_diagnostics.cpp}
+                body=$(sed -n '/dlopen("libnvidia-ml/,/missing required symbols/p' "$src")
+                grep -q 'if (!nvml.lib)' <<< "$body" \
+                  || { echo "NVML is dlopened without checking the result -- every non-NVIDIA system would fault"; exit 1; }
+                grep -q 'return false' <<< "$body" \
+                  || { echo "a failed NVML load must leave diagnostics disabled, not continue"; exit 1; }
+                touch $out
+              '';
+
           checks.pointer-constraints-are-wired = pkgs.runCommand "pointer-constraints-are-wired" { } ''
             grep -q 'confinePointer()' ${./src/overlay/imgui_overlay.cpp} \
               || { echo "confinePointer has no caller -- the constraints module is compiled but dead"; exit 1; }
