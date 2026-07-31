@@ -21,6 +21,7 @@ TOOLS=$(nix build nixpkgs#vulkan-tools --no-link --print-out-paths 2>/dev/null)
 LOADER=$(nix build nixpkgs#vulkan-loader --no-link --print-out-paths 2>/dev/null)
 GAMESCOPE=$(nix build nixpkgs#gamescope --no-link --print-out-paths 2>/dev/null)
 XSERVER=$(nix build nixpkgs#xorg.xorgserver --no-link --print-out-paths 2>/dev/null)
+XLIB=$(nix build nixpkgs#xorg.libX11.out --no-link --print-out-paths 2>/dev/null)
 [ -n "$TOOLS" ] && [ -n "$LOADER" ] || { echo "could not get vulkan tools and loader"; exit 1; }
 
 WORK=$(mktemp -d "$ROOT/.cache/compositor.XXXXXX" 2>/dev/null) || {
@@ -52,7 +53,7 @@ run_case() {
         export XDG_CACHE_HOME="$FAKE_HOME/.cache"
         export XDG_DATA_HOME="$FAKE_HOME/.local/share"
         export XDG_DATA_DIRS="$OUT/share:/usr/share"
-        export LD_LIBRARY_PATH="$LOADER/lib"
+        export LD_LIBRARY_PATH="$LOADER/lib${XLIB:+:$XLIB/lib}"
         export PATH="$TOOLS/bin:${GAMESCOPE:+$GAMESCOPE/bin:}${XSERVER:+$XSERVER/bin:}$PATH"
         export ENABLE_VKBASALT=1
         export VKBASALT_LOG_LEVEL=debug

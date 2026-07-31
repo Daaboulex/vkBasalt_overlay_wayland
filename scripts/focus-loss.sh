@@ -8,6 +8,10 @@
 # strand the cursor. This runs the layer on a private X server, opens the
 # overlay, takes focus away, and asks a second client whether the grab is still
 # held.
+#
+# It reports inconclusive on a bare Xvfb: the layer reads key state through
+# XInput2 and XQueryKeymap, and no synthetic press has yet made it toggle without
+# a window manager. Run it on a session with one to reach a verdict.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -19,8 +23,10 @@ TOOLS=$(nix build nixpkgs#vulkan-tools --no-link --print-out-paths 2>/dev/null)
 LOADER=$(nix build nixpkgs#vulkan-loader --no-link --print-out-paths 2>/dev/null)
 XSERVER=$(nix build nixpkgs#xorg.xorgserver --no-link --print-out-paths 2>/dev/null)
 XDOTOOL=$(nix build nixpkgs#xdotool --no-link --print-out-paths 2>/dev/null)
-XLIB=$(nix build nixpkgs#xorg.libX11 --no-link --print-out-paths 2>/dev/null)
-for v in "$TOOLS" "$LOADER" "$XSERVER" "$XDOTOOL" "$XLIB"; do
+XLIB=$(nix build nixpkgs#xorg.libX11.out --no-link --print-out-paths 2>/dev/null)
+XLIBDEV=$(nix build nixpkgs#xorg.libX11.dev --no-link --print-out-paths 2>/dev/null)
+XPROTO=$(nix build nixpkgs#xorg.xorgproto --no-link --print-out-paths 2>/dev/null)
+for v in "$TOOLS" "$LOADER" "$XSERVER" "$XDOTOOL" "$XLIB" "$XLIBDEV" "$XPROTO"; do
     [ -n "$v" ] || { echo "could not get the x server, xdotool, xlib and vulkan tools"; exit 1; }
 done
 
@@ -35,7 +41,8 @@ cleanup() {
 trap cleanup EXIT
 
 nix shell nixpkgs#gcc --command gcc -O2 -o "$WORK/grab_probe" "$ROOT/test/focus-loss/grab_probe.c" \
-    -I"$XLIB/include" -L"$XLIB/lib" -lX11 2>/dev/null || { echo "could not build the grab probe"; exit 1; }
+    -I"$XLIBDEV/include" -I"$XPROTO/include" -L"$XLIB/lib" -lX11 > "$WORK/cc.log" 2>&1
+[ -x "$WORK/grab_probe" ] || { echo "could not build the grab probe"; head -3 "$WORK/cc.log"; exit 1; }
 
 FAKE_HOME="$WORK/home"
 mkdir -p "$FAKE_HOME/.config/vkBasalt-overlay"
@@ -63,7 +70,7 @@ probe() { DISPLAY="$DISPLAY_NUM" "$WORK/grab_probe"; }
     export XDG_CACHE_HOME="$FAKE_HOME/.cache"
     export XDG_DATA_HOME="$FAKE_HOME/.local/share"
     export XDG_DATA_DIRS="$OUT/share:/usr/share"
-    export LD_LIBRARY_PATH="$LOADER/lib"
+    export LD_LIBRARY_PATH="$LOADER/lib:$XLIB/lib"
     export PATH="$TOOLS/bin:$PATH"
     export ENABLE_VKBASALT=1
     export VKBASALT_LOG_LEVEL=debug
@@ -72,7 +79,19 @@ probe() { DISPLAY="$DISPLAY_NUM" "$WORK/grab_probe"; }
 app_pid=$!
 sleep 8
 
-"$XDOTOOL/bin/xdotool" key --clearmodifiers Home 2>/dev/null || true
+# Xvfb has no window manager, so nothing holds input focus and a synthetic key
+# would go nowhere. The window is focused first.
+app_window=$("$XDOTOOL/bin/xdotool" search --onlyvisible --class vkcube 2>/dev/null | head -1)
+if [ -n "$app_window" ]; then
+    "$XDOTOOL/bin/xdotool" windowfocus "$app_window" 2>/dev/null || true
+    "$XDOTOOL/bin/xdotool" windowraise "$app_window" 2>/dev/null || true
+fi
+sleep 1
+# The layer samples key state rather than consuming events, so an instantaneous
+# synthetic press falls between two samples. The key is held instead.
+"$XDOTOOL/bin/xdotool" keydown --clearmodifiers Home 2>/dev/null || true
+sleep 1
+"$XDOTOOL/bin/xdotool" keyup --clearmodifiers Home 2>/dev/null || true
 sleep 3
 
 after_toggle=$(probe)
@@ -80,6 +99,8 @@ echo "  after opening the overlay:   pointer $after_toggle"
 
 if [ "$after_toggle" != "held" ]; then
     echo "  the overlay never took a pointer grab, so this test cannot say anything"
+    echo "  --- what the layer logged ---"
+    tail -12 "$WORK/run.log" | sed "s/^/    /"
     echo "FOCUS LOSS INCONCLUSIVE"
     exit 0
 fi
