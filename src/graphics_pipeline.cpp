@@ -143,14 +143,12 @@ namespace vkBasalt
         colorBlendCreateInfo.blendConstants[2] = 0.0f;
         colorBlendCreateInfo.blendConstants[3] = 0.0f;
 
-        VkDynamicState dynamicStates[] = {};
-
         VkPipelineDynamicStateCreateInfo dynamicStateCreateInfo;
         dynamicStateCreateInfo.sType             = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
         dynamicStateCreateInfo.pNext             = nullptr;
         dynamicStateCreateInfo.flags             = 0;
         dynamicStateCreateInfo.dynamicStateCount = 0;
-        dynamicStateCreateInfo.pDynamicStates    = dynamicStates;
+        dynamicStateCreateInfo.pDynamicStates    = nullptr;
 
         VkGraphicsPipelineCreateInfo pipelineCreateInfo;
         pipelineCreateInfo.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;

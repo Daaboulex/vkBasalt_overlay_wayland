@@ -803,7 +803,7 @@ namespace vkBasalt
                 true /* vulkan semantics */, true /* debug info */, true /* uniforms to spec constants */,
                 false /* 16-bit types */, true /* flip vertex shader */));
 
-            if (!parser.parse(std::move(preprocessor.output()), codegen.get()))
+            if (!parser.parse(preprocessor.output(), codegen.get()))
             {
                 std::string parseErr = parser.errors();
                 std::string reason = reshadeUnsupportedFeature(parseErr);

@@ -118,10 +118,15 @@ namespace vkBasalt
                 mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
                 return;
             case reshadefx::filter_mode::min_mag_mip_linear:
+            case reshadefx::filter_mode::anisotropic:
                 minFilter  = VK_FILTER_LINEAR;
                 magFilter  = VK_FILTER_LINEAR;
                 mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
                 return;
         }
+
+        minFilter  = VK_FILTER_LINEAR;
+        magFilter  = VK_FILTER_LINEAR;
+        mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     }
 } // namespace vkBasalt

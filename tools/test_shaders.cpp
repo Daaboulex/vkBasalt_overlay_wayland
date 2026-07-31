@@ -2,9 +2,9 @@
 // Links against libreshade.a only: no Vulkan, no ImGui, no full vkbasalt deps.
 //
 // Compile:
-//   g++ -std=c++20 -O2 -I../src -I../src/reshade \
-//       tools/test_shaders.cpp \
-//       -Lbuilddir/src/reshade -lreshade \
+//   g++ -std=c++20 -O2 -I../src -I../src/reshade
+//       tools/test_shaders.cpp
+//       -Lbuilddir/src/reshade -lreshade
 //       -o builddir/test_shaders
 //
 // Usage:
