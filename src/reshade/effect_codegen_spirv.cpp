@@ -439,6 +439,25 @@ private:
 			inst.write(spirv);
 		}
 
+		// A decoration on a value defined inside a function that is about to be dropped would
+		// otherwise survive it and reference an id this module never defines.
+		std::vector<spv::Id> ids_in_removed_functions;
+		for (const function_blocks &function : _functions_blocks)
+		{
+			if (function.definition.instructions.empty())
+				continue;
+
+			const spv::Id definition =
+				function.declaration.instructions[function.declaration.instructions[0].op != spv::OpFunction ? 1 : 0].result;
+			if (std::find(functions_to_remove.begin(), functions_to_remove.end(), definition) == functions_to_remove.end())
+				continue;
+
+			for (const spirv_basic_block *block : { &function.declaration, &function.variables, &function.definition })
+				for (const spirv_instruction &inst : block->instructions)
+					if (inst.result != 0)
+						ids_in_removed_functions.push_back(inst.result);
+		}
+
 		// All annotation instructions
 		for (spirv_instruction inst : _annotations.instructions)
 		{
@@ -446,6 +465,8 @@ private:
 			{
 				// Remove all decorations targeting any of the interface variables for non-matching entry points
 				if (std::find(variables_to_remove.begin(), variables_to_remove.end(), inst.operands[0]) != variables_to_remove.end())
+					continue;
+				if (std::find(ids_in_removed_functions.begin(), ids_in_removed_functions.end(), inst.operands[0]) != ids_in_removed_functions.end())
 					continue;
 
 				// Replace bindings

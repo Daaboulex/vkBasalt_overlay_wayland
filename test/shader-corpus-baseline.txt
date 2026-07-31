@@ -31,8 +31,6 @@ FAIL Swirl
 FAIL Wave
 FAIL ZenWork
 FAIL ZigZag
-INVALID BaBa_Sharpen_Neural
-INVALID BaBa_Sharpen_Residual
 INVALID NTSC_XOT
 PASS 3DFX
 PASS 3DToElse
@@ -64,7 +62,9 @@ PASS BaBa_MiAO
 PASS BaBa_NeoSSAO
 PASS BaBa_Outline
 PASS BaBa_PHDR
+PASS BaBa_Sharpen_Neural
 PASS BaBa_Sharpen_NIS
+PASS BaBa_Sharpen_Residual
 PASS BaBa_SSR_Lite
 PASS BaBa_VividTone
 PASS BaBa_XeGTAO
