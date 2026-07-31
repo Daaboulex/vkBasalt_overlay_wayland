@@ -44,15 +44,14 @@ echo "packages fetched: $(wc -l < "$WORK/packs.txt")"
 
 # Compiling everything means every directory holding a shader. Resolving includes
 # the way the layer does means only the directories it discovers, which are the
-# ones named Shaders (src/config_serializer.cpp). Treating a header-only directory
-# as a search path is what the layer never does, and it lets one pack's header
-# shadow another's under the same name.
+# ones under a directory named Shaders (src/config_serializer.cpp), which is the
+# same tree ReShade searches.
 while read -r p; do
   find "$p" -type f -name '*.fx' -printf '%h\n' 2>/dev/null
 done < "$WORK/packs.txt" | sort -u > "$WORK/dirs.txt"
 
 while read -r p; do
-  find "$p" -type d -iname 'Shaders' 2>/dev/null
+  find "$p" -type d -iname 'Shaders' -exec find {} -type d \; 2>/dev/null
 done < "$WORK/packs.txt" | sort -u > "$WORK/include-dirs.txt"
 
 mapfile -t DIRS < "$WORK/dirs.txt"

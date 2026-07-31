@@ -1,9 +1,6 @@
-FAIL AO
 FAIL BaBa_SSR
 FAIL BX_XIV_ChromakeyPlus
-FAIL GI
 FAIL SuperDepth3D_WoWvx
-FAIL ZenWork
 PASS 3DFX
 PASS 3DToElse
 PASS 4xBRZ
@@ -13,6 +10,7 @@ PASS AdaptiveTonemapper
 PASS AdvancedAutoHDR
 PASS Anaglyph_to_SBS_or_TAB
 PASS anamorpho
+PASS AO
 PASS ArcaneBloom
 PASS AreaCopy
 PASS AreaDiscard
@@ -213,6 +211,7 @@ PASS FXAA
 PASS GAUSSIAN
 PASS GaussianBloom
 PASS GaussianBlurCS
+PASS GI
 PASS GlobalAlpha
 PASS GloomAO
 PASS GoldenRatio
@@ -470,6 +469,7 @@ PASS Zenteon_Sharpen
 PASS Zenteon_SSAO_History
 PASS Zenteon_TurboGI
 PASS Zenteon_XenonBloom
+PASS ZenWork
 PASS zfast_crt
 PASS ZigZag
 WARN AdaptiveTint

@@ -748,12 +748,14 @@ void reshadefx::preprocessor::parse_include()
 	std::error_code ec;
 	if (!std::filesystem::exists(file_path, ec))
 	{
-		// Several installed packs can ship a header of the same name, so the copy belonging to
-		// the same pack as the file including it wins over one that merely comes first.
+		// Several installed packs can ship a header of the same name. The copy belonging to the
+		// same pack as the file including it wins; failing that the one nearer the top of a search
+		// path wins, because a header sitting deeper is reached by its qualified name.
 		const std::filesystem::path current_path =
 			std::filesystem::absolute(std::filesystem::u8path(_output_location.source), ec);
 		std::filesystem::path best_path;
 		size_t best_shared = 0;
+		size_t best_depth = 0;
 
 		for (const std::filesystem::path &include_path : _include_paths)
 		{
@@ -768,10 +770,14 @@ void reshadefx::preprocessor::parse_include()
 					a != absolute_candidate.end() && b != current_path.end() && *a == *b; ++a, ++b)
 				++shared;
 
-			if (best_path.empty() || shared > best_shared)
+			const size_t depth = static_cast<size_t>(
+				std::distance(absolute_candidate.begin(), absolute_candidate.end()));
+
+			if (best_path.empty() || shared > best_shared || (shared == best_shared && depth < best_depth))
 			{
 				best_path = candidate;
 				best_shared = shared;
+				best_depth = depth;
 			}
 		}
 

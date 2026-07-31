@@ -369,10 +369,24 @@ namespace vkBasalt
                 if (!entry.is_directory())
                     continue;
 
-                std::string dirName = entry.path().filename().string();
-                if (equalsIgnoreCaseLocal(dirName, "Shaders"))
+                std::error_code relEc;
+                const auto relativePath = std::filesystem::relative(entry.path(), dir, relEc);
+                if (relEc)
+                    continue;
+
+                bool underShaders  = false;
+                bool underTextures = false;
+                for (const auto& part : relativePath)
+                {
+                    if (equalsIgnoreCaseLocal(part.string(), "Shaders"))
+                        underShaders = true;
+                    else if (equalsIgnoreCaseLocal(part.string(), "Textures"))
+                        underTextures = true;
+                }
+
+                if (underShaders)
                     shaderPaths.push_back(entry.path().string());
-                else if (equalsIgnoreCaseLocal(dirName, "Textures"))
+                else if (underTextures)
                     texturePaths.push_back(entry.path().string());
             }
         }
