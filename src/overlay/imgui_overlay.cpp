@@ -127,8 +127,51 @@ namespace vkBasalt
         ImGui::StyleColorsDark();
 
         ImGuiStyle& style = ImGui::GetStyle();
-        style.Alpha = 0.9f;
-        style.WindowRounding = 5.0f;
+        style.Alpha            = 0.96f;
+        style.WindowRounding   = 8.0f;
+        style.ChildRounding    = 8.0f;
+        style.FrameRounding    = 6.0f;
+        style.PopupRounding    = 8.0f;
+        style.ScrollbarRounding = 8.0f;
+        style.GrabRounding     = 6.0f;
+        style.TabRounding      = 6.0f;
+
+        style.WindowPadding    = ImVec2(14.0f, 12.0f);
+        style.FramePadding     = ImVec2(10.0f, 6.0f);
+        style.ItemSpacing      = ImVec2(10.0f, 8.0f);
+        style.ItemInnerSpacing = ImVec2(8.0f, 6.0f);
+        style.IndentSpacing    = 20.0f;
+        style.ScrollbarSize    = 12.0f;
+        style.GrabMinSize      = 10.0f;
+
+        style.WindowBorderSize = 0.0f;
+        style.ChildBorderSize  = 0.0f;
+        style.PopupBorderSize  = 0.0f;
+        style.FrameBorderSize  = 0.0f;
+        style.WindowTitleAlign = ImVec2(0.0f, 0.5f);
+
+        ImVec4* colors = style.Colors;
+        colors[ImGuiCol_WindowBg]        = ImVec4(0.09f, 0.09f, 0.11f, 0.96f);
+        colors[ImGuiCol_ChildBg]         = ImVec4(0.11f, 0.11f, 0.13f, 0.60f);
+        colors[ImGuiCol_PopupBg]         = ImVec4(0.09f, 0.09f, 0.11f, 0.98f);
+        colors[ImGuiCol_FrameBg]         = ImVec4(0.16f, 0.16f, 0.19f, 1.00f);
+        colors[ImGuiCol_FrameBgHovered]  = ImVec4(0.21f, 0.21f, 0.25f, 1.00f);
+        colors[ImGuiCol_FrameBgActive]   = ImVec4(0.25f, 0.25f, 0.30f, 1.00f);
+        colors[ImGuiCol_TitleBg]         = ImVec4(0.09f, 0.09f, 0.11f, 1.00f);
+        colors[ImGuiCol_TitleBgActive]   = ImVec4(0.12f, 0.12f, 0.15f, 1.00f);
+        colors[ImGuiCol_Header]          = ImVec4(0.24f, 0.42f, 0.66f, 0.55f);
+        colors[ImGuiCol_HeaderHovered]   = ImVec4(0.28f, 0.48f, 0.74f, 0.75f);
+        colors[ImGuiCol_HeaderActive]    = ImVec4(0.30f, 0.52f, 0.80f, 0.90f);
+        colors[ImGuiCol_Button]          = ImVec4(0.20f, 0.20f, 0.24f, 1.00f);
+        colors[ImGuiCol_ButtonHovered]   = ImVec4(0.28f, 0.48f, 0.74f, 0.85f);
+        colors[ImGuiCol_ButtonActive]    = ImVec4(0.30f, 0.52f, 0.80f, 1.00f);
+        colors[ImGuiCol_SliderGrab]      = ImVec4(0.30f, 0.52f, 0.80f, 0.90f);
+        colors[ImGuiCol_SliderGrabActive] = ImVec4(0.36f, 0.60f, 0.90f, 1.00f);
+        colors[ImGuiCol_CheckMark]       = ImVec4(0.40f, 0.66f, 0.95f, 1.00f);
+        colors[ImGuiCol_Separator]       = ImVec4(0.24f, 0.24f, 0.28f, 1.00f);
+        colors[ImGuiCol_Tab]             = ImVec4(0.13f, 0.13f, 0.16f, 1.00f);
+        colors[ImGuiCol_TabHovered]      = ImVec4(0.28f, 0.48f, 0.74f, 0.80f);
+        colors[ImGuiCol_TabSelected]     = ImVec4(0.20f, 0.34f, 0.54f, 1.00f);
 
         initVulkanBackend(swapchainFormat, imageCount);
 

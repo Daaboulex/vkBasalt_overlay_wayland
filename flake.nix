@@ -173,6 +173,16 @@
                 touch $out
               '';
 
+          checks.hidden-overlay-does-no-work = pkgs.runCommand "hidden-overlay-does-no-work" { } ''
+            src=${./src/overlay/imgui_overlay.cpp}
+            head=$(sed -n '/ImGuiOverlay::recordFrame/,/^        if (imageIndex/p' "$src")
+            grep -q '!visible' <<< "$head" \
+              || { echo "a hidden overlay must record nothing -- otherwise every frame of every game pays for it"; exit 1; }
+            grep -q 'return VK_NULL_HANDLE' <<< "$head" \
+              || { echo "the hidden path must return no command buffer, not an empty one"; exit 1; }
+            touch $out
+          '';
+
           checks.no-dormant-modules =
             pkgs.runCommand "no-dormant-modules" { nativeBuildInputs = [ pkgs.bash ]; }
               ''
