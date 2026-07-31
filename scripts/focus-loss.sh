@@ -69,7 +69,13 @@ if [ -n "$WM" ]; then
 fi
 
 export DISPLAY="$DISPLAY_NUM"
-probe() { timeout 10 env DISPLAY="$DISPLAY_NUM" "$WORK/grab_probe" 2>/dev/null || echo "probe-timeout"; }
+# The probe signals its result through the exit code as well as the word it
+# prints, so a non-zero exit is an answer, not a failure. Only silence is one.
+probe() {
+    local out
+    out=$(timeout 10 env DISPLAY="$DISPLAY_NUM" "$WORK/grab_probe" 2>/dev/null)
+    if [ -n "$out" ]; then echo "$out"; else echo "probe-timeout"; fi
+}
 step() { echo "  .. $1"; }
 
 step "probing the pointer before anything runs"
@@ -94,7 +100,7 @@ sleep 8
 # Xvfb has no window manager, so nothing holds input focus and a synthetic key
 # would go nowhere. The window is focused first.
 step "looking for the application window"
-app_window=$(timeout 10 "$XDOTOOL/bin/xdotool" search --onlyvisible --class vkcube 2>/dev/null | head -1)
+app_window=$(timeout 10 "$XDOTOOL/bin/xdotool" search --onlyvisible --name . 2>/dev/null | tail -1)
 step "window: ${app_window:-none found}"
 if [ -n "$app_window" ]; then
     timeout 10 "$XDOTOOL/bin/xdotool" windowfocus "$app_window" 2>/dev/null || true
