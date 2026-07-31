@@ -79,9 +79,9 @@ probe_pid=$!
 exec 3> "$WORK/cmd"
 answers_seen=1
 
-probe() {
+ask() {
     answers_seen=$((answers_seen + 1))
-    echo probe >&3
+    echo "$1" >&3
     local waited=0
     while [ "$(wc -l < "$WORK/answers" 2>/dev/null || echo 0)" -lt "$answers_seen" ]; do
         sleep 0.2
@@ -90,6 +90,8 @@ probe() {
     done
     tail -1 "$WORK/answers"
 }
+probe() { ask grab; }
+keystate() { ask key; }
 step() { echo "  .. $1"; }
 
 step "probing the pointer before anything runs"
@@ -129,6 +131,7 @@ sleep 1
 step "sending the toggle key"
 timeout 10 "$XDOTOOL/bin/xdotool" keydown --clearmodifiers Home 2>/dev/null || true
 sleep 1
+step "the server reports Home $(keystate) while it is held"
 timeout 10 "$XDOTOOL/bin/xdotool" keyup --clearmodifiers Home 2>/dev/null || true
 sleep 3
 
