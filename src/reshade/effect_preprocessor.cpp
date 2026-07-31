@@ -783,6 +783,22 @@ void reshadefx::preprocessor::parse_include()
 			for (const std::filesystem::path &include_path : _include_paths)
 				if (try_case_insensitive((include_path / file_name).parent_path()))
 					break;
+
+		// A pack authored to sit in its own subdirectory of a ReShade install reaches the
+		// common headers as "../ReShade.fxh", which resolves nowhere once its shaders are in
+		// a directory pointed at directly, so the name alone is tried against the search paths.
+		if (!std::filesystem::exists(file_path, ec) && file_name.has_parent_path())
+		{
+			const std::filesystem::path bare_name = file_name.filename();
+			for (const std::filesystem::path &include_path : _include_paths)
+				if (std::filesystem::exists(file_path = include_path / bare_name, ec))
+					break;
+
+			if (!std::filesystem::exists(file_path, ec))
+				for (const std::filesystem::path &include_path : _include_paths)
+					if (try_case_insensitive(include_path))
+						break;
+		}
 	}
 
 	const std::string file_path_string = file_path.u8string();
