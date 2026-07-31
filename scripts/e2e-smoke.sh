@@ -39,7 +39,7 @@ cat > "$WORK/lvp.json" <<EOF
 EOF
 
 mkdir -p "$FAKE_HOME/.config/vkBasalt-overlay"
-cp "$ROOT/test/macro_spacing.fx" "$WORK/macro_spacing.fx"
+cp "$ROOT/test/language/macro_spacing.fx" "$WORK/macro_spacing.fx"
 cat > "$FAKE_HOME/.config/vkBasalt-overlay/vkBasalt.conf" <<EOF
 effects = macro_spacing
 macro_spacing = $WORK/macro_spacing.fx

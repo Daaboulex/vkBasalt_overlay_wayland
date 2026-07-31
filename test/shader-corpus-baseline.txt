@@ -33,10 +33,7 @@ FAIL ZenWork
 FAIL ZigZag
 INVALID BaBa_Sharpen_Neural
 INVALID BaBa_Sharpen_Residual
-INVALID BaBa_XeGTAO
-INVALID nGlide_3DFX
 INVALID NTSC_XOT
-INVALID Zenteon_FilmGrain
 PASS 3DFX
 PASS 3DToElse
 PASS 4xBRZ
@@ -70,6 +67,7 @@ PASS BaBa_PHDR
 PASS BaBa_Sharpen_NIS
 PASS BaBa_SSR_Lite
 PASS BaBa_VividTone
+PASS BaBa_XeGTAO
 PASS BasicCRT
 PASS BAYER
 PASS BeforeAfter
@@ -331,6 +329,7 @@ PASS MultiTonePoster
 PASS N64_3Point
 PASS NeoBloom
 PASS NFAA
+PASS nGlide_3DFX
 PASS NormalMap
 PASS Nostalgia
 PASS ntsc
@@ -464,6 +463,7 @@ PASS WhitepointFixer
 PASS WinUaeMaskGlow
 PASS ZebraLines
 PASS Zenteon_ATA
+PASS Zenteon_FilmGrain
 PASS Zenteon_Framework
 PASS Zenteon_LocalContrast
 PASS Zenteon_Motion

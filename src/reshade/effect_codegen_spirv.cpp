@@ -214,6 +214,7 @@ private:
 	std::vector<std::pair<type_lookup, spv::Id>> _type_lookup;
 	std::vector<std::tuple<type, constant, spv::Id>> _constant_lookup;
 	std::vector<std::pair<function_blocks, spv::Id>> _function_type_lookup;
+	std::vector<std::pair<std::vector<spv::Id>, spv::Id>> _function_signature_lookup;
 	std::unordered_map<std::string, spv::Id> _string_lookup;
 	std::unordered_map<spv::Id, std::pair<spv::StorageClass, spv::ImageFormat>> _storage_lookup;
 	std::unordered_map<std::string, uint32_t> _semantic_to_location;
@@ -571,10 +572,24 @@ private:
 			if (info.rows == 1)
 				return elem_type_id;
 
-			type_id =
-				add_instruction(spv::OpTypeMatrix, 0, _types_and_constants)
-					.add(elem_type_id)
-					.add(info.rows);
+			if (info.is_floating_point())
+			{
+				type_id =
+					add_instruction(spv::OpTypeMatrix, 0, _types_and_constants)
+						.add(elem_type_id)
+						.add(info.rows);
+			}
+			else
+			{
+				// SPIR-V cannot parameterize a matrix with anything but a floating-point type, so a
+				// matrix of any other type is carried as an array of its columns instead.
+				const spv::Id column_count = emit_constant(info.rows);
+
+				type_id =
+					add_instruction(spv::OpTypeArray, 0, _types_and_constants)
+						.add(elem_type_id)
+						.add(column_count);
+			}
 		}
 		else if (info.is_vector())
 		{
@@ -712,11 +727,28 @@ private:
 		for (const type &param_type : info.param_types)
 			param_type_ids.push_back(convert_type(param_type, true));
 
+		// Two signatures that differ only in qualifiers, such as an 'in' on a parameter, convert to
+		// the same ids. Keying the cache on the signature alone therefore declares the same
+		// OpTypeFunction twice, which SPIR-V forbids for a non-aggregate type.
+		std::vector<spv::Id> signature_ids;
+		signature_ids.reserve(param_type_ids.size() + 1);
+		signature_ids.push_back(return_type_id);
+		signature_ids.insert(signature_ids.end(), param_type_ids.begin(), param_type_ids.end());
+
+		if (const auto emitted_it = std::find_if(_function_signature_lookup.begin(), _function_signature_lookup.end(),
+				[&signature_ids](const std::pair<std::vector<spv::Id>, spv::Id> &entry) { return entry.first == signature_ids; });
+			emitted_it != _function_signature_lookup.end())
+		{
+			_function_type_lookup.push_back({ info, emitted_it->second });
+			return emitted_it->second;
+		}
+
 		spirv_instruction &inst = add_instruction(spv::OpTypeFunction, 0, _types_and_constants)
 			.add(return_type_id)
 			.add(param_type_ids.begin(), param_type_ids.end());
 
 		_function_type_lookup.push_back({ info, inst });
+		_function_signature_lookup.push_back({ std::move(signature_ids), inst });
 
 		return inst;
 	}
