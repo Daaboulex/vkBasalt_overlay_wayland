@@ -64,7 +64,7 @@ for spv in "$WORK"/spv/*.spv; do
   # A file with no technique emits no entry point. That is not a miscompilation.
   grep -q "No OpEntryPoint instruction was found" <<< "$err" && continue
   name=$(basename "$spv" .spv)
-  printf '%s\n' "${name%%__*}" >> "$WORK/invalid.txt"
+  printf '%s\n' "${name%__*}" >> "$WORK/invalid.txt"
 done
 sort -u -o "$WORK/invalid.txt" "$WORK/invalid.txt"
 echo "  SPIR-V: $(wc -l < "$WORK/invalid.txt") of $(ls "$WORK"/spv/*.spv 2>/dev/null | wc -l) emitted modules are invalid"
