@@ -95,6 +95,20 @@ see through geometry.
 
 ### ReShade Shader Support
 
+The ReShade FX compiler is vendored from upstream 6.7.3, so the shader language is
+current. Of the 504 shaders in ReShade's official package index, **501 compile and
+every module they emit passes `spirv-val`**; the three that do not, and why, are in
+[SHADER-COMPATIBILITY.md](SHADER-COMPATIBILITY.md) alongside the full list.
+
+That is a measurement of compiling, not of rendering. A shader that compiles can
+still look wrong, and one that reads depth shows nothing until the depth buffer is
+wired, so the same file marks which shaders have been run and which have only been
+compiled.
+
+One effect costs about 9 microseconds a frame on an RX 9070 XT, measured with
+`scripts/perf-bench.sh`. Heavy shader packs cost far more than the layer around
+them.
+
 Download shader packs and point the Shader Manager at them:
 
 - <https://github.com/crosire/reshade-shaders>
