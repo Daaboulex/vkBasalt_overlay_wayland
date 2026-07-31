@@ -4,6 +4,8 @@
 #
 #   scripts/e2e-smoke.sh
 #
+# Set VKBASALT_E2E_ICD to run against a driver other than the bundled lavapipe.
+#
 # Runs against an isolated HOME, so anything written outside the XDG directories
 # is pollution and is reported as a failure rather than being missed.
 set -uo pipefail
@@ -58,7 +60,7 @@ LOG="$WORK/run.log"
     export XDG_CACHE_HOME="$FAKE_HOME/.cache"
     export XDG_DATA_HOME="$FAKE_HOME/.local/share"
     export XDG_DATA_DIRS="$OUT/share:/usr/share"
-    export VK_DRIVER_FILES="$WORK/lvp.json"
+    export VK_DRIVER_FILES="${VKBASALT_E2E_ICD:-$WORK/lvp.json}"
     export LD_LIBRARY_PATH="$LOADER/lib"
     export PATH="$TOOLS/bin:$PATH"
     export ENABLE_VKBASALT=1
