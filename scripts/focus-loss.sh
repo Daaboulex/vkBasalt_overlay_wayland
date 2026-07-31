@@ -37,7 +37,8 @@ WORK=$(mktemp -d "$ROOT/.cache/focus.XXXXXX" 2>/dev/null) || {
 } || exit 1
 DISPLAY_NUM=":78"
 cleanup() {
-    kill -9 "${app_pid:-0}" "${wm_pid:-0}" "${xvfb_pid:-0}" 2>/dev/null || true
+    exec 3>&- 2>/dev/null || true
+    kill -9 "${app_pid:-0}" "${probe_pid:-0}" "${wm_pid:-0}" "${xvfb_pid:-0}" 2>/dev/null || true
     rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -70,12 +71,24 @@ if [ -n "$WM" ]; then
 fi
 
 export DISPLAY="$DISPLAY_NUM"
-# The probe signals its result through the exit code as well as the word it
-# prints, so a non-zero exit is an answer, not a failure. Only silence is one.
+# The probe holds one connection for the whole run and answers a line at a time,
+# because opening a new one to a server busy rendering starves past any timeout.
+mkfifo "$WORK/cmd"
+"$WORK/grab_probe" < "$WORK/cmd" > "$WORK/answers" 2>&1 &
+probe_pid=$!
+exec 3> "$WORK/cmd"
+answers_seen=1
+
 probe() {
-    local out
-    out=$(timeout 10 env DISPLAY="$DISPLAY_NUM" "$WORK/grab_probe" 2>/dev/null)
-    if [ -n "$out" ]; then echo "$out"; else echo "probe-timeout"; fi
+    answers_seen=$((answers_seen + 1))
+    echo probe >&3
+    local waited=0
+    while [ "$(wc -l < "$WORK/answers" 2>/dev/null || echo 0)" -lt "$answers_seen" ]; do
+        sleep 0.2
+        waited=$((waited + 1))
+        [ "$waited" -gt 100 ] && { echo "probe-timeout"; return; }
+    done
+    tail -1 "$WORK/answers"
 }
 step() { echo "  .. $1"; }
 
