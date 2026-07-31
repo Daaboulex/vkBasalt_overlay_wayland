@@ -104,7 +104,23 @@
 
           # The corpus baseline is generated and lists third-party shader names
           # verbatim; they are identifiers, not prose we can correct.
-          pre-commit.settings.hooks.typos.excludes = [ "^test/shader-corpus-baseline\\.txt$" ];
+          pre-commit.settings.hooks.typos.excludes = [
+            "^test/shader-corpus-baseline\\.txt$"
+            "^SHADER-COMPATIBILITY\\.md$"
+            "^scripts/shader-support-table\\.sh$"
+          ];
+
+          checks.shader-support-table-is-current =
+            pkgs.runCommand "shader-support-table-is-current" { nativeBuildInputs = [ pkgs.bash ]; }
+              ''
+                mkdir -p work/scripts work/test
+                cp ${./scripts/shader-support-table.sh} work/scripts/shader-support-table.sh
+                cp ${./test/shader-corpus-baseline.txt} work/test/shader-corpus-baseline.txt
+                cp ${./SHADER-COMPATIBILITY.md} work/SHADER-COMPATIBILITY.md
+                chmod +w work/SHADER-COMPATIBILITY.md work/scripts/shader-support-table.sh
+                bash work/scripts/shader-support-table.sh --check
+                touch $out
+              '';
 
           checks.settings-writer-owns-its-file = pkgs.runCommand "settings-writer-owns-its-file" { } ''
             src=${./src/config_serializer.cpp}
