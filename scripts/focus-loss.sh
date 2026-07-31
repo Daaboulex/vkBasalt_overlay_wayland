@@ -136,7 +136,9 @@ echo "  after opening the overlay:   pointer $after_toggle"
 if [ "$after_toggle" != "held" ]; then
     echo "  the overlay never took a pointer grab, so this test cannot say anything"
     echo "  --- what the layer logged ---"
-    tail -12 "$WORK/run.log" | sed "s/^/    /"
+    grep -iE "toggle|grab|overlay|key|block|focus" "$WORK/run.log" | tail -10 | sed "s/^/    /"
+    echo "  --- windows on the display ---"
+    timeout 10 "$XDOTOOL/bin/xdotool" search "" 2>/dev/null | head -5 | sed "s/^/    /"
     echo "FOCUS LOSS INCONCLUSIVE"
     exit 0
 fi
