@@ -114,11 +114,14 @@ sleep 8
 # Xvfb has no window manager, so nothing holds input focus and a synthetic key
 # would go nowhere. The window is focused first.
 step "looking for the application window"
-app_window=$(timeout 10 "$XDOTOOL/bin/xdotool" search --onlyvisible --name . 2>/dev/null | tail -1)
+app_window=$(timeout 10 "$XDOTOOL/bin/xdotool" search "" 2>/dev/null | tail -1)
 step "window: ${app_window:-none found}"
 if [ -n "$app_window" ]; then
-    timeout 10 "$XDOTOOL/bin/xdotool" windowfocus "$app_window" 2>/dev/null || true
+    timeout 10 "$XDOTOOL/bin/xdotool" windowmap "$app_window" 2>/dev/null || true
     timeout 10 "$XDOTOOL/bin/xdotool" windowraise "$app_window" 2>/dev/null || true
+    timeout 10 "$XDOTOOL/bin/xdotool" windowfocus "$app_window" 2>/dev/null || true
+    timeout 10 "$XDOTOOL/bin/xdotool" windowactivate "$app_window" 2>/dev/null || true
+    step "focused window $app_window"
 fi
 sleep 1
 # The layer samples key state rather than consuming events, so an instantaneous
