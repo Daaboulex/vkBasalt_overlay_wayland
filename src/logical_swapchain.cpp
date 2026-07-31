@@ -1,3 +1,4 @@
+#include "memory.hpp"
 #include "logical_swapchain.hpp"
 
 namespace vkBasalt
@@ -18,7 +19,7 @@ namespace vkBasalt
             Logger::debug("after free commandbuffer");
 
             for (VkDeviceMemory memory : fakeImageMemory)
-                pLogicalDevice->vkd.FreeMemory(pLogicalDevice->device, memory, nullptr);
+                freeTrackedMemory(pLogicalDevice, memory, nullptr);
 
             for (uint32_t i = 0; i < fakeImages.size(); i++)
             {

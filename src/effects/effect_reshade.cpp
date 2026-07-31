@@ -1,3 +1,4 @@
+#include "memory.hpp"
 #include "effect_reshade.hpp"
 
 #include <cstring>
@@ -1472,7 +1473,7 @@ namespace vkBasalt
         {
             if (stagingBufferMapped)
                 pLogicalDevice->vkd.UnmapMemory(pLogicalDevice->device, stagingBufferMemory);
-            pLogicalDevice->vkd.FreeMemory(pLogicalDevice->device, stagingBufferMemory, nullptr);
+            freeTrackedMemory(pLogicalDevice, stagingBufferMemory, nullptr);
             pLogicalDevice->vkd.DestroyBuffer(pLogicalDevice->device, stagingBuffer, nullptr);
         }
 
@@ -1586,7 +1587,7 @@ namespace vkBasalt
 
         for (auto& memory : textureMemory)
         {
-            pLogicalDevice->vkd.FreeMemory(pLogicalDevice->device, memory, nullptr);
+            freeTrackedMemory(pLogicalDevice, memory, nullptr);
         }
     }
 

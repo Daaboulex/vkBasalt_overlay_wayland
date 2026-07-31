@@ -42,6 +42,7 @@
 #include "command_buffer.hpp"
 #include "buffer.hpp"
 #include "config.hpp"
+#include "memory.hpp"
 #include "config_serializer.hpp"
 #include "shader_cache.hpp"
 #include "settings_manager.hpp"
@@ -294,6 +295,9 @@ namespace vkBasalt
             {
                 pConfig = std::make_shared<Config>(currentConfigPath);
                 pConfig->setFallback(pBaseConfig.get());
+
+                setMemorySoftLimitBytes(static_cast<VkDeviceSize>(pConfig->getOption<int32_t>("vramSoftLimitMB", 0))
+                                        * 1024 * 1024);
                 Logger::info("current config: " + currentConfigPath);
             }
             else

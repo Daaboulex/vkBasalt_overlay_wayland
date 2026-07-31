@@ -29,7 +29,7 @@ namespace vkBasalt
         allocInfo.allocationSize  = memRequirements.size;
         allocInfo.memoryTypeIndex = findMemoryTypeIndex(pLogicalDevice, memRequirements.memoryTypeBits, properties);
 
-        result = pLogicalDevice->vkd.AllocateMemory(pLogicalDevice->device, &allocInfo, nullptr, &bufferMemory);
+        result = allocateTrackedMemory(pLogicalDevice, &allocInfo, nullptr, &bufferMemory);
         ASSERT_VULKAN(result);
 
         result = pLogicalDevice->vkd.BindBufferMemory(pLogicalDevice->device, buffer, bufferMemory, 0);

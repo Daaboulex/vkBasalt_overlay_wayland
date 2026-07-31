@@ -120,6 +120,12 @@ else
     fail=1
 fi
 
+if [ "$fail" -ne 0 ]; then
+    echo
+    echo "=== last 25 lines the layer logged ==="
+    tail -25 "$LOG" | sed 's/^/  /'
+fi
+
 echo
 [ "$fail" -eq 0 ] && echo "E2E PASS" || echo "E2E FAIL"
 exit "$fail"

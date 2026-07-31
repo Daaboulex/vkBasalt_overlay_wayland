@@ -14,6 +14,21 @@
 namespace vkBasalt
 {
     uint32_t findMemoryTypeIndex(LogicalDevice* pLogicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
+
+    // Every allocation the layer makes goes through these, so what it is holding is
+    // known without the caller having to remember a size.
+    VkResult allocateTrackedMemory(LogicalDevice*               pLogicalDevice,
+                                   const VkMemoryAllocateInfo*  pAllocateInfo,
+                                   const VkAllocationCallbacks* pAllocator,
+                                   VkDeviceMemory*              pMemory);
+
+    void freeTrackedMemory(LogicalDevice*               pLogicalDevice,
+                           VkDeviceMemory               memory,
+                           const VkAllocationCallbacks* pAllocator);
+
+    VkDeviceSize trackedMemoryBytes();
+    VkDeviceSize trackedMemoryPeakBytes();
+    void         setMemorySoftLimitBytes(VkDeviceSize bytes);
 }
 
 #endif // MEMORY_HPP_INCLUDED

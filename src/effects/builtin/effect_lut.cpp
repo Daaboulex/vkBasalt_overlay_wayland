@@ -1,3 +1,4 @@
+#include "memory.hpp"
 #include "effect_lut.hpp"
 
 #include <cstring>
@@ -132,7 +133,7 @@ namespace vkBasalt
         pLogicalDevice->vkd.DestroyImage(pLogicalDevice->device, lutImage, nullptr);
         pLogicalDevice->vkd.DestroyDescriptorSetLayout(pLogicalDevice->device, lutDescriptorSetLayout, nullptr);
         pLogicalDevice->vkd.DestroyDescriptorPool(pLogicalDevice->device, lutDescriptorPool, nullptr);
-        pLogicalDevice->vkd.FreeMemory(pLogicalDevice->device, lutMemory, nullptr);
+        freeTrackedMemory(pLogicalDevice, lutMemory, nullptr);
     }
     void LutEffect::applyEffect(uint32_t imageIndex, VkCommandBuffer commandBuffer)
     {

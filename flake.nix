@@ -154,6 +154,25 @@
             touch $out
           '';
 
+          checks.vram-limit-is-a-target-not-a-reservation =
+            pkgs.runCommand "vram-limit-is-a-target-not-a-reservation" { }
+              ''
+                src=${./src/memory.cpp}
+                grep -q 'g_memorySoftLimit != 0' "$src" \
+                  || { echo "an unset limit must mean no limit, not a limit of zero"; exit 1; }
+                if grep -qE 'return VK_ERROR_OUT_OF_DEVICE_MEMORY|softLimit.*return .*ERROR|if \(g_memorySoftLimit.*\breturn\b' "$src"; then
+                  echo "exceeding the soft limit must warn and continue -- refusing the allocation makes it a reservation"
+                  exit 1
+                fi
+                grep -q 'g_softLimitWarned' "$src" \
+                  || { echo "the warning must fire once, not every allocation"; exit 1; }
+
+                every=$(grep -rc 'vkd.AllocateMemory' ${./src/buffer.cpp} ${./src/image.cpp} ${./src/fake_swapchain.cpp} | grep -c ':0' || true)
+                [ "$every" = "3" ] \
+                  || { echo "an allocation bypassing allocateTrackedMemory would not be counted"; exit 1; }
+                touch $out
+              '';
+
           checks.no-dormant-modules =
             pkgs.runCommand "no-dormant-modules" { nativeBuildInputs = [ pkgs.bash ]; }
               ''

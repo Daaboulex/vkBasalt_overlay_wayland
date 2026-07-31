@@ -1,3 +1,4 @@
+#include "memory.hpp"
 #include "effect_smaa.hpp"
 
 #include <cstring>
@@ -322,9 +323,9 @@ namespace vkBasalt
         pLogicalDevice->vkd.DestroyShaderModule(pLogicalDevice->device, neignborFragmentModule, nullptr);
 
         pLogicalDevice->vkd.DestroyDescriptorPool(pLogicalDevice->device, descriptorPool, nullptr);
-        pLogicalDevice->vkd.FreeMemory(pLogicalDevice->device, imageMemory, nullptr);
-        pLogicalDevice->vkd.FreeMemory(pLogicalDevice->device, areaMemory, nullptr);
-        pLogicalDevice->vkd.FreeMemory(pLogicalDevice->device, searchMemory, nullptr);
+        freeTrackedMemory(pLogicalDevice, imageMemory, nullptr);
+        freeTrackedMemory(pLogicalDevice, areaMemory, nullptr);
+        freeTrackedMemory(pLogicalDevice, searchMemory, nullptr);
         for (unsigned int i = 0; i < edgeFramebuffers.size(); i++)
         {
             pLogicalDevice->vkd.DestroyFramebuffer(pLogicalDevice->device, edgeFramebuffers[i], nullptr);

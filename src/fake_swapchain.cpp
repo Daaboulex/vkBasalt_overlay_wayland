@@ -51,7 +51,7 @@ namespace vkBasalt
             Logger::err("fake swapchain images: " + why + " -- effects disabled for this swapchain, passing frames through");
             if (deviceMemory != VK_NULL_HANDLE)
             {
-                pLogicalDevice->vkd.FreeMemory(pLogicalDevice->device, deviceMemory, nullptr);
+                freeTrackedMemory(pLogicalDevice, deviceMemory, nullptr);
                 deviceMemory = VK_NULL_HANDLE;
             }
             for (VkImage image : fakeImages)
@@ -89,7 +89,7 @@ namespace vkBasalt
         memoryAllocateInfo.memoryTypeIndex =
             findMemoryTypeIndex(pLogicalDevice, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-        result = pLogicalDevice->vkd.AllocateMemory(pLogicalDevice->device, &memoryAllocateInfo, nullptr, &deviceMemory);
+        result = allocateTrackedMemory(pLogicalDevice, &memoryAllocateInfo, nullptr, &deviceMemory);
         if (result != VK_SUCCESS)
         {
             deviceMemory = VK_NULL_HANDLE;

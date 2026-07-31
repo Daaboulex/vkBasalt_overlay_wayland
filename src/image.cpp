@@ -99,7 +99,7 @@ namespace vkBasalt
         memoryAllocateInfo.allocationSize  = memoryRequirements.size * count;
         memoryAllocateInfo.memoryTypeIndex = findMemoryTypeIndex(pLogicalDevice, memoryRequirements.memoryTypeBits, properties);
 
-        result = pLogicalDevice->vkd.AllocateMemory(pLogicalDevice->device, &memoryAllocateInfo, nullptr, &imageMemory);
+        result = allocateTrackedMemory(pLogicalDevice, &memoryAllocateInfo, nullptr, &imageMemory);
         ASSERT_VULKAN(result);
 
         for (uint32_t i = 0; i < count; i++)
@@ -195,7 +195,7 @@ namespace vkBasalt
         submitAndWait(pLogicalDevice, commandBuffer);
 
         pLogicalDevice->vkd.FreeCommandBuffers(pLogicalDevice->device, pLogicalDevice->commandPool, 1, &commandBuffer);
-        pLogicalDevice->vkd.FreeMemory(pLogicalDevice->device, stagingMemory, nullptr);
+        freeTrackedMemory(pLogicalDevice, stagingMemory, nullptr);
         pLogicalDevice->vkd.DestroyBuffer(pLogicalDevice->device, stagingBuffer, nullptr);
     }
 
