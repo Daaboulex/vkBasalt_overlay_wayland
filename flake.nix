@@ -145,6 +145,19 @@
             touch $out
           '';
 
+          checks.input-is-released-when-focus-leaves =
+            pkgs.runCommand "input-is-released-when-focus-leaves" { }
+              ''
+                grep -q 'inputFocusLost' ${./src/basalt.cpp} \
+                  || { echo "nothing reacts to focus leaving, so an open overlay keeps the cursor after an alt-tab"; exit 1; }
+                body=$(sed -n '/bool inputFocusLost/,/^    }/p' ${./src/input_blocker.cpp})
+                grep -q 'XGetInputFocus' <<< "$body" \
+                  || { echo "focus loss must be read from the server, not assumed"; exit 1; }
+                grep -q 'focusAtGrab' <<< "$body" \
+                  || { echo "focus must be compared against what it was when the grab was taken"; exit 1; }
+                touch $out
+              '';
+
           checks.input-is-released-on-teardown = pkgs.runCommand "input-is-released-on-teardown" { } ''
             body=$(sed -n '/ImGuiOverlay::~ImGuiOverlay/,/ImGui overlay destroyed/p' ${./src/overlay/imgui_overlay.cpp})
             grep -q 'setInputBlocked(false)' <<< "$body" \

@@ -21,7 +21,8 @@ namespace vkBasalt
     static bool interposeUnavailableWarned = false;
 
 #if VKBASALT_X11
-    static bool grabbed = false;
+    static bool   grabbed     = false;
+    static Window focusAtGrab = None;
 
     static bool grabInput()
     {
@@ -36,6 +37,10 @@ namespace vkBasalt
         }
 
         Window root = DefaultRootWindow(display);
+
+        int focusRevert = 0;
+        if (XGetInputFocus(display, &focusAtGrab, &focusRevert) == 0)
+            focusAtGrab = None;
 
         int kbResult = XGrabKeyboard(display, root, False, GrabModeAsync, GrabModeAsync, CurrentTime);
         int ptrResult = XGrabPointer(display, root, False,
@@ -154,5 +159,26 @@ namespace vkBasalt
     bool isInputBlocked()
     {
         return blocked.load(std::memory_order_acquire);
+    }
+
+    bool inputFocusLost()
+    {
+#if VKBASALT_X11
+        if (!grabbed || focusAtGrab == None)
+            return false;
+
+        Display* display = (Display*) getKeyboardDisplay();
+        if (!display)
+            return false;
+
+        Window current = None;
+        int    revert  = 0;
+        if (XGetInputFocus(display, &current, &revert) == 0)
+            return false;
+
+        return current != focusAtGrab;
+#else
+        return false;
+#endif
     }
 }

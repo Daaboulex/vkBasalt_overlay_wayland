@@ -1478,6 +1478,17 @@ namespace vkBasalt
             if (pDevice->imguiOverlay)
                 pDevice->imguiOverlay->toggle();
         }
+        else if (inputFocusLost())
+        {
+            // The overlay holds the keyboard and the cursor, and an X11 grab
+            // outlives the focus change that took the user elsewhere.
+            LogicalDevice* pDevice = deviceMap[GetKey(queue)].get();
+            if (pDevice->imguiOverlay && pDevice->imguiOverlay->isVisible())
+            {
+                Logger::debug("focus left the application, closing the overlay and releasing input");
+                pDevice->imguiOverlay->toggle();
+            }
+        }
 
         LogicalDevice* pLogicalDevice = deviceMap[GetKey(queue)].get();
 
