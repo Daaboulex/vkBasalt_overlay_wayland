@@ -83,7 +83,10 @@ echo "=== the layer under each way a game reaches the screen ==="
 run_case wayland vkcube --c 400
 
 if [ -n "$GAMESCOPE" ]; then
-    run_case gamescope "$GAMESCOPE/bin/gamescope" -W 1280 -H 720 -- vkcube --c 400
+    # gamescope drops ENABLE_VKBASALT from the environment it gives its child, so
+    # setting it outside would test the layer on gamescope rather than on the game.
+    run_case gamescope "$GAMESCOPE/bin/gamescope" -W 1280 -H 720 -- \
+        env ENABLE_VKBASALT=1 vkcube --c 400
 else
     echo "  skip  gamescope (not available)"
 fi
