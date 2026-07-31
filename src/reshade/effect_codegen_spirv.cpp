@@ -1339,8 +1339,37 @@ private:
 			return variable;
 		};
 
-		const auto create_varying_variable = [this, &inputs_and_outputs, &position_variable, &point_size_variable, stype = func.type](const type &param_type, const std::string &semantic, spv::StorageClass storage, int a = 0) {
-			const spv::Id variable = define_variable({}, param_type, nullptr, storage);
+		// A boolean has no defined layout across a stage boundary, so SPIR-V rejects OpTypeBool
+		// in an Input or Output variable. It travels as an integer and converts at each end.
+		const auto varying_storage_type = [](const type &t) {
+			type storage_type = t;
+			if (storage_type.is_boolean())
+				storage_type.base = type::t_uint;
+			return storage_type;
+		};
+
+		const auto load_varying = [this, &varying_storage_type](spv::Id variable, const type &t) -> spv::Id {
+			const type storage_type = varying_storage_type(t);
+			const spv::Id raw = add_instruction(spv::OpLoad, convert_type(storage_type)).add(variable);
+			if (!t.is_boolean())
+				return raw;
+			const spv::Id zero = emit_constant(storage_type, 0u);
+			return add_instruction(spv::OpINotEqual, convert_type(t)).add(raw).add(zero);
+		};
+
+		const auto store_varying = [this, &varying_storage_type](spv::Id variable, const type &t, spv::Id value) {
+			if (t.is_boolean())
+			{
+				const type storage_type = varying_storage_type(t);
+				const spv::Id one = emit_constant(storage_type, 1u);
+				const spv::Id zero = emit_constant(storage_type, 0u);
+				value = add_instruction(spv::OpSelect, convert_type(storage_type)).add(value).add(one).add(zero);
+			}
+			add_instruction_without_result(spv::OpStore).add(variable).add(value);
+		};
+
+		const auto create_varying_variable = [this, &inputs_and_outputs, &position_variable, &point_size_variable, &varying_storage_type, stype = func.type](const type &param_type, const std::string &semantic, spv::StorageClass storage, int a = 0) {
+			const spv::Id variable = define_variable({}, varying_storage_type(param_type), nullptr, storage);
 
 			if (const spv::BuiltIn builtin = semantic_to_builtin(semantic, stype);
 				builtin != spv::BuiltInMax)
@@ -1403,9 +1432,7 @@ private:
 						{
 							const spv::Id input_var = create_varying_variable(member.type, member.semantic, spv::StorageClassInput, a);
 
-							param_value =
-								add_instruction(spv::OpLoad, convert_type(member.type))
-									.add(input_var);
+							param_value = load_varying(input_var, member.type);
 							struct_element_ids.push_back(param_value);
 						}
 
@@ -1434,9 +1461,7 @@ private:
 
 					const spv::Id input_var = create_varying_variable(varying_type, param.semantic, spv::StorageClassInput);
 
-					param_value =
-						add_instruction(spv::OpLoad, convert_type(varying_type))
-							.add(input_var);
+					param_value = load_varying(input_var, varying_type);
 
 					if (varying_type.rows != param.type.rows)
 					{
@@ -1529,9 +1554,7 @@ private:
 									.add(element_value)
 									.add(member_index);
 
-							add_instruction_without_result(spv::OpStore)
-								.add(inputs_and_outputs[inputs_and_outputs_index++])
-								.add(member_value);
+							store_varying(inputs_and_outputs[inputs_and_outputs_index++], struct_definition.member_list[member_index].type, member_value);
 						}
 					}
 				}
@@ -1541,9 +1564,7 @@ private:
 					if (param.type.has(type::q_in))
 						inputs_and_outputs_index += 1;
 
-					add_instruction_without_result(spv::OpStore)
-						.add(inputs_and_outputs[inputs_and_outputs_index++])
-						.add(value);
+					store_varying(inputs_and_outputs[inputs_and_outputs_index++], param.type, value);
 				}
 			}
 			else

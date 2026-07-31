@@ -171,6 +171,39 @@
                 touch $out
               '';
 
+          checks.boolean-varying-crosses-as-an-integer =
+            pkgs.runCommand "boolean-varying-crosses-as-an-integer"
+              {
+                nativeBuildInputs = [
+                  self'.packages.vkbasalt-overlay
+                  pkgs.spirv-tools
+                ];
+              }
+              ''
+                cp -r ${./test/language} shaders
+                mkdir spv
+                vkbasalt-test-shaders --dump-spirv spv shaders > /dev/null 2>&1 || true
+
+                for m in spv/bool_varying__*.spv; do
+                  [ -e "$m" ] || { echo "no module was emitted for the boolean varying fixture"; exit 1; }
+                  spirv-dis "$m" >> dis.txt
+                done
+
+                if grep -qE 'OpVariable %_ptr_(Input|Output)_[A-Za-z0-9_]*bool' dis.txt; then
+                  echo "a boolean Input or Output variable was declared, which SPIR-V forbids"
+                  exit 1
+                fi
+                grep -q 'OpSelect' dis.txt || { echo "a boolean varying is not converted before being stored"; exit 1; }
+                grep -q 'OpINotEqual' dis.txt || { echo "a boolean varying is not converted back after being loaded"; exit 1; }
+
+                src=${./src/reshade/effect_codegen_spirv.cpp}
+                grep -q 'OpSelect, convert_type(storage_type)).add(value).add(one).add(zero)' "$src" || {
+                  echo "the true branch must select the one constant -- swapping these inverts every boolean silently"
+                  exit 1
+                }
+                touch $out
+              '';
+
           checks.same-pack-header-wins =
             pkgs.runCommand "same-pack-header-wins" { nativeBuildInputs = [ self'.packages.vkbasalt-overlay ]; }
               ''
@@ -358,7 +391,7 @@
               || { echo "__RESHADE__ must come from VKBASALT_RESHADE_FX_VERSION, not a literal"; exit 1; }
             grep -q 'INT_MAX' <<< "$(sed -n '/add_macro_definition("__RESHADE__"/p' "$env")" \
               && { echo "__RESHADE__ claims INT_MAX -- every shader version gate opens and modern paths reach a 4.7 compiler"; exit 1; }
-            grep -q 'define VKBASALT_RESHADE_FX_VERSION 60000' ${./src/reshade_fx_version.hpp} \
+            grep -q 'define VKBASALT_RESHADE_FX_VERSION 60500' ${./src/reshade_fx_version.hpp} \
               || { echo "the declared FX level changed -- confirm src/reshade was resynced to match"; exit 1; }
 
             # The layer and the standalone tester must share one compile

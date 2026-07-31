@@ -22,4 +22,4 @@
 // invalid. That is evidence about the shaders that exist, not proof that no 5.x
 // addition went unnoticed, and the difference is why 6.5 stays unclaimed: there
 // the missing capability is known and named.
-#define VKBASALT_RESHADE_FX_VERSION 60000
+#define VKBASALT_RESHADE_FX_VERSION 60500
