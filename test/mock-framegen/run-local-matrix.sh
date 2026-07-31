@@ -64,7 +64,12 @@ cat >"$WORK/mock/vulkan/implicit_layer.d/mock_framegen.json" <<JSON
 }
 JSON
 
-ICD="${VK_DRIVER_FILES:-/run/opengl-driver/share/vulkan/icd.d/lvp_icd.x86_64.json}"
+if [ -n "${VK_DRIVER_FILES:-}" ]; then
+    ICD="$VK_DRIVER_FILES"
+else
+    ICD=$(ls /run/opengl-driver/share/vulkan/icd.d/lvp_icd.*.json 2>/dev/null | head -1)
+    [ -n "$ICD" ] || { echo "no lavapipe ICD found and VK_DRIVER_FILES is unset"; exit 1; }
+fi
 fail=0
 
 run_case() { # run_case <name> <xdg_data_dirs> <expected_cycles_per_frame>
