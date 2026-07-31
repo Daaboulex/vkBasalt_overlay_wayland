@@ -40,9 +40,13 @@ EOF
 
 mkdir -p "$FAKE_HOME/.config/vkBasalt-overlay"
 cp "$ROOT/test/language/macro_spacing.fx" "$WORK/macro_spacing.fx"
+cp "$ROOT/test/lut/cube_lut.fx" "$WORK/cube_lut.fx"
+mkdir -p "$FAKE_HOME/.config/vkBasalt-overlay/reshade/Textures"
+cp "$ROOT/test/lut/identity.cube" "$FAKE_HOME/.config/vkBasalt-overlay/reshade/Textures/identity.cube"
 cat > "$FAKE_HOME/.config/vkBasalt-overlay/vkBasalt.conf" <<EOF
-effects = macro_spacing
+effects = macro_spacing:cube_lut
 macro_spacing = $WORK/macro_spacing.fx
+cube_lut = $WORK/cube_lut.fx
 reshadeIncludePath = $WORK
 enableOnLaunch = True
 EOF
@@ -80,6 +84,7 @@ echo "=== the layer loaded, compiled the effect and presented ==="
 check "layer initialised"          'vkBasalt|SettingsManager'
 check "effect compiled"            'macro_spacing|created reshade shaderModule'
 check "swapchain set up"           'created fake swapchain images'
+check "cube LUT effect compiled"   'cube_lut'
 check "frames presented"           'present cycle'
 if grep -qE 'vkBasalt err:|Vulkan Loader.*ERROR|VUID-' "$LOG"; then
     echo "  FAIL  the run reported errors"

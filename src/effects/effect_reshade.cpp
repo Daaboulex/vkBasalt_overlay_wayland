@@ -19,6 +19,7 @@
 #include "shader.hpp"
 #include "sampler.hpp"
 #include "image.hpp"
+#include "lut_cube.hpp"
 #include "format.hpp"
 #include "config_serializer.hpp"
 #include "shader_cache.hpp"
@@ -192,7 +193,8 @@ namespace vkBasalt
                 textureFormatsSRGB[module.textures[i].unique_name]  = inputOutputFormatSRGB;
                 continue;
             }
-            VkExtent3D textureExtent = {module.textures[i].width, module.textures[i].height, 1};
+            VkExtent3D textureExtent = {module.textures[i].width, module.textures[i].height, module.textures[i].depth};
+            const VkImageViewType textureViewType = textureExtent.depth > 1 ? VK_IMAGE_VIEW_TYPE_3D : VK_IMAGE_VIEW_TYPE_2D;
             // TODO handle mip map levels correctly
             // TODO handle pooled textures better
             if (const auto source = std::find_if(
@@ -217,7 +219,7 @@ namespace vkBasalt
                                              createImageViews(pLogicalDevice,
                                                               convertToUNORM(convertReshadeFormat(module.textures[i].format)),
                                                               images,
-                                                              VK_IMAGE_VIEW_TYPE_2D,
+                                                              textureViewType,
                                                               VK_IMAGE_ASPECT_COLOR_BIT,
                                                               module.textures[i].levels)[0]);
 
@@ -226,7 +228,7 @@ namespace vkBasalt
                                              createImageViews(pLogicalDevice,
                                                               convertToSRGB(convertReshadeFormat(module.textures[i].format)),
                                                               images,
-                                                              VK_IMAGE_VIEW_TYPE_2D,
+                                                              textureViewType,
                                                               VK_IMAGE_ASPECT_COLOR_BIT,
                                                               module.textures[i].levels)[0]);
 
@@ -274,7 +276,7 @@ namespace vkBasalt
                 std::vector<VkImageView> imageViews = createImageViews(pLogicalDevice,
                                                                        convertToUNORM(convertReshadeFormat(module.textures[i].format)),
                                                                        images,
-                                                                       VK_IMAGE_VIEW_TYPE_2D,
+                                                                       textureViewType,
                                                                        VK_IMAGE_ASPECT_COLOR_BIT,
                                                                        module.textures[i].levels);
 
@@ -283,7 +285,7 @@ namespace vkBasalt
                 imageViews = createImageViews(pLogicalDevice,
                                               convertToSRGB(convertReshadeFormat(module.textures[i].format)),
                                               images,
-                                              VK_IMAGE_VIEW_TYPE_2D,
+                                              textureViewType,
                                               VK_IMAGE_ASPECT_COLOR_BIT,
                                               module.textures[i].levels);
 
@@ -337,6 +339,42 @@ namespace vkBasalt
                 {
                     Logger::err("couldn't open texture: " + textureName + " (searched " +
                         std::to_string(cachedShaderMgrConfig.discoveredTexturePaths.size()) + " directories)");
+                    continue;
+                }
+
+                if (textureName.size() > 5 && textureName.compare(textureName.size() - 5, 5, ".cube") == 0)
+                {
+                    fclose(file);
+
+                    LutCube lut(filePath);
+                    const uint32_t side = static_cast<uint32_t>(lut.size);
+
+                    if (lut.size <= 0 || lut.colorCube.size() != static_cast<size_t>(side) * side * side * 4)
+                    {
+                        Logger::err("failed to parse cube LUT: " + textureName + " from " + filePath);
+                        continue;
+                    }
+
+                    if (side != textureExtent.width || side != textureExtent.height || side != textureExtent.depth)
+                    {
+                        Logger::err("cube LUT " + textureName + " is " + std::to_string(side) + " per side, but the shader declares "
+                            + std::to_string(textureExtent.width) + "x" + std::to_string(textureExtent.height) + "x"
+                            + std::to_string(textureExtent.depth));
+                        continue;
+                    }
+
+                    if (textureFormatsUNORM[module.textures[i].unique_name] != VK_FORMAT_R8G8B8A8_UNORM)
+                    {
+                        Logger::err("cube LUT " + textureName + " needs an RGBA8 texture, but the shader declares another format");
+                        continue;
+                    }
+
+                    uploadToImage(pLogicalDevice,
+                                  images[0],
+                                  textureExtent,
+                                  static_cast<uint32_t>(lut.colorCube.size()),
+                                  lut.colorCube.data(),
+                                  module.textures[i].levels);
                     continue;
                 }
 
