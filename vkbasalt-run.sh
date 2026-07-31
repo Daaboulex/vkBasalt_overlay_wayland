@@ -11,9 +11,6 @@ if [ $# -eq 0 ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
 fi
 
 export ENABLE_VKBASALT=1
-# gamescope removes ENABLE_VKBASALT from the environment it gives its child, so a
-# game inside it would never see the layer; the manifest accepts either name.
-export VKBASALT_OVERLAY_ENABLE=1
 
 # LD_AUDIT for Wine Wayland: Wine loads winewayland.so via dlopen(RTLD_LOCAL),
 # bypassing our wl_proxy_add_listener interposition. The audit library

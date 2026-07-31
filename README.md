@@ -193,6 +193,19 @@ ENABLE_VKBASALT=1 vkcube
 ENABLE_VKBASALT=1 vkgears
 ```
 
+### gamescope
+
+gamescope removes `ENABLE_VKBASALT` from the environment it gives the program it
+launches, so the layer loads into gamescope itself and never into the game. Set
+it again inside:
+
+```sh
+gamescope -W 2560 -H 1440 -- env ENABLE_VKBASALT=1 %command%
+```
+
+Setting it outside gamescope applies the layer to gamescope's own output instead,
+which is occasionally what you want and usually not.
+
 ### Steam
 
 Add to launch options:
