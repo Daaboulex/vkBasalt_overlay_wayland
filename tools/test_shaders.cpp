@@ -450,6 +450,11 @@ int main(int argc, char* argv[])
                 g_cacheBench = true;
                 continue;
             }
+            if (std::string(argv[i]) == "--include" && (i + 1) < argc)
+            {
+                includePaths.push_back(argv[++i]);
+                continue;
+            }
             shaderDirs.push_back(argv[i]);
             includePaths.push_back(argv[i]);
         }
