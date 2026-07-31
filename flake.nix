@@ -154,6 +154,15 @@
             touch $out
           '';
 
+          checks.no-dormant-modules =
+            pkgs.runCommand "no-dormant-modules" { nativeBuildInputs = [ pkgs.bash ]; }
+              ''
+                cp -r ${./src} src
+                cp -r ${./tools} tools
+                bash ${./scripts/no-dormant-modules.sh} src tools
+                touch $out
+              '';
+
           checks.optional-gpu-probe-stays-optional =
             pkgs.runCommand "optional-gpu-probe-stays-optional" { }
               ''
