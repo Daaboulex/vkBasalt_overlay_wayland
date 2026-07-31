@@ -105,11 +105,12 @@ still look wrong, and one that reads depth shows nothing until the depth buffer 
 wired, so the same file marks which shaders have been run and which have only been
 compiled.
 
-One effect costs about 13 microseconds a frame on an RX 9070 XT, measured with
-`scripts/perf-bench.sh`. Effects compute at full precision even where a shader
-asks for `half`, which costs a few of those microseconds and avoids the flicker
-half precision causes in anything that accumulates. Heavy shader packs cost far
-more than the layer around them.
+One effect costs between 6 and 13 microseconds a frame on an RX 9070 XT across
+repeated runs of `scripts/perf-bench.sh`. The spread is the benchmark's, not the
+layer's: at this scale a single figure would be quoted more precisely than it can
+be measured. Effects compute at full precision even where a shader asks for
+`half`, which avoids the flicker half precision causes in anything that
+accumulates. Heavy shader packs cost far more than the layer around them.
 
 Download shader packs and point the Shader Manager at them:
 
