@@ -171,6 +171,49 @@
                 touch $out
               '';
 
+          checks.same-pack-header-wins =
+            pkgs.runCommand "same-pack-header-wins" { nativeBuildInputs = [ self'.packages.vkbasalt-overlay ]; }
+              ''
+                mkdir -p other/Shaders own/Shaders/inner
+                printf '#define SHARED_VALUE 1\n' > other/Shaders/shared_header.fxh
+                printf '#define SHARED_VALUE 2\n' > own/Shaders/shared_header.fxh
+
+                cat > own/Shaders/inner/uses_shared.fx <<'EOF'
+                #include "shared_header.fxh"
+
+                #if SHARED_VALUE != 2
+                    #error "resolved to another pack's copy of the header"
+                #endif
+
+                float4 SharedVS(uint id : SV_VertexID) : SV_Position
+                {
+                    return float4(0.0, 0.0, 0.0, 1.0);
+                }
+
+                float4 SharedPS(float4 pos : SV_Position) : SV_Target
+                {
+                    return float4(SHARED_VALUE, 0.0, 0.0, 1.0);
+                }
+
+                technique UsesShared
+                {
+                    pass
+                    {
+                        VertexShader = SharedVS;
+                        PixelShader  = SharedPS;
+                    }
+                }
+                EOF
+
+                vkbasalt-test-shaders other/Shaders own/Shaders own/Shaders/inner > report.txt 2>&1 || true
+                if ! grep -q '^PASS  uses_shared' report.txt; then
+                  cat report.txt
+                  echo "a header shipped by the shader's own pack must win over another pack's copy"
+                  exit 1
+                fi
+                touch $out
+              '';
+
           checks.compute-spirv-is-valid =
             pkgs.runCommand "compute-spirv-is-valid"
               {

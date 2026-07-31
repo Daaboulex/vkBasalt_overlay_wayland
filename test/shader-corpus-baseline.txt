@@ -29,7 +29,6 @@ FAIL StageDepth
 FAIL SuperDepth3D_WoWvx
 FAIL Swirl
 FAIL Wave
-FAIL ZenWork
 FAIL ZigZag
 PASS 3DFX
 PASS 3DToElse
@@ -471,6 +470,7 @@ PASS Zenteon_Sharpen
 PASS Zenteon_SSAO_History
 PASS Zenteon_TurboGI
 PASS Zenteon_XenonBloom
+PASS ZenWork
 PASS zfast_crt
 WARN AdaptiveTint
 WARN ATMOSPHERE

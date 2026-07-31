@@ -747,9 +747,37 @@ void reshadefx::preprocessor::parse_include()
 
 	std::error_code ec;
 	if (!std::filesystem::exists(file_path, ec))
+	{
+		// Several installed packs can ship a header of the same name, so the copy belonging to
+		// the same pack as the file including it wins over one that merely comes first.
+		const std::filesystem::path current_path =
+			std::filesystem::absolute(std::filesystem::u8path(_output_location.source), ec);
+		std::filesystem::path best_path;
+		size_t best_shared = 0;
+
 		for (const std::filesystem::path &include_path : _include_paths)
-			if (std::filesystem::exists(file_path = include_path / file_name, ec))
-				break;
+		{
+			const std::filesystem::path candidate = include_path / file_name;
+			if (!std::filesystem::exists(candidate, ec))
+				continue;
+
+			const std::filesystem::path absolute_candidate = std::filesystem::absolute(candidate, ec);
+
+			size_t shared = 0;
+			for (auto a = absolute_candidate.begin(), b = current_path.begin();
+					a != absolute_candidate.end() && b != current_path.end() && *a == *b; ++a, ++b)
+				++shared;
+
+			if (best_path.empty() || shared > best_shared)
+			{
+				best_path = candidate;
+				best_shared = shared;
+			}
+		}
+
+		if (!best_path.empty())
+			file_path = best_path;
+	}
 
 	if (!std::filesystem::exists(file_path, ec))
 	{
