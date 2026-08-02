@@ -22,6 +22,7 @@
     FORVKFUNC(CmdBindPipeline) \
     FORVKFUNC(CmdBindVertexBuffers) \
     FORVKFUNC(CmdBlitImage) \
+    FORVKFUNC(CmdClearColorImage) \
     FORVKFUNC(CmdCopyBufferToImage) \
     FORVKFUNC(CmdCopyImage) \
     FORVKFUNC(CmdDispatch) \

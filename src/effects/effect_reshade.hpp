@@ -45,7 +45,6 @@ namespace vkBasalt
         void virtual applyEffect(uint32_t imageIndex, VkCommandBuffer commandBuffer) override;
         void virtual updateEffect() override;
         void virtual useDepthImage(VkImageView depthImageView) override;
-        std::vector<std::unique_ptr<EffectParam>> getParameters() const override;
         virtual ~ReshadeEffect();
 
     private:

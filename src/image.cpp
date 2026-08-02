@@ -199,7 +199,10 @@ namespace vkBasalt
         pLogicalDevice->vkd.DestroyBuffer(pLogicalDevice->device, stagingBuffer, nullptr);
     }
 
-    void changeImageLayout(LogicalDevice* pLogicalDevice, std::vector<VkImage> images, uint32_t mipLevels)
+    // ReShade guarantees effect textures start zeroed. Sampling an image that
+    // was only layout-transitioned reads whatever the memory held before --
+    // often NaN, which a temporal feedback loop then never recovers from.
+    void clearAndReadyImages(LogicalDevice* pLogicalDevice, std::vector<VkImage> images, uint32_t mipLevels)
     {
         VkCommandBufferAllocateInfo allocInfo = {};
 
@@ -224,9 +227,9 @@ namespace vkBasalt
         memoryBarrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         memoryBarrier.pNext               = nullptr;
         memoryBarrier.oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
-        memoryBarrier.newLayout           = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        memoryBarrier.newLayout           = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         memoryBarrier.srcAccessMask       = 0;
-        memoryBarrier.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
+        memoryBarrier.dstAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
         memoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         memoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 
@@ -240,7 +243,26 @@ namespace vkBasalt
         {
             memoryBarrier.image = image;
             pLogicalDevice->vkd.CmdPipelineBarrier(
-                commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &memoryBarrier);
+                commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &memoryBarrier);
+        }
+
+        const VkClearColorValue zero = {};
+        for (auto& image : images)
+        {
+            pLogicalDevice->vkd.CmdClearColorImage(
+                commandBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &memoryBarrier.subresourceRange);
+        }
+
+        memoryBarrier.oldLayout     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        memoryBarrier.newLayout     = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        memoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        for (auto& image : images)
+        {
+            memoryBarrier.image = image;
+            pLogicalDevice->vkd.CmdPipelineBarrier(
+                commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &memoryBarrier);
         }
 
         pLogicalDevice->vkd.EndCommandBuffer(commandBuffer);

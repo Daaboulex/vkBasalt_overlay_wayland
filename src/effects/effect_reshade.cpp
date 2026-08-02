@@ -255,7 +255,7 @@ namespace vkBasalt
 
                 textureFormatsUNORM[module.textures[i].unique_name] = convertToUNORM(convertReshadeFormat(module.textures[i].format));
                 textureFormatsSRGB[module.textures[i].unique_name]  = convertToSRGB(convertReshadeFormat(module.textures[i].format));
-                changeImageLayout(pLogicalDevice, images, module.textures[i].levels);
+                clearAndReadyImages(pLogicalDevice, images, module.textures[i].levels);
                 continue;
             }
             else
@@ -273,6 +273,10 @@ namespace vkBasalt
                                  module.textures[i].levels);
 
                 textureImages[module.textures[i].unique_name] = images;
+
+                // A source texture that fails to load below must sample as black,
+                // not as whatever this memory last held.
+                clearAndReadyImages(pLogicalDevice, images, module.textures[i].levels);
 
                 std::vector<VkImageView> imageViews = createImageViews(pLogicalDevice,
                                                                        convertToUNORM(convertReshadeFormat(module.textures[i].format)),
@@ -1325,140 +1329,6 @@ namespace vkBasalt
                                                nullptr,
                                                1,
                                                &secondBarrier);
-    }
-
-    std::vector<std::unique_ptr<EffectParam>> ReshadeEffect::getParameters() const
-    {
-        std::vector<std::unique_ptr<EffectParam>> params;
-
-        auto findAnnotation = [](const auto& annotations, const std::string& name) {
-            return std::find_if(annotations.begin(), annotations.end(),
-                [&name](const auto& a) { return a.name == name; });
-        };
-
-        auto getAnnotationFloat = [](const auto& annotation) {
-            return annotation.type.is_floating_point()
-                ? annotation.value.as_float[0]
-                : static_cast<float>(annotation.value.as_int[0]);
-        };
-
-        auto getAnnotationInt = [](const auto& annotation) {
-            return annotation.type.is_integral()
-                ? annotation.value.as_int[0]
-                : static_cast<int>(annotation.value.as_float[0]);
-        };
-
-        auto parseNullSeparatedString = [](const std::string& str) {
-            std::vector<std::string> items;
-            size_t start = 0;
-            for (size_t i = 0; i <= str.size(); i++)
-            {
-                if (i == str.size() || str[i] == '\0')
-                {
-                    if (i > start)
-                        items.push_back(str.substr(start, i - start));
-                    start = i + 1;
-                }
-            }
-            return items;
-        };
-
-        for (const auto& spec : module.spec_constants)
-        {
-            if (findAnnotation(spec.annotations, "source") != spec.annotations.end())
-                continue;
-
-            if (spec.name.empty())
-                continue;
-
-            auto labelIt = findAnnotation(spec.annotations, "ui_label");
-            std::string label = (labelIt != spec.annotations.end()) ? labelIt->value.string_data : spec.name;
-
-            auto tooltipIt = findAnnotation(spec.annotations, "ui_tooltip");
-            std::string tooltip = (tooltipIt != spec.annotations.end()) ? tooltipIt->value.string_data : "";
-
-            auto typeIt = findAnnotation(spec.annotations, "ui_type");
-            std::string uiType = (typeIt != spec.annotations.end()) ? typeIt->value.string_data : "";
-
-            EffectParam* registryParam = pEffectRegistry->getParameter(effectName, spec.name);
-
-            if (spec.type.is_floating_point())
-            {
-                auto p = std::make_unique<FloatParam>();
-                p->effectName = effectName;
-                p->name = spec.name;
-                p->label = label;
-                p->tooltip = tooltip;
-                p->uiType = uiType;
-                p->defaultValue = spec.initializer_value.as_float[0];
-                if (auto* rp = dynamic_cast<FloatParam*>(registryParam))
-                    p->value = rp->value;
-                else
-                    p->value = p->defaultValue;
-
-                auto minIt = findAnnotation(spec.annotations, "ui_min");
-                auto maxIt = findAnnotation(spec.annotations, "ui_max");
-                if (minIt != spec.annotations.end())
-                    p->minValue = getAnnotationFloat(*minIt);
-                if (maxIt != spec.annotations.end())
-                    p->maxValue = getAnnotationFloat(*maxIt);
-
-                auto stepIt = findAnnotation(spec.annotations, "ui_step");
-                if (stepIt != spec.annotations.end())
-                    p->step = getAnnotationFloat(*stepIt);
-
-                params.push_back(std::move(p));
-            }
-            else if (spec.type.is_boolean())
-            {
-                auto p = std::make_unique<BoolParam>();
-                p->effectName = effectName;
-                p->name = spec.name;
-                p->label = label;
-                p->tooltip = tooltip;
-                p->uiType = uiType;
-                p->defaultValue = (spec.initializer_value.as_uint[0] != 0);
-                if (auto* rp = dynamic_cast<BoolParam*>(registryParam))
-                    p->value = rp->value;
-                else
-                    p->value = p->defaultValue;
-
-                params.push_back(std::move(p));
-            }
-            else if (spec.type.is_integral())
-            {
-                auto p = std::make_unique<IntParam>();
-                p->effectName = effectName;
-                p->name = spec.name;
-                p->label = label;
-                p->tooltip = tooltip;
-                p->uiType = uiType;
-                p->defaultValue = spec.initializer_value.as_int[0];
-                if (auto* rp = dynamic_cast<IntParam*>(registryParam))
-                    p->value = rp->value;
-                else
-                    p->value = p->defaultValue;
-
-                auto minIt = findAnnotation(spec.annotations, "ui_min");
-                auto maxIt = findAnnotation(spec.annotations, "ui_max");
-                if (minIt != spec.annotations.end())
-                    p->minValue = getAnnotationInt(*minIt);
-                if (maxIt != spec.annotations.end())
-                    p->maxValue = getAnnotationInt(*maxIt);
-
-                auto stepIt = findAnnotation(spec.annotations, "ui_step");
-                if (stepIt != spec.annotations.end())
-                    p->step = getAnnotationFloat(*stepIt);
-
-                auto itemsIt = findAnnotation(spec.annotations, "ui_items");
-                if (itemsIt != spec.annotations.end())
-                    p->items = parseNullSeparatedString(itemsIt->value.string_data);
-
-                params.push_back(std::move(p));
-            }
-        }
-
-        return params;
     }
 
     ReshadeEffect::~ReshadeEffect()

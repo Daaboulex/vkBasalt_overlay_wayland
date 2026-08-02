@@ -19,7 +19,6 @@ namespace vkBasalt
         void virtual applyEffect(uint32_t imageIndex, VkCommandBuffer commandBuffer) = 0;
         void virtual updateEffect(){};
         void virtual useDepthImage(VkImageView depthImageView){};
-        virtual std::vector<std::unique_ptr<EffectParam>> getParameters() const { return {}; }
         virtual ~Effect(){};
 
     private:
