@@ -49,13 +49,15 @@ namespace vkBasalt
         // Button state is not cleared here: swapchain resizes cause rapid
         // leave/enter cycles mid-drag, and clearing would break the drag.
 
-        Logger::trace("Wayland: pointer enter at " + std::to_string(pointerX) + "," + std::to_string(pointerY));
+        if (Logger::logLevel() <= LogLevel::Trace)
+            Logger::trace("Wayland: pointer enter at " + std::to_string(pointerX) + "," + std::to_string(pointerY));
     }
 
     static void pointerLeave(void* /*data*/, wl_pointer* /*pointer*/,
                              uint32_t /*serial*/, wl_surface* /*surface*/)
     {
-        Logger::trace("Wayland: pointer leave");
+        if (Logger::logLevel() <= LogLevel::Trace)
+            Logger::trace("Wayland: pointer leave");
     }
 
     static void pointerMotion(void* /*data*/, wl_pointer* /*pointer*/,
@@ -81,7 +83,8 @@ namespace vkBasalt
                               uint32_t button, uint32_t state)
     {
         bool pressed = (state == WL_POINTER_BUTTON_STATE_PRESSED);
-        Logger::trace("Wayland: pointer button " + std::to_string(button) + " " + (pressed ? "pressed" : "released"));
+        if (Logger::logLevel() <= LogLevel::Trace)
+            Logger::trace("Wayland: pointer button " + std::to_string(button) + " " + (pressed ? "pressed" : "released"));
 
         // evdev button codes: BTN_LEFT=0x110, BTN_RIGHT=0x111, BTN_MIDDLE=0x112.
         auto now = Clock::now();

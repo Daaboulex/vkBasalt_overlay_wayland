@@ -3,6 +3,7 @@
 #include "logger.hpp"
 
 #include <fstream>
+#include <mutex>
 #include <cstdlib>
 #include <cstdio>
 #include <filesystem>
@@ -415,8 +416,20 @@ namespace vkBasalt
 
     ShaderManagerConfig ConfigSerializer::loadShaderManagerConfig()
     {
+        static std::mutex                      cacheMutex;
+        static ShaderManagerConfig             cachedConfig;
+        static std::filesystem::file_time_type cachedMTime;
+        static bool                            cacheValid = false;
+
+        const std::string configPath = getBaseConfigDir() + "/shader_manager.conf";
+        std::error_code   mtimeError;
+        const auto        mtime = std::filesystem::last_write_time(configPath, mtimeError);
+
+        std::lock_guard<std::mutex> lock(cacheMutex);
+        if (cacheValid && !mtimeError && mtime == cachedMTime)
+            return cachedConfig;
+
         ShaderManagerConfig config;
-        std::string configPath = getBaseConfigDir() + "/shader_manager.conf";
 
         std::ifstream file(configPath);
         if (!file.is_open())
@@ -434,6 +447,9 @@ namespace vkBasalt
 
             saveShaderManagerConfig(config);
             Logger::info("Created default shader manager config with reshade directory");
+            cachedConfig = config;
+            cachedMTime  = std::filesystem::last_write_time(configPath, mtimeError);
+            cacheValid   = !mtimeError;
             return config;
         }
 
@@ -467,6 +483,9 @@ namespace vkBasalt
                 config.discoveredTexturePaths.push_back(value);
         }
 
+        cachedConfig = config;
+        cachedMTime  = std::filesystem::last_write_time(configPath, mtimeError);
+        cacheValid   = !mtimeError;
         return config;
     }
 
