@@ -1,18 +1,3 @@
-// Standalone shader compilation tester for vkBasalt-overlay ReShade .fx files.
-// Links against libreshade.a only: no Vulkan, no ImGui, no full vkbasalt deps.
-//
-// Compile:
-//   g++ -std=c++20 -O2 -I../src -I../src/reshade
-//       tools/test_shaders.cpp
-//       -Lbuilddir/src/reshade -lreshade
-//       -o builddir/test_shaders
-//
-// Usage:
-//   ./builddir/test_shaders [shader_dir ...]
-//
-// If no directories given, reads include paths from
-// ~/.config/vkBasalt-overlay/shader_manager.conf and tests all .fx files found.
-
 #include <algorithm>
 #include <chrono>
 #include <climits>
@@ -22,9 +7,6 @@
 #include <iostream>
 #include <map>
 #include <memory>
-#include <queue>
-#include <set>
-#include <unordered_map>
 #include <signal.h>
 #include <setjmp.h>
 #include <string>
@@ -44,6 +26,23 @@ namespace vkBasalt { Logger Logger::s_instance; }
 
 static std::string g_dumpSpirvDir;
 static bool g_cacheBench = false;
+static bool g_cacheVerify = false;
+
+// The swapchain-dependent macros, fixed so results are reproducible; must stay
+// one list however the compile is driven.
+static const std::vector<std::pair<std::string, std::string>>& standardMacroPairs()
+{
+    static const std::vector<std::pair<std::string, std::string>> pairs = {
+        {"BUFFER_WIDTH", "1920"},
+        {"BUFFER_HEIGHT", "1080"},
+        {"BUFFER_RCP_WIDTH", "(1.0 / BUFFER_WIDTH)"},
+        {"BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)"},
+        {"BUFFER_COLOR_DEPTH", "8"},
+        {"BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH"},
+        {"BUFFER_COLOR_SPACE", "1"},
+    };
+    return pairs;
+}
 
 
 static thread_local sigjmp_buf s_jmpBuf;
@@ -80,14 +79,8 @@ static void addStandardMacros(reshadefx::preprocessor& pp)
 {
     vkBasalt::addReshadeBaseMacros(pp);
 
-    // Swapchain-dependent in the layer; fixed here so results are reproducible.
-    pp.add_macro_definition("BUFFER_WIDTH", "1920");
-    pp.add_macro_definition("BUFFER_HEIGHT", "1080");
-    pp.add_macro_definition("BUFFER_RCP_WIDTH", "(1.0 / BUFFER_WIDTH)");
-    pp.add_macro_definition("BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)");
-    pp.add_macro_definition("BUFFER_COLOR_DEPTH", "8");
-    pp.add_macro_definition("BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH");
-    pp.add_macro_definition("BUFFER_COLOR_SPACE", "1");
+    for (const auto& [name, value] : standardMacroPairs())
+        pp.add_macro_definition(name, value);
 }
 
 
@@ -168,18 +161,6 @@ static const char* categoryName(ErrorCategory cat)
     }
     return "UNKNOWN";
 }
-
-static ErrorCategory categorizeError(const std::string& msg)
-{
-    if (msg.find("SIGFPE") != std::string::npos || msg.find("SIGABRT") != std::string::npos)
-        return ErrorCategory::Signal;
-    if (msg.find("Exception") != std::string::npos || msg.find("exception") != std::string::npos)
-        return ErrorCategory::Exception;
-    if (msg.find("Preprocessor") != std::string::npos || msg.find("Failed to load") != std::string::npos)
-        return ErrorCategory::Preprocessor;
-    return ErrorCategory::Parse;
-}
-
 
 struct TestResult
 {
@@ -300,91 +281,7 @@ static TestResult testShader(
             }
         }
 
-        {
-            std::string depthTexName;
-            for (const auto& tex : module.textures)
-            {
-                if (tex.semantic == "DEPTH")
-                {
-                    depthTexName = tex.unique_name;
-                    break;
-                }
-            }
-
-            if (!depthTexName.empty())
-            {
-                auto isSamplerUsedInOneModule = [&](uint32_t samplerId, const std::vector<uint32_t>& code) -> bool {
-                    if (code.size() < 5)
-                        return false;
-
-                    std::set<uint32_t> entryFuncIds;
-                    size_t i = 5;
-                    while (i < code.size())
-                    {
-                        uint32_t wc = code[i] >> 16;
-                        uint32_t op = code[i] & 0xFFFF;
-                        if (wc == 0) break;
-                        if (op == 15 && wc >= 3 && (i + 2) < code.size())
-                            entryFuncIds.insert(code[i + 2]);
-                        i += wc;
-                    }
-
-                    struct FuncInfo { bool loadsDepth = false; std::vector<uint32_t> callees; };
-                    std::unordered_map<uint32_t, FuncInfo> funcs;
-                    uint32_t curFunc = 0;
-                    i = 5;
-                    while (i < code.size())
-                    {
-                        uint32_t wc = code[i] >> 16;
-                        uint32_t op = code[i] & 0xFFFF;
-                        if (wc == 0) break;
-                        if (op == 54 && wc >= 3 && (i + 2) < code.size())
-                        { curFunc = code[i + 2]; funcs[curFunc]; }
-                        else if (op == 56)
-                            curFunc = 0;
-                        else if (curFunc != 0)
-                        {
-                            if (op == 61 && wc >= 4 && (i + 3) < code.size() && code[i + 3] == samplerId)
-                                funcs[curFunc].loadsDepth = true;
-                            if (op == 57 && wc >= 4 && (i + 3) < code.size())
-                                funcs[curFunc].callees.push_back(code[i + 3]);
-                        }
-                        i += wc;
-                    }
-
-                    std::queue<uint32_t> q;
-                    std::set<uint32_t> visited;
-                    for (uint32_t ep : entryFuncIds) { q.push(ep); visited.insert(ep); }
-                    while (!q.empty())
-                    {
-                        uint32_t fid = q.front(); q.pop();
-                        auto it = funcs.find(fid);
-                        if (it == funcs.end()) continue;
-                        if (it->second.loadsDepth) return true;
-                        for (uint32_t c : it->second.callees)
-                            if (visited.insert(c).second) q.push(c);
-                    }
-                    return false;
-                };
-
-                auto isSamplerUsedInSpirv = [&](uint32_t samplerId) -> bool {
-                    for (const auto& [entryPointName, code] : entryPointSpirv)
-                        if (isSamplerUsedInOneModule(samplerId, code))
-                            return true;
-                    return false;
-                };
-
-                for (const auto& samp : module.samplers)
-                {
-                    if (samp.texture_name != depthTexName)
-                        continue;
-                    if (!isSamplerUsedInSpirv(samp.id))
-                        continue;
-                    result.usesDepth = true;
-                    break;
-                }
-            }
-        }
+        result.usesDepth = vkBasalt::moduleUsesDepth(module, entryPointSpirv);
 
         result.success = true;
     }
@@ -450,6 +347,11 @@ int main(int argc, char* argv[])
                 g_cacheBench = true;
                 continue;
             }
+            if (std::string(argv[i]) == "--cache-verify")
+            {
+                g_cacheVerify = true;
+                continue;
+            }
             if (std::string(argv[i]) == "--include" && (i + 1) < argc)
             {
                 includePaths.push_back(argv[++i]);
@@ -471,11 +373,7 @@ int main(int argc, char* argv[])
         }
 
         shaderDirs = includePaths;
-    }
 
-    if (argc <= 1)
-    {
-        auto config = loadShaderManagerConfig();
         for (const auto& tp : config.discoveredTexturePaths)
             includePaths.push_back(tp);
     }
@@ -570,18 +468,38 @@ int main(int argc, char* argv[])
     std::cout << "\n";
     std::cout << "  Total:   " << allFiles.size() << " shaders\n";
 
+    int cacheMismatches = 0;
+    if (g_cacheVerify)
+    {
+        for (const std::string& path : compiledPaths)
+        {
+            std::shared_ptr<const vkBasalt::CompiledReshadeEffect> entry;
+            try
+            {
+                entry = vkBasalt::getOrCompileReshadeEffect(path, standardMacroPairs(), includePaths);
+            }
+            catch (const std::exception&)
+            {
+                continue;
+            }
+            if (!entry || !entry->ok())
+                continue;
+
+            std::string field = vkBasalt::cacheRoundTripMismatch(*entry);
+            if (!field.empty())
+            {
+                std::cout << "CACHE-MISMATCH  " << path << "  " << field << "\n";
+                cacheMismatches++;
+            }
+        }
+        std::cout << "  CACHE-VERIFY: " << compiledPaths.size() << " compiled, " << cacheMismatches
+                  << " round-trip mismatch(es)\n";
+    }
+
     if (g_cacheBench)
     {
         std::vector<double> cold, warm;
-        const std::vector<std::pair<std::string, std::string>> macros = {
-            {"BUFFER_WIDTH", "1920"},
-            {"BUFFER_HEIGHT", "1080"},
-            {"BUFFER_RCP_WIDTH", "(1.0 / BUFFER_WIDTH)"},
-            {"BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)"},
-            {"BUFFER_COLOR_DEPTH", "8"},
-            {"BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH"},
-            {"BUFFER_COLOR_SPACE", "1"},
-        };
+        const std::vector<std::pair<std::string, std::string>>& macros = standardMacroPairs();
 
         for (const std::string& path : compiledPaths)
         {
@@ -714,5 +632,5 @@ int main(int argc, char* argv[])
         }
     }
 
-    return (failCount > 0) ? 1 : 0;
+    return (failCount > 0 || cacheMismatches > 0) ? 1 : 0;
 }

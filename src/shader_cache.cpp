@@ -31,7 +31,7 @@ namespace vkBasalt
     namespace
     {
         // Bump when the serialized layout, base macros, or stubs change.
-        constexpr uint32_t SCHEMA_VERSION = 4;
+        constexpr uint32_t SCHEMA_VERSION = 5;
         constexpr uint32_t MAGIC = 0x43424B56; // "VKBC"
         constexpr size_t MEMORY_CACHE_CAP = 16;
         constexpr size_t DISK_CACHE_CAP = 256;
@@ -242,19 +242,27 @@ namespace vkBasalt
             for (const auto& t : m.textures)
             {
                 w.u32(t.id);
+                w.str(t.name);
                 w.str(t.semantic);
                 w.str(t.unique_name);
                 putAnnotations(w, t.annotations);
                 w.u32(t.width);
                 w.u32(t.height);
+                w.u32(t.depth);
                 w.u32(t.levels);
+                w.u8((uint8_t)t.type);
                 w.u32((uint32_t)t.format);
+                w.u8(t.render_target ? 1 : 0);
+                w.u8(t.storage_access ? 1 : 0);
+                w.u32(t.semantic_binding);
             }
 
             w.u32((uint32_t)m.samplers.size());
             for (const auto& s : m.samplers)
             {
+                putType(w, s.type);
                 w.u32(s.id);
+                w.str(s.name);
                 w.str(s.unique_name);
                 w.str(s.texture_name);
                 putAnnotations(w, s.annotations);
@@ -266,6 +274,17 @@ namespace vkBasalt
                 w.f32(s.max_lod);
                 w.f32(s.lod_bias);
                 w.u8(s.srgb);
+            }
+
+            w.u32((uint32_t)m.storages.size());
+            for (const auto& s : m.storages)
+            {
+                putType(w, s.type);
+                w.u32(s.id);
+                w.str(s.name);
+                w.str(s.unique_name);
+                w.str(s.texture_name);
+                w.u32(s.level);
             }
 
             auto putUniforms = [&](const std::vector<reshadefx::uniform>& v) {
@@ -343,20 +362,28 @@ namespace vkBasalt
             for (auto& t : m.textures)
             {
                 t.id = r.u32();
+                t.name = r.str();
                 t.semantic = r.str();
                 t.unique_name = r.str();
                 t.annotations = getAnnotations(r);
                 t.width = r.u32();
                 t.height = r.u32();
-                t.levels = r.u32();
+                t.depth = (uint16_t)r.u32();
+                t.levels = (uint16_t)r.u32();
+                t.type = (reshadefx::texture_type)r.u8();
                 t.format = (reshadefx::texture_format)r.u32();
+                t.render_target = r.u8() != 0;
+                t.storage_access = r.u8() != 0;
+                t.semantic_binding = r.u32();
             }
 
             n = r.count();
             m.samplers.resize(n);
             for (auto& s : m.samplers)
             {
+                s.type = getType(r);
                 s.id = r.u32();
+                s.name = r.str();
                 s.unique_name = r.str();
                 s.texture_name = r.str();
                 s.annotations = getAnnotations(r);
@@ -368,6 +395,18 @@ namespace vkBasalt
                 s.max_lod = r.f32();
                 s.lod_bias = r.f32();
                 s.srgb = r.u8();
+            }
+
+            n = r.count();
+            m.storages.resize(n);
+            for (auto& s : m.storages)
+            {
+                s.type = getType(r);
+                s.id = r.u32();
+                s.name = r.str();
+                s.unique_name = r.str();
+                s.texture_name = r.str();
+                s.level = (uint16_t)r.u32();
             }
 
             auto getUniforms = [&](std::vector<reshadefx::uniform>& v) {
@@ -593,11 +632,13 @@ namespace vkBasalt
         }
 
 
-        // A shader counts as depth-using only when an entry point reaches a
-        // DEPTH-semantic sampler in the SPIR-V; a raw OpLoad scan false-positives
-        // on unreachable helpers that ReShade.fxh declares.
-        bool moduleUsesDepth(const reshadefx::effect_module& module, const std::map<std::string, std::vector<uint32_t>>& entryPointSpirv)
-        {
+    } // anonymous namespace
+
+    // A shader counts as depth-using only when an entry point reaches a
+    // DEPTH-semantic sampler in the SPIR-V; a raw OpLoad scan false-positives
+    // on unreachable helpers that ReShade.fxh declares.
+    bool moduleUsesDepth(const reshadefx::effect_module& module, const std::map<std::string, std::vector<uint32_t>>& entryPointSpirv)
+    {
             std::string depthTexName;
             for (const auto& tex : module.textures)
             {
@@ -707,8 +748,10 @@ namespace vkBasalt
                     return true;
             }
             return false;
-        }
+    }
 
+    namespace
+    {
         struct MemoryCache
         {
             std::mutex mutex;
@@ -932,6 +975,159 @@ namespace vkBasalt
         }
 
         return entry;
+    }
+
+    std::string cacheRoundTripMismatch(const CompiledReshadeEffect& e)
+    {
+        const std::string blob = serializeEntry(e);
+        std::shared_ptr<CompiledReshadeEffect> d;
+        try
+        {
+            d = deserializeEntry(blob);
+        }
+        catch (const std::exception& ex)
+        {
+            return std::string("deserialize: ") + ex.what();
+        }
+
+        const auto sameType = [](const reshadefx::type& a, const reshadefx::type& b) {
+            return a.base == b.base && a.rows == b.rows && a.cols == b.cols && a.qualifiers == b.qualifiers
+                   && a.array_length == b.array_length && a.struct_definition == b.struct_definition;
+        };
+        const auto sameAnnotations = [&](const std::vector<reshadefx::annotation>& a, const std::vector<reshadefx::annotation>& b) {
+            if (a.size() != b.size())
+                return false;
+            for (size_t i = 0; i < a.size(); i++)
+            {
+                if (a[i].name != b[i].name || !sameType(a[i].type, b[i].type) || a[i].value.string_data != b[i].value.string_data
+                    || std::memcmp(a[i].value.as_uint, b[i].value.as_uint, sizeof(a[i].value.as_uint)) != 0)
+                    return false;
+            }
+            return true;
+        };
+
+        if (d->error != e.error)
+            return "error";
+        if (d->warnings != e.warnings)
+            return "warnings";
+        if (d->usesDepth != e.usesDepth)
+            return "usesDepth";
+        if (d->usedMacros != e.usedMacros)
+            return "usedMacros";
+        if (d->includedFiles != e.includedFiles)
+            return "includedFiles";
+        if (d->entryPointSpirv != e.entryPointSpirv)
+            return "entryPointSpirv";
+
+        const reshadefx::effect_module& a = e.module;
+        const reshadefx::effect_module& b = d->module;
+
+        if (b.entry_points.size() != a.entry_points.size())
+            return "module.entry_points";
+        for (size_t i = 0; i < a.entry_points.size(); i++)
+            if (a.entry_points[i].first != b.entry_points[i].first || a.entry_points[i].second != b.entry_points[i].second)
+                return "module.entry_points";
+
+        if (b.textures.size() != a.textures.size())
+            return "module.textures";
+        for (size_t i = 0; i < a.textures.size(); i++)
+        {
+            const auto& x = a.textures[i];
+            const auto& y = b.textures[i];
+            if (x.id != y.id || x.name != y.name || x.semantic != y.semantic || x.unique_name != y.unique_name
+                || x.width != y.width || x.height != y.height || x.depth != y.depth || x.levels != y.levels
+                || x.type != y.type || x.format != y.format || x.render_target != y.render_target
+                || x.storage_access != y.storage_access || x.semantic_binding != y.semantic_binding
+                || !sameAnnotations(x.annotations, y.annotations))
+                return "module.textures[" + x.unique_name + "]";
+        }
+
+        if (b.samplers.size() != a.samplers.size())
+            return "module.samplers";
+        for (size_t i = 0; i < a.samplers.size(); i++)
+        {
+            const auto& x = a.samplers[i];
+            const auto& y = b.samplers[i];
+            if (x.id != y.id || x.name != y.name || x.unique_name != y.unique_name || x.texture_name != y.texture_name
+                || !sameType(x.type, y.type) || x.filter != y.filter || x.address_u != y.address_u
+                || x.address_v != y.address_v || x.address_w != y.address_w || x.min_lod != y.min_lod
+                || x.max_lod != y.max_lod || x.lod_bias != y.lod_bias || x.srgb != y.srgb
+                || !sameAnnotations(x.annotations, y.annotations))
+                return "module.samplers[" + x.unique_name + "]";
+        }
+
+        if (b.storages.size() != a.storages.size())
+            return "module.storages";
+        for (size_t i = 0; i < a.storages.size(); i++)
+        {
+            const auto& x = a.storages[i];
+            const auto& y = b.storages[i];
+            if (x.id != y.id || x.name != y.name || x.unique_name != y.unique_name || x.texture_name != y.texture_name
+                || x.level != y.level || !sameType(x.type, y.type))
+                return "module.storages[" + x.unique_name + "]";
+        }
+
+        const auto sameUniforms = [&](const std::vector<reshadefx::uniform>& x, const std::vector<reshadefx::uniform>& y) {
+            if (x.size() != y.size())
+                return false;
+            for (size_t i = 0; i < x.size(); i++)
+            {
+                if (x[i].name != y[i].name || !sameType(x[i].type, y[i].type) || x[i].size != y[i].size
+                    || x[i].offset != y[i].offset || x[i].has_initializer_value != y[i].has_initializer_value
+                    || std::memcmp(x[i].initializer_value.as_uint, y[i].initializer_value.as_uint,
+                                   sizeof(x[i].initializer_value.as_uint)) != 0
+                    || !sameAnnotations(x[i].annotations, y[i].annotations))
+                    return false;
+            }
+            return true;
+        };
+        if (!sameUniforms(a.uniforms, b.uniforms))
+            return "module.uniforms";
+        if (!sameUniforms(a.spec_constants, b.spec_constants))
+            return "module.spec_constants";
+
+        if (b.techniques.size() != a.techniques.size())
+            return "module.techniques";
+        for (size_t t = 0; t < a.techniques.size(); t++)
+        {
+            if (a.techniques[t].name != b.techniques[t].name
+                || !sameAnnotations(a.techniques[t].annotations, b.techniques[t].annotations)
+                || a.techniques[t].passes.size() != b.techniques[t].passes.size())
+                return "module.techniques[" + a.techniques[t].name + "]";
+            for (size_t p = 0; p < a.techniques[t].passes.size(); p++)
+            {
+                const auto& x = a.techniques[t].passes[p];
+                const auto& y = b.techniques[t].passes[p];
+                bool targetsMatch = true;
+                for (int i = 0; i < 8; i++)
+                    targetsMatch = targetsMatch && x.render_target_names[i] == y.render_target_names[i];
+                if (!targetsMatch || x.vs_entry_point != y.vs_entry_point || x.ps_entry_point != y.ps_entry_point
+                    || x.cs_entry_point != y.cs_entry_point || x.clear_render_targets != y.clear_render_targets
+                    || x.srgb_write_enable != y.srgb_write_enable || x.blend_enable[0] != y.blend_enable[0]
+                    || x.stencil_enable != y.stencil_enable || x.render_target_write_mask[0] != y.render_target_write_mask[0]
+                    || x.stencil_read_mask != y.stencil_read_mask || x.stencil_write_mask != y.stencil_write_mask
+                    || x.color_blend_op[0] != y.color_blend_op[0] || x.alpha_blend_op[0] != y.alpha_blend_op[0]
+                    || x.source_color_blend_factor[0] != y.source_color_blend_factor[0]
+                    || x.dest_color_blend_factor[0] != y.dest_color_blend_factor[0]
+                    || x.source_alpha_blend_factor[0] != y.source_alpha_blend_factor[0]
+                    || x.dest_alpha_blend_factor[0] != y.dest_alpha_blend_factor[0]
+                    || x.stencil_comparison_func != y.stencil_comparison_func
+                    || x.stencil_reference_value != y.stencil_reference_value || x.stencil_pass_op != y.stencil_pass_op
+                    || x.stencil_fail_op != y.stencil_fail_op || x.stencil_depth_fail_op != y.stencil_depth_fail_op
+                    || x.num_vertices != y.num_vertices || x.topology != y.topology
+                    || x.viewport_width != y.viewport_width || x.viewport_height != y.viewport_height
+                    || x.viewport_dispatch_z != y.viewport_dispatch_z)
+                    return "module.techniques[" + a.techniques[t].name + "].passes[" + std::to_string(p) + "]";
+            }
+        }
+
+        if (b.total_uniform_size != a.total_uniform_size)
+            return "module.total_uniform_size";
+
+        if (serializeEntry(*d) != blob)
+            return "reserialization";
+
+        return {};
     }
 
 } // namespace vkBasalt

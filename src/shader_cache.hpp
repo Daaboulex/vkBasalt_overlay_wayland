@@ -38,4 +38,14 @@ namespace vkBasalt
         const std::vector<std::pair<std::string, std::string>>& macroDefinitions,
         const std::vector<std::string>& includePaths);
 
+    // Serializes and deserializes the entry in memory, then compares every field
+    // the renderer reads. Returns the first field that failed to round-trip, or
+    // an empty string when the cache is lossless for this entry.
+    std::string cacheRoundTripMismatch(const CompiledReshadeEffect& e);
+
+    // The renderer decides depth use from the SPIR-V call graph: a shader counts
+    // only when an entry point can reach a load of a DEPTH-semantic sampler.
+    bool moduleUsesDepth(const reshadefx::effect_module& module,
+                         const std::map<std::string, std::vector<uint32_t>>& entryPointSpirv);
+
 } // namespace vkBasalt

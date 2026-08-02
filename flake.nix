@@ -270,6 +270,28 @@
             touch $out
           '';
 
+          # The disk cache once dropped module.storages: compute effects worked on
+          # first launch and silently broke on every warm one. Every field the
+          # renderer reads must survive serialize -> deserialize.
+          checks.cache-round-trip-is-lossless =
+            pkgs.runCommand "cache-round-trip-is-lossless"
+              { nativeBuildInputs = [ self'.packages.vkbasalt-overlay ]; }
+              ''
+                mkdir -p shaders cache
+                cp ${./test/language}/*.fx ${./test/language}/*.fxh shaders/
+                cp ${./test/compute_smoke.fx} shaders/compute_smoke.fx
+                cp ${./test/lut/cube_lut.fx} shaders/cube_lut.fx
+                export XDG_CACHE_HOME=$PWD/cache
+                vkbasalt-test-shaders --cache-verify shaders > report.txt 2>&1 \
+                  || { cat report.txt; echo "the cache dropped or corrupted a field the renderer reads"; exit 1; }
+                grep -q 'CACHE-VERIFY: .* 0 round-trip mismatch(es)' report.txt \
+                  || { cat report.txt; echo "a cached field failed to round-trip"; exit 1; }
+                compiled=$(grep -oE 'CACHE-VERIFY: [0-9]+ compiled' report.txt | grep -oE '[0-9]+')
+                [ -n "$compiled" ] && [ "$compiled" -gt 0 ] \
+                  || { cat report.txt; echo "nothing compiled -- the check verified nothing"; exit 1; }
+                touch $out
+              '';
+
           # The compiler emits compute entry points, so the renderer must either
           # dispatch them or refuse them. Doing neither renders nothing at all.
           checks.compute-pass-is-never-silently-ignored =
