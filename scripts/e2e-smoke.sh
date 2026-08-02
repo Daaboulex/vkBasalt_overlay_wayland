@@ -90,10 +90,11 @@ check() { # check <description> <pattern>
 
 echo "=== the layer loaded, compiled the effect and presented ==="
 check "layer initialised"          'vkBasalt|SettingsManager'
-check "effect compiled"            'macro_spacing|created reshade shaderModule'
+check "effect chain selected"      'creating effect 0: macro_spacing'
+check "effect compiled"            'created reshade shaderModule'
 check "swapchain set up"           'created fake swapchain images'
-check "cube LUT effect compiled"   'cube_lut'
-check "compute effect compiled"    'compute_smoke'
+check "cube LUT effect compiled"   'creating effect [0-9]+: cube_lut'
+check "compute effect compiled"    'creating effect [0-9]+: compute_smoke'
 check "frames presented"           'present cycle'
 if grep -qE 'vkBasalt err:|Vulkan Loader.*ERROR|VUID-' "$LOG"; then
     echo "  FAIL  the run reported errors"

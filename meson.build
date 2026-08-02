@@ -1,4 +1,9 @@
-project('vkBasalt-overlay', ['c', 'cpp'], default_options: ['c_std=c11', 'cpp_std=c++2a'])
+project('vkBasalt-overlay', ['c', 'cpp'], default_options: ['c_std=c11', 'cpp_std=c++20'])
+
+layer_api_major = 1
+layer_api_minor = 3
+layer_api_patch = 223
+layer_api_version = '@0@.@1@.@2@'.format(layer_api_major, layer_api_minor, layer_api_patch)
 
 cpp = meson.get_compiler('cpp')
 

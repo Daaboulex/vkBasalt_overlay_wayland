@@ -13,11 +13,15 @@ namespace vkBasalt
     void ImGuiOverlay::renderSettingsView(const KeyboardState& keyboard)
     {
         auto saveSettings = [&]() {
-            settingsManager.save();
+            settingsSaveFailed = !settingsManager.save();
             settingsSaved = true;
         };
 
         ImGui::BeginChild("SettingsContent", ImVec2(0, 0), false);
+
+        if (settingsSaveFailed)
+            ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
+                               "Settings could not be written to disk -- changes apply now but will not survive a restart");
 
         ImGui::Text("Key Bindings");
         ImGui::Separator();

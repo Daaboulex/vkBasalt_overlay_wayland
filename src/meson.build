@@ -97,6 +97,9 @@ pointer_constraints_code = custom_target('pointer-constraints-code',
 conf_paths = configuration_data()
 conf_paths.set_quoted('SYSCONFDIR', join_paths(get_option('prefix'), get_option('sysconfdir')))
 conf_paths.set_quoted('DATADIR', join_paths(get_option('prefix'), get_option('datadir')))
+conf_paths.set('VKBASALT_LAYER_API_MAJOR', layer_api_major)
+conf_paths.set('VKBASALT_LAYER_API_MINOR', layer_api_minor)
+conf_paths.set('VKBASALT_LAYER_API_PATCH', layer_api_patch)
 
 configure_file(output: 'config_paths.hpp',
                configuration : conf_paths)

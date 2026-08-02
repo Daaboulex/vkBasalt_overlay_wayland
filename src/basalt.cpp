@@ -16,7 +16,6 @@
 #include <sys/stat.h>
 #include <signal.h>
 #include <setjmp.h>
-#include <execinfo.h>
 
 #include "util.hpp"
 #include "keyboard_input.hpp"
@@ -30,6 +29,7 @@
 #include <wayland-client.h>
 #include "vulkan/vulkan_wayland.h"
 
+#include "config_paths.hpp"
 #include "logical_device.hpp"
 #include "logical_swapchain.hpp"
 
@@ -125,6 +125,9 @@ namespace vkBasalt
     static thread_local volatile sig_atomic_t signalJmpActive = 0;
     static thread_local volatile sig_atomic_t caughtSignal = 0;
 
+    static struct sigaction previousFpeAction;
+    static struct sigaction previousAbrtAction;
+
     static void crashSignalHandler(int sig)
     {
         if (signalJmpActive)
@@ -132,13 +135,9 @@ namespace vkBasalt
             caughtSignal = sig;
             siglongjmp(signalJmpBuf, 1);
         }
-        const char* sigName = (sig == SIGFPE) ? "SIGFPE" : (sig == SIGABRT) ? "SIGABRT" : "SIGNAL";
-        fprintf(stderr, "\nvkBasalt: caught %s, backtrace:\n", sigName);
-        void* frames[64];
-        int count = backtrace(frames, 64);
-        backtrace_symbols_fd(frames, count, 2);
-        fprintf(stderr, "\n");
-        signal(sig, SIG_DFL);
+        // Not a guarded compile: hand the signal back to whoever owned it before
+        // the layer, so the application's own crash handling still runs.
+        sigaction(sig, (sig == SIGFPE) ? &previousFpeAction : &previousAbrtAction, nullptr);
         raise(sig);
     }
 
@@ -151,8 +150,8 @@ namespace vkBasalt
         sa.sa_handler = crashSignalHandler;
         sa.sa_flags = 0;
         sigemptyset(&sa.sa_mask);
-        sigaction(SIGFPE, &sa, nullptr);
-        sigaction(SIGABRT, &sa, nullptr);
+        sigaction(SIGFPE, &sa, &previousFpeAction);
+        sigaction(SIGABRT, &sa, &previousAbrtAction);
         installed = true;
     }
 
@@ -238,9 +237,9 @@ namespace vkBasalt
 
         if (conflictingLayerLoaded())
         {
-            Logger::warn("the unforked vkBasalt is loaded in this process as well. Both layers share ENABLE_VKBASALT, so both "
-                         "are active: effects apply twice and DISABLE_VKBASALT cannot turn off one without the other. "
-                         "Uninstall one of them.");
+            Logger::warn("the unforked vkBasalt is loaded in this process as well, from " + conflictingLayerPath()
+                         + " -- both layers share ENABLE_VKBASALT, so both are active: effects apply twice and "
+                           "DISABLE_VKBASALT cannot turn off one without the other. Remove the install that path points at.");
         }
 
         {
@@ -1918,7 +1917,8 @@ namespace vkBasalt
             std::strcpy(pProperties->layerName, VKBASALT_NAME);
             std::strcpy(pProperties->description, "a post processing layer");
             pProperties->implementationVersion = 1;
-            pProperties->specVersion           = VK_MAKE_VERSION(1, 2, 0);
+            pProperties->specVersion =
+                VK_MAKE_VERSION(VKBASALT_LAYER_API_MAJOR, VKBASALT_LAYER_API_MINOR, VKBASALT_LAYER_API_PATCH);
         }
 
         return VK_SUCCESS;
@@ -2018,9 +2018,15 @@ extern "C"
 
         INTERCEPT_CALLS
 
+        if (!device)
+            return nullptr;
+
         {
             vkBasalt::scoped_lock l(vkBasalt::globalLock);
-            return vkBasalt::deviceMap[vkBasalt::GetKey(device)]->vkd.GetDeviceProcAddr(device, pName);
+            const auto it = vkBasalt::deviceMap.find(vkBasalt::GetKey(device));
+            if (it == vkBasalt::deviceMap.end() || !it->second || !it->second->vkd.GetDeviceProcAddr)
+                return nullptr;
+            return it->second->vkd.GetDeviceProcAddr(device, pName);
         }
     }
 
@@ -2030,9 +2036,15 @@ extern "C"
 
         INTERCEPT_CALLS
 
+        if (!instance)
+            return nullptr;
+
         {
             vkBasalt::scoped_lock l(vkBasalt::globalLock);
-            return vkBasalt::instanceDispatchMap[vkBasalt::GetKey(instance)].GetInstanceProcAddr(instance, pName);
+            const auto it = vkBasalt::instanceDispatchMap.find(vkBasalt::GetKey(instance));
+            if (it == vkBasalt::instanceDispatchMap.end() || !it->second.GetInstanceProcAddr)
+                return nullptr;
+            return it->second.GetInstanceProcAddr(instance, pName);
         }
     }
 

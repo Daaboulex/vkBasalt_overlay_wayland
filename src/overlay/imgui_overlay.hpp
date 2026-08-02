@@ -153,6 +153,7 @@ namespace vkBasalt
 
         int listeningForKey = 0;  // 0=none, 1=toggle, 2=reload, 3=overlay
         bool settingsSaved = false;  // True when settings saved, cleared by basalt.cpp
+        bool settingsSaveFailed = false;
         bool shaderPathsChanged = false;  // True when shader manager saved, cleared by basalt.cpp
         size_t maxEffects = 10;  // Cached from settingsManager for VRAM estimates
 

@@ -5,7 +5,7 @@
     "type": "GLOBAL",
     "library_path": "@ld_lib_dir_vkbasalt@libvkbasalt-overlay.so",
     "library_arch": "@library_arch@",
-    "api_version": "1.3.223",
+    "api_version": "@api_version@",
     "implementation_version": "1",
     "description": "a post processing layer with overlay UI",
     "functions": {

@@ -15,6 +15,23 @@
 
 namespace vkBasalt
 {
+    namespace
+    {
+        // Config::readConfigLine strips unquoted whitespace and stops at '#', so
+        // a value carrying either must be written quoted or the reload eats it.
+        std::string quoteForConfig(const std::string& value)
+        {
+            if (value.find_first_of(" \t#\"") == std::string::npos)
+                return value;
+            std::string quoted = "\"";
+            for (char c : value)
+                if (c != '"')
+                    quoted += c;
+            quoted += '"';
+            return quoted;
+        }
+    } // anonymous namespace
+
     std::string ConfigSerializer::getBaseConfigDir()
     {
         const char* xdgConfig = std::getenv("XDG_CONFIG_HOME");
@@ -228,7 +245,7 @@ namespace vkBasalt
             else if (key == "enableOnLaunch")
                 settings.enableOnLaunch = (value == "true" || value == "1");
             else if (key == "depthCapture")
-                settings.depthCapture = (value == "on");
+                settings.depthCapture = (value == "on" || value == "true" || value == "1");
             else if (key == "autoApply")
                 settings.autoApply = (value == "true" || value == "1");
             else if (key == "autoApplyDelay")
@@ -534,8 +551,9 @@ namespace vkBasalt
         }
 
         file << "# vkBasalt profile for " << gameName << "\n";
-        file << "# Auto-created on first launch\n\n";
-        file << "effects = \n";
+        file << "# Auto-created on first launch. No effects key here means the\n";
+        file << "# profile inherits the base vkBasalt.conf chain; saving from the\n";
+        file << "# overlay writes an explicit list, and an explicit empty sticks.\n";
 
         file.close();
         Logger::info("Created default profile for " + gameName + ": " + profilePath);
@@ -681,7 +699,6 @@ namespace vkBasalt
             return false;
 
         file << "# vkBasalt profile '" << profileName << "' for " << gameName << "\n\n";
-        file << "effects = \n";
         file.close();
 
         Logger::info("Created profile " + profileName + " for " + gameName);
@@ -779,14 +796,14 @@ namespace vkBasalt
             file << "# " << effectName << "\n";
             auto pathIt = effectPaths.find(effectName);
             if (pathIt != effectPaths.end() && !pathIt->second.empty())
-                file << effectName << " = " << pathIt->second << "\n";
+                file << effectName << " = " << quoteForConfig(pathIt->second) << "\n";
             for (const auto* param : effectParams)
                 file << param->effectName << "." << param->paramName << " = " << param->value << "\n";
             auto defsIt = defsByEffect.find(effectName);
             if (defsIt != defsByEffect.end())
             {
                 for (const auto* def : defsIt->second)
-                    file << def->effectName << "@" << def->name << " = " << def->value << "\n";
+                    file << def->effectName << "@" << def->name << " = " << quoteForConfig(def->value) << "\n";
             }
             file << "\n";
         }
@@ -798,9 +815,9 @@ namespace vkBasalt
             file << "# " << effectName << "\n";
             auto pathIt = effectPaths.find(effectName);
             if (pathIt != effectPaths.end() && !pathIt->second.empty())
-                file << effectName << " = " << pathIt->second << "\n";
+                file << effectName << " = " << quoteForConfig(pathIt->second) << "\n";
             for (const auto* def : effectDefs)
-                file << def->effectName << "@" << def->name << " = " << def->value << "\n";
+                file << def->effectName << "@" << def->name << " = " << quoteForConfig(def->value) << "\n";
             file << "\n";
         }
 
@@ -811,7 +828,7 @@ namespace vkBasalt
                 defsByEffect.find(effectName) == defsByEffect.end())
             {
                 file << "# " << effectName << "\n";
-                file << effectName << " = " << path << "\n\n";
+                file << effectName << " = " << quoteForConfig(path) << "\n\n";
             }
         }
 

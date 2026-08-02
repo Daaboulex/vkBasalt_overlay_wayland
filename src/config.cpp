@@ -164,7 +164,9 @@ namespace vkBasalt
         }
 
     DONE:
-        if (!key.empty() && !value.empty())
+        // An explicitly empty value is kept: "effects = " means no effects, not
+        // "fall back to whatever the base config had".
+        if (!key.empty() && (!value.empty() || foundEquals))
         {
             Logger::info(key + " = " + value);
             options[key] = value;

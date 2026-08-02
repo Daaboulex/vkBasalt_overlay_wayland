@@ -101,6 +101,11 @@ namespace vkBasalt
             {
                 *m_outStream << prefix << line << '\n';
             }
+
+            // A crash loses the buffered tail exactly when a field report needs
+            // it; warnings and errors are rare enough to pay for the flush.
+            if (level >= LogLevel::Warn)
+                m_outStream->flush();
         }
     }
 
