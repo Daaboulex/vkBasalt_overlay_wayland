@@ -31,6 +31,8 @@ namespace vkBasalt
         std::string filePath;   // For ReShade: path to .fx file, empty for built-in
         EffectType type = EffectType::BuiltIn;
         bool enabled = true;
+        bool usesMinPrecision = false;
+        bool allowHalfPrecision = false;
         std::vector<std::unique_ptr<EffectParam>> parameters;
         std::vector<PreprocessorDefinition> preprocessorDefs;  // ReShade: user-configurable macros
         std::string compileError;  // Empty if compiled successfully, error message if failed

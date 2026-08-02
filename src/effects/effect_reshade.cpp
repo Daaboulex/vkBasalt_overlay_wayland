@@ -1500,7 +1500,8 @@ namespace vkBasalt
             throw std::runtime_error("failed to load shader: " + effectName);
         }
 
-        auto compiled = getOrCompileReshadeEffect(shaderPath, defines, shaderMgrConfig.discoveredShaderPaths);
+        auto compiled = getOrCompileReshadeEffect(shaderPath, defines, shaderMgrConfig.discoveredShaderPaths,
+                                                  pEffectRegistry && pEffectRegistry->getAllowHalfPrecision(effectName));
         if (!compiled->ok())
         {
             Logger::err(shaderPath + ": " + compiled->error);

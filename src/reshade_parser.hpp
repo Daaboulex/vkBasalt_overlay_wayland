@@ -17,6 +17,7 @@ namespace vkBasalt
         std::string filePath;
         bool success = false;
         bool usesDepth = false;
+        bool usesMinPrecision = false;
         std::string errorMessage;
     };
 

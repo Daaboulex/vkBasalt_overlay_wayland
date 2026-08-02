@@ -69,9 +69,11 @@ correctly is a stronger claim that needs the shader run against a real game:
 "Supported, untested" marks compiler warnings worth checking in one. Two
 runtime guarantees back rendering: effect textures start zeroed (a missing
 `source` texture samples black, and temporal feedback loops start from zero
-instead of leftover video memory), and effects compute at full precision even
-where a shader asks for `half`, which avoids the flicker half precision causes
-in anything that accumulates.
+instead of leftover video memory), and effects compute at full precision by
+default even where a shader asks for `half`, which avoids the flicker half
+precision causes in anything that accumulates. Shaders that declare
+reduced-precision math get a per-effect "Half precision" toggle in the overlay
+to opt into 16-bit for speed; it recompiles on the next automatic reload.
 
 ## Reproducing this
 

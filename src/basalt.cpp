@@ -1119,6 +1119,7 @@ namespace vkBasalt
     {
         std::string                                      shaderPath;
         std::vector<std::pair<std::string, std::string>> defines;
+        bool                                             relaxMinPrecision = false;
     };
 
     // Caller HOLDS globalLock.
@@ -1135,7 +1136,9 @@ namespace vkBasalt
             if (path.empty())
                 continue;
 
-            requests.push_back({std::move(path), reshadeCompileDefines(extent, unormFormat, colorSpace, effectRegistry.getPreprocessorDefs(name))});
+            requests.push_back({std::move(path),
+                                reshadeCompileDefines(extent, unormFormat, colorSpace, effectRegistry.getPreprocessorDefs(name)),
+                                effectRegistry.getAllowHalfPrecision(name)});
         }
 
         return requests;
@@ -1153,7 +1156,7 @@ namespace vkBasalt
         {
             try
             {
-                getOrCompileReshadeEffect(request.shaderPath, request.defines, includePaths);
+                getOrCompileReshadeEffect(request.shaderPath, request.defines, includePaths, request.relaxMinPrecision);
             }
             catch (const std::exception& e)
             {

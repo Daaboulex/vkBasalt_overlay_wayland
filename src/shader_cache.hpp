@@ -19,6 +19,7 @@ namespace vkBasalt
         std::vector<std::pair<std::string, uint64_t>> includedFiles;
         std::vector<std::pair<std::string, std::string>> usedMacros;
         bool usesDepth = false;
+        bool usesMinPrecision = false;
         std::string warnings;
         std::string error;
 
@@ -33,10 +34,14 @@ namespace vkBasalt
     // pass only the varying definitions (BUFFER_*, user macros).
     // Never returns null. The reshadefx compiler can raise SIGFPE/SIGABRT;
     // callers keep their signal guards around this call.
+    // relaxMinPrecision lets the driver compute a shader's declared half or
+    // min16float math at 16 bits; it is part of the cache key, so both variants
+    // of an effect coexist on disk.
     std::shared_ptr<const CompiledReshadeEffect> getOrCompileReshadeEffect(
         const std::string& fxPath,
         const std::vector<std::pair<std::string, std::string>>& macroDefinitions,
-        const std::vector<std::string>& includePaths);
+        const std::vector<std::string>& includePaths,
+        bool relaxMinPrecision = false);
 
     // Serializes and deserializes the entry in memory, then compares every field
     // the renderer reads. Returns the first field that failed to round-trip, or

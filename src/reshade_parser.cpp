@@ -531,6 +531,7 @@ namespace vkBasalt
             result.success = compiled->ok();
             result.errorMessage = compiled->ok() ? compiled->warnings : compiled->error;
             result.usesDepth = compiled->usesDepth;
+            result.usesMinPrecision = compiled->usesMinPrecision;
         }
         catch (const std::exception& e)
         {

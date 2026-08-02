@@ -67,6 +67,10 @@ namespace vkBasalt
 
         void setEffectError(const std::string& name, const std::string& error);
 
+        bool effectUsesMinPrecision(const std::string& effectName) const;
+        bool getAllowHalfPrecision(const std::string& effectName) const;
+        void setAllowHalfPrecision(const std::string& effectName, bool allow);
+
         std::vector<PreprocessorDefinition>& getPreprocessorDefs(const std::string& effectName);
         const std::vector<PreprocessorDefinition>& getPreprocessorDefs(const std::string& effectName) const;
 

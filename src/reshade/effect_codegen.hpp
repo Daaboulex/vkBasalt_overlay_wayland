@@ -30,6 +30,11 @@ namespace reshadefx
 		effect_module &module() { return _module; }
 
 		/// <summary>
+		/// Gets whether the compiled code declared any minimum-precision types, so a caller can offer relaxed precision only where it changes anything.
+		/// </summary>
+		virtual bool uses_min_precision() const { return false; }
+
+		/// <summary>
 		/// Finalizes and returns the generated code for the entire module (all entry points).
 		/// </summary>
 		virtual std::string finalize_code() const = 0;
@@ -418,5 +423,5 @@ namespace reshadefx
 	/// <param name="uniforms_to_spec_constants">Whether to convert uniform variables to specialization constants.</param>
 	/// <param name="enable_16bit_types">Use real 16-bit types for the minimum precision types "min16int", "min16uint" and "min16float".</param>
 	/// <param name="flip_vert_y">Insert code to flip the Y component of the output position in vertex shaders.</param>
-	codegen *create_codegen_spirv(bool vulkan_semantics, bool debug_info, bool uniforms_to_spec_constants, bool enable_16bit_types = false, bool flip_vert_y = false);
+	codegen *create_codegen_spirv(bool vulkan_semantics, bool debug_info, bool uniforms_to_spec_constants, bool enable_16bit_types = false, bool flip_vert_y = false, bool relax_min_precision = false);
 }

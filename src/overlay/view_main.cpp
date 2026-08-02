@@ -365,6 +365,22 @@ namespace vkBasalt
 
             if (pEffectRegistry)
             {
+                if (pEffectRegistry->effectUsesMinPrecision(effectName))
+                {
+                    bool halfPrecision = pEffectRegistry->getAllowHalfPrecision(effectName);
+                    if (ImGui::Checkbox("Half precision", &halfPrecision))
+                    {
+                        pEffectRegistry->setAllowHalfPrecision(effectName, halfPrecision);
+                        markDirty();
+                        profileDirty = true;
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("This shader declares reduced-precision math. Let the driver compute it\n"
+                                          "at 16 bits, as ReShade on Windows does: faster on shaders written for\n"
+                                          "it, applied on the next automatic reload. Turn it back off if the\n"
+                                          "effect flickers or bands.");
+                }
+
                 auto& defs = pEffectRegistry->getPreprocessorDefs(effectName);
                 if (!defs.empty())
                 {

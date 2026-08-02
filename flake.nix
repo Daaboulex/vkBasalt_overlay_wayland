@@ -480,13 +480,26 @@
                 mkdir spv
                 vkbasalt-test-shaders --dump-spirv spv shaders > /dev/null 2>&1 || true
 
+                seen=0
                 for m in spv/*.spv; do
                   [ -e "$m" ] || continue
+                  seen=1
                   if spirv-dis "$m" | grep -q RelaxedPrecision; then
-                    echo "$m relaxes precision -- a driver may then accumulate bloom at fp16, which flickers"
+                    echo "$m relaxes precision by default -- a driver may then accumulate bloom at fp16, which flickers"
                     exit 1
                   fi
                 done
+                [ "$seen" = "1" ] || { echo "no modules were emitted -- the check verified nothing"; exit 1; }
+
+                mkdir spv-relaxed
+                vkbasalt-test-shaders --relax-precision --dump-spirv spv-relaxed shaders > /dev/null 2>&1 || true
+                relaxed=0
+                for m in spv-relaxed/min_precision__*.spv; do
+                  [ -e "$m" ] || continue
+                  spirv-dis "$m" | grep -q RelaxedPrecision && relaxed=1
+                done
+                [ "$relaxed" = "1" ] \
+                  || { echo "opting in must actually relax min16float math, or the half-precision toggle is a dead switch"; exit 1; }
                 touch $out
               '';
 

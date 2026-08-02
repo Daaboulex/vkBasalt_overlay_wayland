@@ -208,6 +208,9 @@ namespace vkBasalt
         {
             config.parameters = parseReshadeEffect(name, path, pConfig);
 
+            config.usesMinPrecision  = testResult.usesMinPrecision;
+            config.allowHalfPrecision = pConfig->getInstanceOption<bool>(name, "halfPrecision", false);
+
             config.preprocessorDefs = extractPreprocessorDefinitions(name, path);
 
             for (auto& def : config.preprocessorDefs)
@@ -509,6 +512,28 @@ namespace vkBasalt
             std::remove_if(effects.begin(), effects.end(),
                 [&](const EffectConfig& e) { return e.name == name; }),
             effects.end());
+    }
+
+    bool EffectRegistry::effectUsesMinPrecision(const std::string& effectName) const
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        const EffectConfig* effect = findEffect(effectName);
+        return effect && effect->usesMinPrecision;
+    }
+
+    bool EffectRegistry::getAllowHalfPrecision(const std::string& effectName) const
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        const EffectConfig* effect = findEffect(effectName);
+        return effect && effect->allowHalfPrecision;
+    }
+
+    void EffectRegistry::setAllowHalfPrecision(const std::string& effectName, bool allow)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        EffectConfig* effect = findEffect(effectName);
+        if (effect)
+            effect->allowHalfPrecision = allow;
     }
 
     std::vector<PreprocessorDefinition>& EffectRegistry::getPreprocessorDefs(const std::string& effectName)

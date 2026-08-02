@@ -28,6 +28,7 @@ namespace vkBasalt { Logger Logger::s_instance; }
 static std::string g_dumpSpirvDir;
 static bool g_cacheBench = false;
 static bool g_cacheVerify = false;
+static bool g_relaxPrecision = false;
 
 // The swapchain-dependent macros, fixed so results are reproducible; must stay
 // one list however the compile is driven.
@@ -205,7 +206,7 @@ static TestResult testShader(
 
         reshadefx::parser parser;
         auto codegen = std::unique_ptr<reshadefx::codegen>(
-            reshadefx::create_codegen_spirv(true, true, true, false, true));
+            reshadefx::create_codegen_spirv(true, true, true, false, true, g_relaxPrecision));
 
         if (!parser.parse(preprocessor.output(), codegen.get()))
         {
@@ -321,6 +322,11 @@ int main(int argc, char* argv[])
             if (std::string(argv[i]) == "--cache-verify")
             {
                 g_cacheVerify = true;
+                continue;
+            }
+            if (std::string(argv[i]) == "--relax-precision")
+            {
+                g_relaxPrecision = true;
                 continue;
             }
             if (std::string(argv[i]) == "--include" && (i + 1) < argc)
@@ -447,7 +453,7 @@ int main(int argc, char* argv[])
             std::shared_ptr<const vkBasalt::CompiledReshadeEffect> entry;
             try
             {
-                entry = vkBasalt::getOrCompileReshadeEffect(path, standardMacroPairs(), includePaths);
+                entry = vkBasalt::getOrCompileReshadeEffect(path, standardMacroPairs(), includePaths, g_relaxPrecision);
             }
             catch (const std::exception&)
             {
@@ -480,9 +486,9 @@ int main(int argc, char* argv[])
             try
             {
                 t0 = std::chrono::steady_clock::now();
-                first = vkBasalt::getOrCompileReshadeEffect(path, macros, includePaths);
+                first = vkBasalt::getOrCompileReshadeEffect(path, macros, includePaths, g_relaxPrecision);
                 t1 = std::chrono::steady_clock::now();
-                second = vkBasalt::getOrCompileReshadeEffect(path, macros, includePaths);
+                second = vkBasalt::getOrCompileReshadeEffect(path, macros, includePaths, g_relaxPrecision);
                 t2 = std::chrono::steady_clock::now();
             }
             catch (const std::exception&)

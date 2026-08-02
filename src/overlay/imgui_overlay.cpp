@@ -382,6 +382,15 @@ namespace vkBasalt
                 const auto& defs = pEffectRegistry->getPreprocessorDefs(effectName);
                 for (const auto& def : defs)
                     allDefs.push_back(def);
+
+                if (pEffectRegistry->getAllowHalfPrecision(effectName))
+                {
+                    ConfigParam cp;
+                    cp.effectName = effectName;
+                    cp.paramName  = "halfPrecision";
+                    cp.value      = "true";
+                    params.push_back(cp);
+                }
             }
         }
     }

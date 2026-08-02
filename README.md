@@ -108,9 +108,11 @@ compiled.
 One effect costs between 6 and 13 microseconds a frame on an RX 9070 XT across
 repeated runs of `scripts/perf-bench.sh`. The spread is the benchmark's, not the
 layer's: at this scale a single figure would be quoted more precisely than it can
-be measured. Effects compute at full precision even where a shader asks for
-`half`, which avoids the flicker half precision causes in anything that
-accumulates. Heavy shader packs cost far more than the layer around them.
+be measured. Effects compute at full precision by default even where a shader
+asks for `half`, which avoids the flicker half precision causes in anything that
+accumulates; effects that declare reduced-precision math show a per-effect
+"Half precision" toggle in the overlay for opting into 16-bit where the shader
+tolerates it. Heavy shader packs cost far more than the layer around them.
 
 Download shader packs and point the Shader Manager at them:
 
