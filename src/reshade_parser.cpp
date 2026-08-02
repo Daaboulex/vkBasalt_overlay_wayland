@@ -72,6 +72,7 @@ namespace vkBasalt
                 {"BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)"},
                 {"BUFFER_COLOR_DEPTH", "8"},
                 {"BUFFER_COLOR_BIT_DEPTH", "BUFFER_COLOR_DEPTH"},
+                {"BUFFER_COLOR_SPACE", "1"},
             };
         }
 

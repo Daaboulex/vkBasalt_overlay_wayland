@@ -18,6 +18,7 @@
 #include "reshade/effect_codegen.hpp"
 #include "reshade/effect_module.hpp"
 #include "shader_cache.hpp"
+#include "crash_guard.hpp"
 #include "logger.hpp"
 
 namespace fs = std::filesystem;
@@ -42,36 +43,6 @@ static const std::vector<std::pair<std::string, std::string>>& standardMacroPair
         {"BUFFER_COLOR_SPACE", "1"},
     };
     return pairs;
-}
-
-
-static thread_local sigjmp_buf s_jmpBuf;
-static thread_local volatile sig_atomic_t s_jmpActive = 0;
-static thread_local volatile sig_atomic_t s_caughtSignal = 0;
-
-static void crashHandler(int sig)
-{
-    if (s_jmpActive)
-    {
-        s_caughtSignal = sig;
-        siglongjmp(s_jmpBuf, 1);
-    }
-    signal(sig, SIG_DFL);
-    raise(sig);
-}
-
-static void installCrashHandlers()
-{
-    static bool installed = false;
-    if (installed)
-        return;
-    struct sigaction sa = {};
-    sa.sa_handler = crashHandler;
-    sa.sa_flags = 0;
-    sigemptyset(&sa.sa_mask);
-    sigaction(SIGFPE, &sa, nullptr);
-    sigaction(SIGABRT, &sa, nullptr);
-    installed = true;
 }
 
 
@@ -191,17 +162,17 @@ static TestResult testShader(
         ~CompileTimer() { *out = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count(); }
     } compileTimer{compileStart, &result.milliseconds};
 
-    installCrashHandlers();
-    if (sigsetjmp(s_jmpBuf, 1) != 0)
+    vkBasalt::installCrashHandlers();
+    if (sigsetjmp(vkBasalt::crashJmpBuf, 1) != 0)
     {
-        s_jmpActive = 0;
-        std::string sigName = (s_caughtSignal == SIGFPE) ? "SIGFPE" : "SIGABRT";
+        vkBasalt::crashJmpActive = 0;
+        std::string sigName = (vkBasalt::crashCaughtSignal == SIGFPE) ? "SIGFPE" : "SIGABRT";
         result.success = false;
         result.errorMessage = sigName + " signal during shader compilation";
         result.category = ErrorCategory::Signal;
         return result;
     }
-    s_jmpActive = 1;
+    vkBasalt::crashJmpActive = 1;
 
     try
     {
@@ -218,7 +189,7 @@ static TestResult testShader(
             if (!ppErrors.empty())
                 result.errorMessage += ": " + ppErrors;
             result.category = ErrorCategory::Preprocessor;
-            s_jmpActive = 0;
+            vkBasalt::crashJmpActive = 0;
             return result;
         }
 
@@ -228,7 +199,7 @@ static TestResult testShader(
             result.success = false;
             result.errorMessage = "Preprocessor errors: " + ppErrors;
             result.category = ErrorCategory::Preprocessor;
-            s_jmpActive = 0;
+            vkBasalt::crashJmpActive = 0;
             return result;
         }
 
@@ -246,7 +217,7 @@ static TestResult testShader(
                 result.errorMessage = reason.empty() ? "Parse errors: " + parseErr : reason;
                 result.category = reason.empty() ? ErrorCategory::Parse : ErrorCategory::Unsupported;
             }
-            s_jmpActive = 0;
+            vkBasalt::crashJmpActive = 0;
             return result;
         }
 
@@ -298,7 +269,7 @@ static TestResult testShader(
         result.category = ErrorCategory::Exception;
     }
 
-    s_jmpActive = 0;
+    vkBasalt::crashJmpActive = 0;
     return result;
 }
 

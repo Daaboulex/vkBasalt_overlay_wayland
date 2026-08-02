@@ -18,6 +18,7 @@
 #include <setjmp.h>
 
 #include "util.hpp"
+#include "crash_guard.hpp"
 #include "keyboard_input.hpp"
 #include "keyboard_input_wayland.hpp"
 #include "mouse_input_wayland.hpp"
@@ -119,41 +120,6 @@ namespace vkBasalt
     };
     ResizeDebounceState resizeDebounce;
     constexpr int64_t RESIZE_DEBOUNCE_MS = 200;
-
-    // The embedded reshadefx compiler can raise SIGFPE/SIGABRT, which C++ try-catch cannot catch.
-    static thread_local sigjmp_buf signalJmpBuf;
-    static thread_local volatile sig_atomic_t signalJmpActive = 0;
-    static thread_local volatile sig_atomic_t caughtSignal = 0;
-
-    static struct sigaction previousFpeAction;
-    static struct sigaction previousAbrtAction;
-
-    static void crashSignalHandler(int sig)
-    {
-        if (signalJmpActive)
-        {
-            caughtSignal = sig;
-            siglongjmp(signalJmpBuf, 1);
-        }
-        // Not a guarded compile: hand the signal back to whoever owned it before
-        // the layer, so the application's own crash handling still runs.
-        sigaction(sig, (sig == SIGFPE) ? &previousFpeAction : &previousAbrtAction, nullptr);
-        raise(sig);
-    }
-
-    static void installCrashHandlers()
-    {
-        static bool installed = false;
-        if (installed)
-            return;
-        struct sigaction sa = {};
-        sa.sa_handler = crashSignalHandler;
-        sa.sa_flags = 0;
-        sigemptyset(&sa.sa_mask);
-        sigaction(SIGFPE, &sa, &previousFpeAction);
-        sigaction(SIGABRT, &sa, &previousAbrtAction);
-        installed = true;
-    }
 
     bool handleKeyPress(uint32_t keySymbol, bool& wasPressed)
     {
@@ -546,11 +512,11 @@ namespace vkBasalt
 
                 installCrashHandlers();
                 bool signalCrash = false;
-                if (sigsetjmp(signalJmpBuf, 1) != 0)
+                if (sigsetjmp(crashJmpBuf, 1) != 0)
                 {
-                    signalJmpActive = 0;
+                    crashJmpActive = 0;
                     signalCrash = true;
-                    std::string sigName = (caughtSignal == SIGFPE) ? "SIGFPE" : "SIGABRT";
+                    std::string sigName = (crashCaughtSignal == SIGFPE) ? "SIGFPE" : "SIGABRT";
                     Logger::err("Caught " + sigName + " creating ReshadeEffect " + effectStrings[i]);
                     effectRegistry.setEffectError(effectStrings[i], sigName + " during shader compilation");
                     pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
@@ -559,7 +525,7 @@ namespace vkBasalt
 
                 if (!signalCrash)
                 {
-                    signalJmpActive = 1;
+                    crashJmpActive = 1;
                     try
                     {
                         pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new ReshadeEffect(
@@ -574,7 +540,7 @@ namespace vkBasalt
                         pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
                             new TransferEffect(pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
                     }
-                    signalJmpActive = 0;
+                    crashJmpActive = 0;
                 }
             }
         }
