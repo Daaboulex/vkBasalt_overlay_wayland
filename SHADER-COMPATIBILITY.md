@@ -1,14 +1,16 @@
 # ReShade shader compatibility
 
-Measured, not estimated. Every `.fx` in the shader packs listed below was compiled
-through this layer's own compile environment and the result recorded.
+Measured, not estimated. Every `.fx` in the shader packs listed below is compiled
+through this layer's own compile environment and the result recorded in
+`test/shader-corpus-baseline.txt`. The current counts are in the generated
+support table at the bottom of this file -- that table is the source of truth,
+regenerated from the baseline, and this hand-written part deliberately repeats
+no number from it.
 
-**Result as of 2026-07-30: 461 of 504 shaders compile to valid SPIR-V (91%).**
-
-Every module this compiler emits is now valid: none compiles to SPIR-V a driver
-would reject. 43 do not compile. Compiling is not the same as
-working, so the corpus validates every module it emits and an invalid one is
-demoted rather than reported green.
+Every module the compiler emits is validated with `spirv-val`; a shader whose
+SPIR-V a driver would reject is demoted rather than reported green. Compiling
+is still not the same as rendering correctly -- see "What a green result
+claims" below.
 
 ## What was tested
 
@@ -37,72 +39,39 @@ retroluxfilm/reshade-vrtoolkit, smolbbsoop/smolbbsoopshaders,
 umar-afzaal/LumeniteFX, vortigern11/vort_Shaders, yplebedev/BFBFX,
 Zenteon/ZenteonFX
 
-## Why the remaining shaders do not work
+## Why a shader can be unsupported
 
-**Declares a newer ReShade than this build implements (29, category
-`PREPROCESSOR`).** The shader's own `#error` fires and names what it wants. The
-FX compiler here is ReShade 4.7.0 (see `src/reshade_fx_version.hpp`), so a shader
-requiring 5.1 or 6.0 refuses to load and says so. This is deliberate: reporting a
-version we do not implement made these shaders compile against a compiler their
-authors had ruled out. Eight of this group are the include-path artifacts
-described below rather than version gates.
+The per-shader reasons for every current failure are listed under
+"Unsupported" in the generated table. They fall into three classes:
 
-**Needs atomics on a storage image (category `UNSUPPORTED`).** Atomics on
-`groupshared` memory work. Atomics addressing a texel of a storage image do not:
-they need a typed storage image with an `R32i`/`R32ui` format, and no shader in
-this corpus uses one. The compiler error is translated into the requirement
-rather than reported as an unknown identifier, or, as it once was, compiled
-against no-op stubs into an image that renders incorrectly with nothing said.
+**Impossible for a Vulkan layer.** A shader that needs a game addon API (for
+example FFXIV's REST addon) asks for something no Vulkan layer can provide.
 
-The translation reads the compiler's error, never the shader source. Scanning the
-source for these tokens refuses shaders that merely mention one in a comment or
-behind their own fallback define; measured against this corpus that cost six
-working shaders, which is why it is done the other way round.
+**Rejected by ReShade itself.** A shader whose syntax current ReShade also
+refuses (its own `#error` gates, or constructs like branching on a vector that
+only DXC accepts) fails here for the same reason it fails there. `__RESHADE__`
+reports the level this build actually keeps (`src/reshade_fx_version.hpp`), so
+a shader demanding a newer runtime refuses to load and says which version it
+wants -- honest, where reporting a fake version once compiled shaders their
+authors had ruled out.
 
-**Other language gaps (22, category `PARSE`).** Individual parse errors in the
-shaders or their includes, from FX syntax this compiler predates.
+**Refused with a named requirement.** Atomics addressing storage-image texels
+need typed `R32i`/`R32ui` storage this build does not bind; the compiler error
+is translated into that requirement instead of an unknown-identifier message.
+The translation reads the compiler's ERROR, never the shader source: scanning
+source for tokens refuses shaders that merely mention one in a comment, and
+measured on this corpus that costs working shaders.
 
-**Harness artifacts, not product defects (9).** Eight shaders expect
-`ReShade.fxh` one directory above their own, a layout the corpus run does not
-reproduce; one is a macro collision (`WRAPMODE`, `SCALE`) that only occurs
-because all packs are compiled together with every include path at once. A
-normal install hits neither.
+## What a green result claims
 
-## Effect on an existing installation
-
-Compared against a build from before these changes, over the same corpus:
-
-- **454 passed before this work, 443 after the honesty fixes, 449 now.**
-- **Compute shaders now compile for real.** Bessel_Bloom, BilateralCS,
-  BX_ToyCurveTool, FSR1_2X and LocalContrastCS compile through the real compute
-  path: a `GLCompute` entry point with a `LocalSize` execution mode, storage
-  images, `tex2Dstore` and `barrier()`. They briefly stopped compiling when the
-  no-op stubs were removed, which was the correct intermediate state — a stub
-  renders wrong and says nothing.
-- **Compute passes are dispatched.** A pass with a `ComputeShader` builds a
-  compute pipeline, binds its storage images, and dispatches the group counts
-  from `DispatchSizeX/Y/Z`, with layout transitions around the dispatch so a
-  later pass reads what it wrote. `groupshared` is real workgroup memory: it was
-  lexed as `static` before, which made it a private per-invocation copy that
-  `barrier()` guarded nothing about — a wrong image with nothing reported.
-- **Atomics on `groupshared` memory work, and half-float conversion is
-  componentwise.** `f32tof16`/`f16tof32` were scalar-only, so a vector call
-  silently truncated to one component and carried on with a warning. Fixing that
-  is what unlocked the whole MartysMods pack, MXAO and SMAA included.
-- **The generated SPIR-V is validated in the build.** A smoke shader exercising
-  every compute feature is compiled and run through `spirv-val`, and the
-  disassembly is checked for the compute entry point, the thread group size, the
-  image write, the barrier and the workgroup variable.
-- **Four are prod80 shaders** — pCamera, pColorNoise, pColors, pPalettePosterize.
-  None uses compute. They fail because `Oklab.fxh` declares
-  `ReShade 5.1+ is required`, and that check is now honoured. Previously the
-  version was reported as the largest representable integer, so every such gate
-  passed regardless of what this build implements.
-
-Nothing else changes for an existing install. Settings move to their own
-`settings.conf`, and the previous location is still read, so keybindings and
-options carry over. The shader cache is invalidated once, so the first launch
-after upgrading recompiles.
+Compiling to valid SPIR-V is verified for every shader by the corpus. Rendering
+correctly is a stronger claim that needs the shader run against a real game:
+"Supported, untested" marks compiler warnings worth checking in one. Two
+runtime guarantees back rendering: effect textures start zeroed (a missing
+`source` texture samples black, and temporal feedback loops start from zero
+instead of leftover video memory), and effects compute at full precision even
+where a shader asks for `half`, which avoids the flicker half precision causes
+in anything that accumulates.
 
 ## Reproducing this
 

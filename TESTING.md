@@ -2,37 +2,35 @@
 
 ## Automated, run these
 
-Five surfaces, none of which need a GPU. Four are one command each; the flake
-checks run on every commit.
+None of these need a GPU; each is one command, and the flake checks run on
+every commit.
 
 | What | Command | Proves |
 | --- | --- | --- |
-| Build checks | `nix flake check` | Every invariant the layer relies on, each ablation-verified |
-| Shader corpus | `scripts/shader-corpus.sh` | Every shader in ReShade's official index still compiles, and the SPIR-V it emits is valid; diffed against `test/shader-corpus-baseline.txt` |
+| Build checks | `nix flake check` | Every invariant the layer relies on, each ablation-verified; includes the clang build, the wayland-1.20 header compile, and the cache round-trip |
+| Shader corpus | `scripts/shader-corpus.sh` | Every shader in ReShade's official index still compiles, the SPIR-V it emits is valid, and no verdict drifted from `test/shader-corpus-baseline.txt` |
 | Layer order | `scripts/layer-matrix.sh` | The layer survives a frame-generation layer above and below it, on lavapipe with a mock that copies lsfg-vk's present behaviour |
-| End to end | `scripts/e2e-smoke.sh` | The built layer loads into a real application, compiles and applies an effect, writes its cache under `$XDG_CACHE_HOME` and its config under `$XDG_CONFIG_HOME`, and creates nothing anywhere else |
+| Compositors | `scripts/compositor-matrix.sh` | The layer reaches the game under plain Wayland, gamescope, and X11 (needs a live session) |
+| End to end | `scripts/e2e-smoke.sh` | A real application loads the layer, compiles and applies the chain (compute included), a second launch runs warm from the disk cache, and nothing is written outside the XDG directories |
+| Per-frame cost | `scripts/perf-bench.sh` | What the layer costs a frame, with it against without it |
 | Queue waits | `scripts/queue-wait-bench.sh` | What a queue drain costs against waiting on our own submission |
 
-The corpus needs network access, because it clones the shader packs. The other
-three do not.
+The corpus needs network access, because it clones the shader packs. The
+others do not.
 
 `scripts/shader-corpus.sh --record` accepts a run as the new baseline. Do that
 only when the change in verdicts is the point of the commit.
 
-## Manual: lsfg-order-testing protocol
+## Manual: lsfg-vk order protocol (runs against main)
 
 The section below is the hand protocol for testing against real lsfg-vk on
 hardware, which `scripts/layer-matrix.sh` approximates but cannot replace.
 
-### lsfg-order-testing protocol
-
-Goal of this branch: make the efficient layer order work --
+Goal: prove the efficient layer order works --
 `game -> vkBasalt -> LSFG-VK -> (MangoHud)` -- so vkBasalt processes only the
-REAL frames (60), and LSFG generates afterwards (120). Today that order black
-screens or crashes; only the wasteful reverse order works (vkBasalt processing
-all 120 generated frames).
+REAL frames (60), and LSFG generates afterwards (120).
 
-What changed in this branch:
+What main does for this:
 
 - vkBasalt no longer REPLACES the swapchain usage flags the game (or another
   layer) asked for -- it adds its own on top. Dropped flags are a classic
@@ -85,7 +83,6 @@ sudo pacman -S --needed base-devel meson ninja glslang libx11 libxi \
 ```sh
 git clone https://github.com/Daaboulex/vkBasalt_overlay_wayland.git
 cd vkBasalt_overlay_wayland
-git switch lsfg-order-testing
 meson setup build --prefix="$HOME/.local" --buildtype=debugoptimized
 ninja -C build install
 ```

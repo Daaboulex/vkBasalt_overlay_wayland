@@ -125,9 +125,9 @@ Place shaders in `~/.config/vkBasalt-overlay/reshade/Shaders/` and textures in `
 
 | | |
 |---|---|
-| **Project** | Original code (no upstream) |
-| **License** | N/A |
-| **Tracked** | N/A |
+| **Project** | Fork of [DadSchoorse/vkBasalt](https://github.com/DadSchoorse/vkBasalt) via [Boux/vkBasalt_overlay](https://github.com/Boux/vkBasalt_overlay) |
+| **License** | zlib |
+| **Tracked** | Not tracked -- both upstreams are dormant; this fork is the continuation |
 
 <!-- END generated:upstream -->
 
@@ -322,7 +322,7 @@ vkBasalt is a **read-only visual filter** — it applies post-processing shaders
 
 - Only a shader's first technique runs; a shader defining several will not behave as its author intended
 - Compute shaders run: `ComputeShader` passes are dispatched with their declared thread group and dispatch sizes, including storage images (`tex2Dstore`), `barrier()` and `groupshared` memory. Texture atomics are still refused with an explanation rather than compiled into something that renders incorrectly
-- The embedded FX compiler is ReShade 4.7.0 (plus `f32tof16`/`f16tof32`), so a shader that requires a newer ReShade refuses to load and says which version it wants
+- The FX compiler is vendored from ReShade 6.7.3; `__RESHADE__` reports the highest level whose runtime contract this layer keeps (see `src/reshade_fx_version.hpp`), so a shader demanding more refuses to load and names the version it wants
 - Depth buffer access works but is experimental (depends on game's depth format)
 - Input blocking may cause issues in some games with custom input handling; on Wayland under wine it needs the `LD_AUDIT` shim that `vkbasalt-run` sets, and the layer says so when it cannot block
 - Intel GPU usage is estimated from frequency ratio (not direct utilization)
@@ -383,9 +383,21 @@ Since `wl_pointer_add_listener` is a `static inline` function in `<wayland-clien
 ```bash
 nix develop                  # dev shell with pre-commit hooks
 nix flake check --no-build   # eval check (fast)
-nix build                    # build package
+nix build                    # build package (runs the meson tests too)
 nix fmt                      # format with treefmt
 ```
+
+Building by hand on any distro:
+
+```bash
+meson setup build
+ninja -C build
+meson test -C build --print-errorlogs
+```
+
+`meson setup` ends with a feature summary naming the wayland version built
+against and which pointer events this build handles. The tests need no GPU and
+no network; [TESTING.md](TESTING.md) lists the deeper surfaces.
 
 ## Credits
 
