@@ -32,9 +32,11 @@
       perSystem =
         { pkgs, self', ... }:
         let
-          mkVkbasaltOverlay =
-            pkgs':
-            pkgs'.stdenv.mkDerivation {
+          mkVkbasaltOverlay = pkgs': mkVkbasaltOverlayWith pkgs' pkgs'.stdenv;
+
+          mkVkbasaltOverlayWith =
+            pkgs': stdenv':
+            stdenv'.mkDerivation {
               pname = "vkbasalt-overlay";
               # This repo IS the source; the version tracks its own git revision.
               version = "0.1.0-unstable-${self.shortRev or "dirty"}";
@@ -109,6 +111,49 @@
             "^SHADER-COMPATIBILITY\\.md$"
             "^scripts/shader-support-table\\.sh$"
           ];
+
+          # The pointer listener names members that exist only in newer wayland
+          # headers; each use is guarded by its SINCE_VERSION macro. This compiles
+          # the two listener translation units against the protocol header
+          # generated from wayland 1.20's own wayland.xml -- the oldest supported
+          # floor (Ubuntu 22.04) -- so an unguarded member use fails the build
+          # here instead of on a user's distro.
+          checks.compiles-against-wayland-1-20-headers =
+            pkgs.runCommand "compiles-against-wayland-1-20-headers"
+              {
+                nativeBuildInputs = [
+                  pkgs.stdenv.cc
+                  pkgs.wayland-scanner
+                ];
+                wayland120 = pkgs.fetchurl {
+                  url = "https://wayland.freedesktop.org/releases/wayland-1.20.0.tar.xz";
+                  hash = "sha256-uKA0FUxwWXcuD9vSfb/Npscy3ynK5WqCJ09uxdfNhyU=";
+                };
+              }
+              ''
+                tar -xf "$wayland120" wayland-1.20.0/protocol/wayland.xml
+                mkdir old
+                cp ${pkgs.wayland.dev}/include/wayland-client.h \
+                   ${pkgs.wayland.dev}/include/wayland-client-core.h \
+                   ${pkgs.wayland.dev}/include/wayland-util.h \
+                   ${pkgs.wayland.dev}/include/wayland-version.h old/
+                # wayland-client.h pulls the protocol header via a QUOTED include,
+                # which resolves next to the including file before any -I path --
+                # the old header only wins if the whole umbrella lives beside it.
+                wayland-scanner client-header wayland-1.20.0/protocol/wayland.xml old/wayland-client-protocol.h
+
+                for member in WL_POINTER_WARP_SINCE_VERSION WL_POINTER_AXIS_VALUE120_SINCE_VERSION WL_POINTER_AXIS_RELATIVE_DIRECTION_SINCE_VERSION; do
+                  grep -q "$member" old/wayland-client-protocol.h \
+                    && { echo "the 1.20 header defines $member -- this check no longer tests an old header"; exit 1; }
+                done
+
+                cp -r ${./src} src
+                $CXX -fsyntax-only -std=c++20 -Isrc -Iold \
+                  src/mouse_input_wayland.cpp src/wayland_interpose.cpp
+                touch $out
+              '';
+
+          checks.builds-with-clang = mkVkbasaltOverlayWith pkgs pkgs.clangStdenv;
 
           checks.shader-support-table-is-current =
             pkgs.runCommand "shader-support-table-is-current" { nativeBuildInputs = [ pkgs.bash ]; }

@@ -66,6 +66,7 @@ namespace vkBasalt
         motionSinceLastPoll = true;
     }
 
+#ifdef WL_POINTER_WARP_SINCE_VERSION
     static void pointerWarp(void* /*data*/, wl_pointer* /*pointer*/,
                             wl_fixed_t sx, wl_fixed_t sy)
     {
@@ -73,6 +74,7 @@ namespace vkBasalt
         pointerY = wl_fixed_to_int(sy);
         motionSinceLastPoll = true;
     }
+#endif
 
     static void pointerButton(void* /*data*/, wl_pointer* /*pointer*/,
                               uint32_t /*serial*/, uint32_t /*time*/,
@@ -136,6 +138,7 @@ namespace vkBasalt
         scrollAccumulator -= (float)discrete;
     }
 
+#ifdef WL_POINTER_AXIS_VALUE120_SINCE_VERSION
     static void pointerAxisValue120(void* /*data*/, wl_pointer* /*pointer*/,
                                     uint32_t axis, int32_t value120)
     {
@@ -146,11 +149,14 @@ namespace vkBasalt
         discreteScrollReceived = true;
         scrollAccumulator -= (float)value120 / 120.0f;
     }
+#endif
 
+#ifdef WL_POINTER_AXIS_RELATIVE_DIRECTION_SINCE_VERSION
     static void pointerAxisRelativeDirection(void* /*data*/, wl_pointer* /*pointer*/,
                                              uint32_t /*axis*/, uint32_t /*direction*/)
     {
     }
+#endif
 
     static const wl_pointer_listener pointerListener = {
         .enter = pointerEnter,
@@ -162,9 +168,15 @@ namespace vkBasalt
         .axis_source = pointerAxisSource,
         .axis_stop = pointerAxisStop,
         .axis_discrete = pointerAxisDiscrete,
+#ifdef WL_POINTER_AXIS_VALUE120_SINCE_VERSION
         .axis_value120 = pointerAxisValue120,
+#endif
+#ifdef WL_POINTER_AXIS_RELATIVE_DIRECTION_SINCE_VERSION
         .axis_relative_direction = pointerAxisRelativeDirection,
+#endif
+#ifdef WL_POINTER_WARP_SINCE_VERSION
         .warp = pointerWarp,
+#endif
     };
 
     static void bindPointer(wl_seat* seat)

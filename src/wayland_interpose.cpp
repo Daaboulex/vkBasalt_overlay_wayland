@@ -150,6 +150,7 @@ static void wp_axis_discrete(void* data, wl_pointer* p, uint32_t axis, int32_t d
         it->second.original.axis_discrete(it->second.userData, p, axis, discrete);
 }
 
+#ifdef WL_POINTER_AXIS_VALUE120_SINCE_VERSION
 static void wp_axis_value120(void* data, wl_pointer* p, uint32_t axis, int32_t value120)
 {
     if (vkBasalt::isInputBlocked())
@@ -159,7 +160,9 @@ static void wp_axis_value120(void* data, wl_pointer* p, uint32_t axis, int32_t v
     if (it != gamePointers.end() && it->second.original.axis_value120)
         it->second.original.axis_value120(it->second.userData, p, axis, value120);
 }
+#endif
 
+#ifdef WL_POINTER_WARP_SINCE_VERSION
 static void wp_warp(void* /*data*/, wl_pointer* p, wl_fixed_t sx, wl_fixed_t sy)
 {
     if (vkBasalt::isInputBlocked())
@@ -169,7 +172,9 @@ static void wp_warp(void* /*data*/, wl_pointer* p, wl_fixed_t sx, wl_fixed_t sy)
     if (it != gamePointers.end() && it->second.original.warp)
         it->second.original.warp(it->second.userData, p, sx, sy);
 }
+#endif
 
+#ifdef WL_POINTER_AXIS_RELATIVE_DIRECTION_SINCE_VERSION
 static void wp_axis_relative_direction(void* data, wl_pointer* p, uint32_t axis, uint32_t direction)
 {
     if (vkBasalt::isInputBlocked())
@@ -179,6 +184,7 @@ static void wp_axis_relative_direction(void* data, wl_pointer* p, uint32_t axis,
     if (it != gamePointers.end() && it->second.original.axis_relative_direction)
         it->second.original.axis_relative_direction(it->second.userData, p, axis, direction);
 }
+#endif
 
 static const wl_pointer_listener wrapperPointerListener = {
     .enter = wp_enter,
@@ -190,9 +196,15 @@ static const wl_pointer_listener wrapperPointerListener = {
     .axis_source = wp_axis_source,
     .axis_stop = wp_axis_stop,
     .axis_discrete = wp_axis_discrete,
+#ifdef WL_POINTER_AXIS_VALUE120_SINCE_VERSION
     .axis_value120 = wp_axis_value120,
+#endif
+#ifdef WL_POINTER_AXIS_RELATIVE_DIRECTION_SINCE_VERSION
     .axis_relative_direction = wp_axis_relative_direction,
+#endif
+#ifdef WL_POINTER_WARP_SINCE_VERSION
     .warp = wp_warp,
+#endif
 };
 
 // enter, leave, frame, keymap, modifiers, and repeat_info are always forwarded
