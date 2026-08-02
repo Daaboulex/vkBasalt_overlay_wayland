@@ -14,6 +14,10 @@ namespace vkBasalt
     // twice and neither can be disabled without the other. Probed once.
     bool conflictingLayerLoaded();
 
+    // Full path of the loaded unforked libvkbasalt.so, empty when none; the
+    // path names which install (system, container, Proton bundle) brought it.
+    const std::string& conflictingLayerPath();
+
     enum class Color
     {
         defaultColor,

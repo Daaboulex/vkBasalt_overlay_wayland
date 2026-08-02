@@ -429,9 +429,11 @@ namespace vkBasalt
         if (conflictingLayerLoaded())
         {
             ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "Conflict: the unforked vkBasalt is loaded too");
+            ImGui::TextWrapped("Loaded from: %s", conflictingLayerPath().c_str());
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Both layers share ENABLE_VKBASALT, so both are active: effects apply twice and\n"
-                                  "DISABLE_VKBASALT cannot turn off one without the other. Uninstall one of them.");
+                                  "DISABLE_VKBASALT cannot turn off one without the other. The path above names\n"
+                                  "which install (system package, container, or Proton bundle) brought it.");
             ImGui::Separator();
         }
 

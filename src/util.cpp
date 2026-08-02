@@ -1,26 +1,40 @@
 #include "util.hpp"
 
+#include <cstring>
 #include <iostream>
 #include <unistd.h>
-#include <dlfcn.h>
+#include <link.h>
 
 namespace vkBasalt
 {
+    const std::string& conflictingLayerPath()
+    {
+        // A negative is never cached: the other layer can be dlopened after this
+        // one, so the answer stays live until it turns positive.
+        static std::string cached;
+        if (cached.empty())
+        {
+            dl_iterate_phdr(
+                [](struct dl_phdr_info* info, size_t, void* out) {
+                    if (!info->dlpi_name || !*info->dlpi_name)
+                        return 0;
+                    const char* base = std::strrchr(info->dlpi_name, '/');
+                    base = base ? base + 1 : info->dlpi_name;
+                    if (std::strcmp(base, "libvkbasalt.so") == 0 || std::strncmp(base, "libvkbasalt.so.", 15) == 0)
+                    {
+                        *static_cast<std::string*>(out) = info->dlpi_name;
+                        return 1;
+                    }
+                    return 0;
+                },
+                &cached);
+        }
+        return cached;
+    }
+
     bool conflictingLayerLoaded()
     {
-        static const bool present = [] {
-            for (const char* soname : {"libvkbasalt.so", "libvkbasalt.so.0"})
-            {
-                void* handle = dlopen(soname, RTLD_NOLOAD | RTLD_LAZY);
-                if (handle)
-                {
-                    dlclose(handle);
-                    return true;
-                }
-            }
-            return false;
-        }();
-        return present;
+        return !conflictingLayerPath().empty();
     }
 
     void addUniqueCString(std::vector<const char*>& stringVector, const char* addString)
