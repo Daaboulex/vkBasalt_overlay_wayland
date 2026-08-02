@@ -20,6 +20,7 @@
 #include "util.hpp"
 #include "crash_guard.hpp"
 #include "keyboard_input.hpp"
+#include "mouse_input.hpp"
 #include "keyboard_input_wayland.hpp"
 #include "mouse_input_wayland.hpp"
 #include "wayland_input_common.hpp"
@@ -1382,6 +1383,7 @@ namespace vkBasalt
 
         // Mark new input frame so dispatch deduplication resets
         beginWaylandInputFrame();
+        beginMouseInputFrame();
         beginReshadeInputFrame();
 
         // Guard: if no device for this queue, pass through

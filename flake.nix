@@ -274,6 +274,20 @@
             touch $out
           '';
 
+          # Reading the mouse drains the scroll accumulator. Two readers a frame
+          # (the ReShade uniforms at present, the overlay at record) split a
+          # frame's scrolling between them, so the wheel worked only when an
+          # event happened to land between the two reads.
+          # The snapshot itself is proved by the mouse-frame-snapshot meson test;
+          # this only asserts it is still wired into the frame that reads it,
+          # which no unit test can see.
+          checks.mouse-frame-is-marked-in-present = pkgs.runCommand "mouse-frame-is-marked-in-present" { } ''
+            present=$(sed -n '/vkBasalt_QueuePresentKHR/,/^    }/p' ${./src/basalt.cpp})
+            grep -q 'beginMouseInputFrame();' <<< "$present" \
+              || { echo "the present path does not mark the mouse frame -- every reader would share one frozen snapshot"; exit 1; }
+            touch $out
+          '';
+
           # ReShade guarantees effect textures start zeroed; an image that is only
           # layout-transitioned samples leftover video memory -- NaN there locks a
           # temporal feedback loop (MagicBloom's adaptation) broken forever, and a
@@ -629,17 +643,6 @@
               || { echo "the bound is declared but the append does not check it"; exit 1; }
             touch $out
           '';
-
-          checks.reshade-input-map =
-            pkgs.runCommand "reshade-input-map" { nativeBuildInputs = [ pkgs.gcc ]; }
-              ''
-                mkdir -p src test
-                cp ${./src/reshade_input_map.hpp} src/reshade_input_map.hpp
-                cp ${./test/reshade_input_map_test.cpp} test/reshade_input_map_test.cpp
-                g++ -std=c++20 -O1 -Wall -Werror -o runner test/reshade_input_map_test.cpp
-                ./runner
-                touch $out
-              '';
 
           checks.reshade-version-is-truthful = pkgs.runCommand "reshade-version-is-truthful" { } ''
             env=${./src/reshade_fx_env.hpp}

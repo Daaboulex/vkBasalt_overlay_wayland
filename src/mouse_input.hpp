@@ -15,6 +15,11 @@ namespace vkBasalt
         float scrollDelta = 0.0f; // positive = up
     };
 
+    // Reading the state drains the scroll accumulator, so the overlay and the
+    // ReShade uniforms would each take part of a frame's scrolling. Marking the
+    // frame makes every reader in it see one snapshot.
+    void beginMouseInputFrame();
+
     MouseState getMouseState();
 
 } // namespace vkBasalt

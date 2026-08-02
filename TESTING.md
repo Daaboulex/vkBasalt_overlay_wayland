@@ -8,6 +8,7 @@ every commit.
 | What | Command | Proves |
 | --- | --- | --- |
 | Build checks | `nix flake check` | Every invariant the layer relies on, each ablation-verified; includes the clang build, the wayland-1.20 header compile, and the cache round-trip |
+| Unit tests | `meson test -C build` | Runs on any build, nix or plain meson: every shader fixture compiles and survives the cache round-trip, the ReShade key map is correct, and one mouse sample serves a whole frame |
 | Shader corpus | `scripts/shader-corpus.sh` | Every shader in ReShade's official index still compiles, the SPIR-V it emits is valid, and no verdict drifted from `test/shader-corpus-baseline.txt` |
 | Layer order | `scripts/layer-matrix.sh` | The layer survives a frame-generation layer above and below it, on lavapipe with a mock that copies lsfg-vk's present behaviour |
 | Compositors | `scripts/compositor-matrix.sh` | The layer reaches the game under plain Wayland, gamescope, and X11 (needs a live session) |

@@ -81,11 +81,25 @@ namespace vkBasalt
         return state;
     }
 
+    static uint64_t   mouseFrameId    = 0;
+    static uint64_t   snapshotFrameId = 0;
+    static bool       snapshotTaken   = false;
+    static MouseState frameSnapshot;
+
+    void beginMouseInputFrame()
+    {
+        mouseFrameId++;
+    }
+
     MouseState getMouseState()
     {
-        if (isWayland())
-            return getMouseStateWayland();
-        return getMouseStateX11();
+        if (snapshotTaken && snapshotFrameId == mouseFrameId)
+            return frameSnapshot;
+
+        frameSnapshot   = isWayland() ? getMouseStateWayland() : getMouseStateX11();
+        snapshotFrameId = mouseFrameId;
+        snapshotTaken   = true;
+        return frameSnapshot;
     }
 
 } // namespace vkBasalt
