@@ -22,7 +22,7 @@ PASS AspectRatioComposition
 PASS AspectRatioMultiGrid
 PASS AspectRatioSuite
 PASS BaBa_Deband
-PASS BaBa_DTLAA
+PASS BaBa_DLAA-T
 PASS BaBa_FakeHDR
 PASS BaBa_Flow
 PASS BaBa_Flow_Lite
