@@ -911,7 +911,7 @@ IMPLEMENT_INTRINSIC_SPIRV(log10, 0, {
 		.add(args[0].base);
 
 	const spv::Id log10 = emit_constant(args[0].type, /* log2(10) */
-		constant { { 3.321928f, 3.321928f, 3.321928f, 3.321928f } });
+		constant { { { 3.321928f, 3.321928f, 3.321928f, 3.321928f } } });
 
 	return
 	add_instruction(spv::OpFDiv, convert_type(res_type))
