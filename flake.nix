@@ -71,6 +71,10 @@
                 "--sysconfdir=/etc"
               ];
 
+              # The meson test suite runs on every build, here and for any
+              # plain-meson user (meson test -C build).
+              doCheck = true;
+
               # Fix the layer JSON to use an absolute library path so the Vulkan
               # loader finds it regardless of LD_LIBRARY_PATH.
               postInstall = ''
@@ -267,6 +271,24 @@
               || { echo "confinePointer has no caller -- the constraints module is compiled but dead"; exit 1; }
             grep -q 'releasePointer()' ${./src/overlay/imgui_overlay.cpp} \
               || { echo "releasePointer has no caller -- confinement would never be lifted"; exit 1; }
+            touch $out
+          '';
+
+          # ReShade guarantees effect textures start zeroed; an image that is only
+          # layout-transitioned samples leftover video memory -- NaN there locks a
+          # temporal feedback loop (MagicBloom's adaptation) broken forever, and a
+          # missing source texture shows garbage instead of black.
+          checks.textures-start-black = pkgs.runCommand "textures-start-black" { } ''
+            effect=${./src/effects/effect_reshade.cpp}
+            [ "$(grep -c 'clearAndReadyImages(pLogicalDevice, images' "$effect")" = "2" ] \
+              || { echo "both texture-creation branches must clear their images before anything can sample them"; exit 1; }
+            impl=$(sed -n '/void clearAndReadyImages/,/^    }/p' ${./src/image.cpp})
+            grep -q 'CmdClearColorImage' <<< "$impl" \
+              || { echo "clearAndReadyImages no longer clears -- it only transitions, so images sample leftover memory"; exit 1; }
+            grep -q 'TRANSFER_DST_OPTIMAL' <<< "$impl" \
+              || { echo "the clear needs the image in TRANSFER_DST first"; exit 1; }
+            grep -rq 'changeImageLayout' ${./src}/*.cpp ${./src}/*.hpp ${./src}/effects/*.cpp \
+              && { echo "a bare layout-transition helper is back -- every creation path must clear"; exit 1; }
             touch $out
           '';
 

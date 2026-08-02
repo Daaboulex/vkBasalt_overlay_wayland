@@ -26,6 +26,11 @@ build() {
     ninja -C build
 }
 
+check() {
+    cd "$srcdir/$pkgname"
+    meson test -C build --print-errorlogs
+}
+
 package() {
     cd "$srcdir/$pkgname"
     DESTDIR="$pkgdir" ninja -C build install

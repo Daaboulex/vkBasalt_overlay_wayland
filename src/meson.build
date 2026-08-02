@@ -155,7 +155,7 @@ shared_library(meson.project_name().to_lower(),
 # Standalone shader-compatibility tester. Shares the layer's compile
 # environment through reshade_fx_env.hpp, so a verdict here is the layer's
 # verdict; see SHADER-COMPATIBILITY.md.
-executable('vkbasalt-test-shaders',
+test_shaders_exe = executable('vkbasalt-test-shaders',
     '../tools/test_shaders.cpp', 'shader_cache.cpp', 'logger.cpp',
     include_directories : vkBasalt_include_path,
     dependencies : [reshade_dep],
