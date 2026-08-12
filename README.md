@@ -410,7 +410,4 @@ no network; [TESTING.md](TESTING.md) lists the deeper surfaces.
 - **ImGui** by [@ocornut](https://github.com/ocornut)
 
 <!-- BEGIN generated:footer -->
----
-
-*Maintained as part of the [Daaboulex](https://github.com/Daaboulex) NixOS ecosystem.*
 <!-- END generated:footer -->
