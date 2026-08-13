@@ -9,7 +9,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     std = {
-      url = "github:Daaboulex/nix-packaging-standard?ref=v2.21.0";
+      url = "github:Daaboulex/nix-packaging-standard?ref=v2.22.0";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.git-hooks.follows = "git-hooks";
     };
@@ -108,9 +108,11 @@
             settings.configuration.MD033.enabled = false;
           };
 
-          # The corpus baseline is generated and lists third-party shader names
-          # verbatim; they are identifiers, not prose we can correct.
+          # src/ is the vendored/forked upstream tree (vkBasalt, ReShade, ImGui,
+          # stb); the corpus baseline and shader tables list third-party shader
+          # names verbatim -- identifiers, not prose we can correct.
           pre-commit.settings.hooks.typos.excludes = [
+            "^src/"
             "^test/shader-corpus-baseline\\.txt$"
             "^SHADER-COMPATIBILITY\\.md$"
             "^scripts/shader-support-table\\.sh$"
