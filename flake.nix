@@ -9,7 +9,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     std = {
-      url = "github:Daaboulex/nix-packaging-standard?ref=v2.22.0";
+      url = "github:Daaboulex/nix-packaging-standard?ref=v2.23.0";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.git-hooks.follows = "git-hooks";
     };
@@ -117,6 +117,19 @@
             "^SHADER-COMPATIBILITY\\.md$"
             "^scripts/shader-support-table\\.sh$"
           ];
+
+          pre-commit.settings.hooks.shfmt.excludes = [
+            "^scripts/"
+            "^test/"
+            "^format\\.sh$"
+            "^vkbasalt-run\\.sh$"
+          ];
+          pre-commit.settings.hooks.trim-trailing-whitespace.excludes = [
+            "^src/"
+            "^config/"
+          ];
+          pre-commit.settings.hooks.end-of-file-fixer.excludes = [ "^src/" ];
+          pre-commit.settings.hooks.mixed-line-endings.excludes = [ "^src/" ];
 
           # The pointer listener names members that exist only in newer wayland
           # headers; each use is guarded by its SINCE_VERSION macro. This compiles

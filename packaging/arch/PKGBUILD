@@ -16,33 +16,33 @@ source=("$pkgname::git+https://github.com/Daaboulex/vkBasalt_overlay_wayland.git
 sha256sums=('SKIP')
 
 pkgver() {
-    cd "$srcdir/$pkgname"
-    printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+  cd "$srcdir/$pkgname"
+  printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
 }
 
 build() {
-    cd "$srcdir/$pkgname"
-    arch-meson build --buildtype=release
-    ninja -C build
+  cd "$srcdir/$pkgname"
+  arch-meson build --buildtype=release
+  ninja -C build
 }
 
 check() {
-    cd "$srcdir/$pkgname"
-    meson test -C build --print-errorlogs
+  cd "$srcdir/$pkgname"
+  meson test -C build --print-errorlogs
 }
 
 package() {
-    cd "$srcdir/$pkgname"
-    DESTDIR="$pkgdir" ninja -C build install
+  cd "$srcdir/$pkgname"
+  DESTDIR="$pkgdir" ninja -C build install
 
-    # meson does not install the launcher: it carries an @out@ placeholder for
-    # the audit library, which each packaging resolves to its own prefix. Without
-    # it there is no LD_AUDIT, and input blocking silently cannot work under
-    # wine on Wayland.
-    sed 's|@out@|/usr|g' vkbasalt-run.sh > "$srcdir/vkbasalt-run"
-    install -Dm755 "$srcdir/vkbasalt-run" "$pkgdir/usr/bin/vkbasalt-run"
+  # meson does not install the launcher: it carries an @out@ placeholder for
+  # the audit library, which each packaging resolves to its own prefix. Without
+  # it there is no LD_AUDIT, and input blocking silently cannot work under
+  # wine on Wayland.
+  sed 's|@out@|/usr|g' vkbasalt-run.sh >"$srcdir/vkbasalt-run"
+  install -Dm755 "$srcdir/vkbasalt-run" "$pkgdir/usr/bin/vkbasalt-run"
 
-    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
-    install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
-    install -Dm644 SHADER-COMPATIBILITY.md "$pkgdir/usr/share/doc/$pkgname/SHADER-COMPATIBILITY.md"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm644 SHADER-COMPATIBILITY.md "$pkgdir/usr/share/doc/$pkgname/SHADER-COMPATIBILITY.md"
 }
