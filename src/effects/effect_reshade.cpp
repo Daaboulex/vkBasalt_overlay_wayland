@@ -1,5 +1,6 @@
 #include "memory.hpp"
 #include "effect_reshade.hpp"
+#include "reshade_pass_utils.hpp"
 
 #include <cstring>
 #include <climits>
@@ -507,13 +508,12 @@ namespace vkBasalt
         inputDescriptorSets =
             allocateAndWriteImageSamplerDescriptorSets(pLogicalDevice, descriptorPool, imageSamplerDescriptorSetLayout, samplers, imageViewVector);
 
-        for (auto& pass : module.techniques[0].passes)
-        {
-            if (pass.render_target_names[0] == "")
-            {
-                outputWrites++;
-            }
-        }
+        // Compute passes have no render target name either, but they do not
+        // participate in the graphics backbuffer ping-pong. Counting them here
+        // changes the parity whenever a technique adds a compute dispatch and
+        // can make the final graphics pass render into an internal image while
+        // the stale output image is presented.
+        outputWrites = static_cast<int>(countReshadeBackBufferWrites(module.techniques[0]));
 
         if (outputWrites > 1)
         {
