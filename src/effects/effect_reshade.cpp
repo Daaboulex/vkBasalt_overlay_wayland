@@ -499,7 +499,6 @@ namespace vkBasalt
 
         Logger::debug("created Pipeline layout");
 
-        Logger::debug("output writes: " + std::to_string(outputWrites));
         if (bufferSize)
         {
             bufferDescriptorSet = writeBufferDescriptorSet(pLogicalDevice, descriptorPool, uniformDescriptorSetLayout, stagingBuffer);
@@ -508,12 +507,8 @@ namespace vkBasalt
         inputDescriptorSets =
             allocateAndWriteImageSamplerDescriptorSets(pLogicalDevice, descriptorPool, imageSamplerDescriptorSetLayout, samplers, imageViewVector);
 
-        // Compute passes have no render target name either, but they do not
-        // participate in the graphics backbuffer ping-pong. Counting them here
-        // changes the parity whenever a technique adds a compute dispatch and
-        // can make the final graphics pass render into an internal image while
-        // the stale output image is presented.
         outputWrites = static_cast<int>(countReshadeBackBufferWrites(module.techniques[0]));
+        Logger::debug("output writes: " + std::to_string(outputWrites));
 
         if (outputWrites > 1)
         {
@@ -870,7 +865,7 @@ namespace vkBasalt
             renderPassBeginInfos.push_back(renderPassBeginInfo);
 
 
-            if (pass.render_target_names[0] == "")
+            if (writesReshadeBackBuffer(pass))
             {
                 std::vector<VkImageView> backBufferImageViews = pass.srgb_write_enable ? backBufferImageViewsSRGB : backBufferImageViewsUNORM;
                 std::vector<VkImageView> outputImageViews     = pass.srgb_write_enable ? outputImageViewsSRGB : outputImageViewsUNORM;

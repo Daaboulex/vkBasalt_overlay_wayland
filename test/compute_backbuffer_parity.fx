@@ -1,9 +1,3 @@
-// License-safe reproducer for mixed compute/graphics backbuffer accounting.
-// Five no-op compute passes must not change which image the final graphics
-// pass writes. On the affected runtime they are incorrectly counted as five
-// backbuffer writes, flip ping-pong parity, and leave the presented output
-// stale even though the final pixel shader copies the live input colour.
-
 texture2D ParityBackBufferTex : COLOR;
 sampler2D ParityBackBuffer { Texture = ParityBackBufferTex; };
 
