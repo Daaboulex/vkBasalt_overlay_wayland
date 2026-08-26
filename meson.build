@@ -42,6 +42,11 @@ if get_option('with_so')
         include_directories : include_directories('src'))
     test('reshade-pass-utils', reshade_pass_utils_test)
 
+    reshade_texture_utils_test = executable('reshade-texture-utils-test',
+        'test/reshade_texture_utils_test.cpp',
+        include_directories : include_directories('src'))
+    test('reshade-texture-utils', reshade_texture_utils_test)
+
     mouse_frame_test = executable('mouse-frame-snapshot-test',
         'test/mouse_frame_snapshot_test.cpp', 'src/mouse_input.cpp',
         include_directories : include_directories('src'),

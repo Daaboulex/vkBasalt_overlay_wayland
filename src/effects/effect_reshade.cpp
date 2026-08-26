@@ -1,6 +1,7 @@
 #include "memory.hpp"
 #include "effect_reshade.hpp"
 #include "reshade_pass_utils.hpp"
+#include "reshade_texture_utils.hpp"
 
 #include <cstring>
 #include <climits>
@@ -8,6 +9,7 @@
 #include <cassert>
 
 #include <set>
+#include <utility>
 #include <variant>
 #include <algorithm>
 #include <filesystem>
@@ -67,6 +69,59 @@ namespace vkBasalt
         return defines;
     }
 
+    SharedReshadeTexturePool::SharedReshadeTexturePool(LogicalDevice* pLogicalDevice)
+        : pLogicalDevice(pLogicalDevice)
+    {
+    }
+
+    SharedReshadeTexturePool::~SharedReshadeTexturePool()
+    {
+        for (auto& [_, texture] : textures)
+        {
+            if (texture.image != VK_NULL_HANDLE)
+                pLogicalDevice->vkd.DestroyImage(pLogicalDevice->device, texture.image, nullptr);
+            if (texture.memory != VK_NULL_HANDLE)
+                freeTrackedMemory(pLogicalDevice, texture.memory, nullptr);
+        }
+    }
+
+    SharedReshadeTexture& SharedReshadeTexturePool::acquire(const std::string& uniqueName,
+                                                            VkExtent3D        extent,
+                                                            VkFormat          format,
+                                                            VkImageUsageFlags usage,
+                                                            uint32_t          mipLevels,
+                                                            bool&             created)
+    {
+        auto [it, inserted] = textures.try_emplace(uniqueName);
+        SharedReshadeTexture& texture = it->second;
+        created = inserted;
+
+        if (inserted)
+        {
+            std::vector<VkImage> images = createImages(
+                pLogicalDevice, 1, extent, format, usage,
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, texture.memory, mipLevels);
+            texture.image = images[0];
+            texture.format = format;
+            texture.extent = extent;
+            texture.mipLevels = mipLevels;
+            texture.usage = usage;
+            Logger::debug("created shared effect texture " + uniqueName);
+        }
+        else if (texture.format != format
+                 || texture.extent.width != extent.width
+                 || texture.extent.height != extent.height
+                 || texture.extent.depth != extent.depth
+                 || texture.mipLevels != mipLevels
+                 || (usage & ~texture.usage) != 0)
+        {
+            throw std::runtime_error("incompatible shared effect texture declaration: " + uniqueName);
+        }
+
+        Logger::debug("using shared effect texture " + uniqueName);
+        return texture;
+    }
+
     ReshadeEffect::ReshadeEffect(LogicalDevice*       pLogicalDevice,
                                  VkFormat             format,
                                  VkExtent2D           imageExtent,
@@ -74,6 +129,7 @@ namespace vkBasalt
                                  std::vector<VkImage> inputImages,
                                  std::vector<VkImage> outputImages,
                                  EffectRegistry*      pEffectRegistry,
+                                 std::shared_ptr<SharedReshadeTexturePool> texturePool,
                                  std::string          effectName,
                                  std::string          effectPath,
                                  std::vector<PreprocessorDefinition> customDefs)
@@ -86,6 +142,7 @@ namespace vkBasalt
         this->inputImages           = inputImages;
         this->outputImages          = outputImages;
         this->pEffectRegistry       = pEffectRegistry;
+        this->sharedTexturePool     = std::move(texturePool);
         this->effectName            = effectName;
         this->effectPath            = effectPath;
         this->customPreprocessorDefs = customDefs;
@@ -203,17 +260,36 @@ namespace vkBasalt
                     module.textures[i].annotations.begin(), module.textures[i].annotations.end(), [](const auto& a) { return a.name == "source"; });
                 source == module.textures[i].annotations.end())
             {
-                textureMemory.push_back(VK_NULL_HANDLE);
-                std::vector<VkImage> images = createImages(pLogicalDevice,
-                                                           1,
-                                                           textureExtent,
-                                                           convertReshadeFormat(module.textures[i].format),
-                                                           VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-                                                               | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
-                                                               | usedAsStorage(module.textures[i].unique_name),
-                                                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                                           textureMemory.back(),
-                                                           module.textures[i].levels);
+                const VkFormat textureFormat = convertReshadeFormat(module.textures[i].format);
+                const VkImageUsageFlags textureUsage =
+                    VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+                    | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+                    | usedAsStorage(module.textures[i].unique_name);
+                std::vector<VkImage> images;
+                bool initializeImages = true;
+
+                if (isGeneratedSharedReshadeTexture(module.textures[i]))
+                {
+                    bool created = false;
+                    SharedReshadeTexture& shared = sharedTexturePool->acquire(
+                        module.textures[i].unique_name, textureExtent, textureFormat,
+                        textureUsage, module.textures[i].levels, created);
+                    images = {shared.image};
+                    initializeImages = created;
+                    sharedTextureNames.insert(module.textures[i].unique_name);
+                }
+                else
+                {
+                    textureMemory.push_back(VK_NULL_HANDLE);
+                    images = createImages(pLogicalDevice,
+                                          1,
+                                          textureExtent,
+                                          textureFormat,
+                                          textureUsage,
+                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                          textureMemory.back(),
+                                          module.textures[i].levels);
+                }
 
                 textureImages[module.textures[i].unique_name] = images;
                 std::vector<VkImageView> imageViewsUNORM =
@@ -256,7 +332,8 @@ namespace vkBasalt
 
                 textureFormatsUNORM[module.textures[i].unique_name] = convertToUNORM(convertReshadeFormat(module.textures[i].format));
                 textureFormatsSRGB[module.textures[i].unique_name]  = convertToSRGB(convertReshadeFormat(module.textures[i].format));
-                clearAndReadyImages(pLogicalDevice, images, module.textures[i].levels);
+                if (initializeImages)
+                    clearAndReadyImages(pLogicalDevice, images, module.textures[i].levels);
                 continue;
             }
             else
@@ -1432,6 +1509,8 @@ namespace vkBasalt
 
         for (auto& it : textureImages)
         {
+            if (sharedTextureNames.find(it.first) != sharedTextureNames.end())
+                continue;
             for (auto image : it.second)
             {
                 pLogicalDevice->vkd.DestroyImage(pLogicalDevice->device, image, nullptr);

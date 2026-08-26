@@ -443,6 +443,11 @@ namespace vkBasalt
             return;
         }
 
+        // ReShade shares matching generated texture names across the effects
+        // in one runtime. Keep that ownership local to this swapchain's current
+        // effect collection so separate swapchains cannot collide.
+        const auto sharedTexturePool = std::make_shared<SharedReshadeTexturePool>(pLogicalDevice);
+
         for (uint32_t i = 0; i < effectStrings.size(); i++)
         {
             Logger::debug("creating effect " + std::to_string(i) + ": " + effectStrings[i]);
@@ -532,7 +537,8 @@ namespace vkBasalt
                         pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new ReshadeEffect(
                             pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent,
                             pLogicalSwapchain->swapchainCreateInfo.imageColorSpace,
-                            firstImages, secondImages, &effectRegistry, effectStrings[i], effectPath, customDefs)));
+                            firstImages, secondImages, &effectRegistry, sharedTexturePool,
+                            effectStrings[i], effectPath, customDefs)));
                     }
                     catch (const std::exception& e)
                     {

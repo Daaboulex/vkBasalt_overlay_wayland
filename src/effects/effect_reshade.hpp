@@ -7,6 +7,7 @@
 #include <vector>
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
 #include <memory>
 
 #include "vulkan_include.hpp"
@@ -29,6 +30,40 @@ namespace vkBasalt
         VkExtent2D extent, VkFormat unormFormat, VkColorSpaceKHR colorSpace,
         const std::vector<PreprocessorDefinition>& customDefs);
 
+    struct SharedReshadeTexture
+    {
+        VkImage           image = VK_NULL_HANDLE;
+        VkDeviceMemory    memory = VK_NULL_HANDLE;
+        VkFormat          format = VK_FORMAT_UNDEFINED;
+        VkExtent3D        extent = {0, 0, 0};
+        uint32_t          mipLevels = 1;
+        VkImageUsageFlags usage = 0;
+    };
+
+    // One pool is shared by all ReShade effects in a swapchain's current
+    // effect collection. This matches ReShade runtime scope without allowing
+    // identically named resources from separate swapchains to collide.
+    class SharedReshadeTexturePool
+    {
+    public:
+        explicit SharedReshadeTexturePool(LogicalDevice* pLogicalDevice);
+        ~SharedReshadeTexturePool();
+
+        SharedReshadeTexture& acquire(const std::string& uniqueName,
+                                      VkExtent3D        extent,
+                                      VkFormat          format,
+                                      VkImageUsageFlags usage,
+                                      uint32_t          mipLevels,
+                                      bool&             created);
+
+        SharedReshadeTexturePool(const SharedReshadeTexturePool&) = delete;
+        SharedReshadeTexturePool& operator=(const SharedReshadeTexturePool&) = delete;
+
+    private:
+        LogicalDevice* pLogicalDevice;
+        std::unordered_map<std::string, SharedReshadeTexture> textures;
+    };
+
     class ReshadeEffect : public Effect
     {
     public:
@@ -39,6 +74,7 @@ namespace vkBasalt
                       std::vector<VkImage> inputImages,
                       std::vector<VkImage> outputImages,
                       EffectRegistry*      pEffectRegistry,
+                      std::shared_ptr<SharedReshadeTexturePool> texturePool,
                       std::string          effectName,
                       std::string          effectPath = "",
                       std::vector<PreprocessorDefinition> customDefs = {});
@@ -66,6 +102,7 @@ namespace vkBasalt
         std::unordered_map<std::string, VkFormat>   textureFormatsSRGB;
         std::unordered_map<std::string, uint32_t>   textureMipLevels;
         std::unordered_map<std::string, VkExtent3D> textureExtents;
+        std::unordered_set<std::string>             sharedTextureNames;
 
         std::vector<VkDescriptorSet> inputDescriptorSets;
         std::vector<VkDescriptorSet> outputDescriptorSets;
@@ -96,6 +133,7 @@ namespace vkBasalt
         std::vector<bool>                     switchSamplers;
         VkExtent2D                            imageExtent;
         std::vector<VkSampler>                samplers;
+        std::shared_ptr<SharedReshadeTexturePool> sharedTexturePool;
         EffectRegistry*                       pEffectRegistry;
         std::string                           effectName;
         std::string                           effectPath;  // Path to .fx file (may differ from effectName)
