@@ -7,7 +7,7 @@ namespace vkBasalt
 {
     std::vector<VkCommandBuffer> allocateCommandBuffer(LogicalDevice* pLogicalDevice, uint32_t count)
     {
-        std::vector<VkCommandBuffer> commandBuffers(count);
+        std::vector<VkCommandBuffer> commandBuffers(count, VK_NULL_HANDLE);
 
         VkCommandBufferAllocateInfo allocInfo;
         allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -17,7 +17,12 @@ namespace vkBasalt
         allocInfo.commandBufferCount = count;
 
         VkResult result = pLogicalDevice->vkd.AllocateCommandBuffers(pLogicalDevice->device, &allocInfo, commandBuffers.data());
-        ASSERT_VULKAN(result);
+        if (result != VK_SUCCESS)
+        {
+            Logger::err("failed to allocate " + std::to_string(count)
+                        + " effect command buffers: " + std::to_string(result));
+            return {};
+        }
         for (uint32_t i = 0; i < count; i++)
         {
             // initialize dispatch tables for commandBuffers since the are dispatchable objects
@@ -26,12 +31,12 @@ namespace vkBasalt
 
         return commandBuffers;
     }
-    void writeCommandBuffers(LogicalDevice*                                 pLogicalDevice,
-                             std::vector<std::shared_ptr<vkBasalt::Effect>> effects,
-                             VkImage                                        depthImage,
-                             VkImageView                                    depthImageView,
-                             VkFormat                                       depthFormat,
-                             std::vector<VkCommandBuffer>                   commandBuffers)
+    VkResult writeCommandBuffers(LogicalDevice*                                 pLogicalDevice,
+                                 std::vector<std::shared_ptr<vkBasalt::Effect>> effects,
+                                 VkImage                                        depthImage,
+                                 VkImageView                                    depthImageView,
+                                 VkFormat                                       depthFormat,
+                                 std::vector<VkCommandBuffer>                   commandBuffers)
     {
         VkCommandBufferBeginInfo beginInfo = {};
 
@@ -49,7 +54,12 @@ namespace vkBasalt
         {
 
             VkResult result = pLogicalDevice->vkd.BeginCommandBuffer(commandBuffers[i], &beginInfo);
-            ASSERT_VULKAN(result);
+            if (result != VK_SUCCESS)
+            {
+                Logger::err("failed to begin effect command buffer " + std::to_string(i)
+                            + ": " + std::to_string(result));
+                return result;
+            }
 
             VkImageMemoryBarrier memoryBarrier;
             memoryBarrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -105,8 +115,14 @@ namespace vkBasalt
             }
 
             result = pLogicalDevice->vkd.EndCommandBuffer(commandBuffers[i]);
-            ASSERT_VULKAN(result);
+            if (result != VK_SUCCESS)
+            {
+                Logger::err("failed to end effect command buffer " + std::to_string(i)
+                            + ": " + std::to_string(result));
+                return result;
+            }
         }
+        return VK_SUCCESS;
     }
 
     std::vector<VkSemaphore> createSemaphores(LogicalDevice* pLogicalDevice, uint32_t count)

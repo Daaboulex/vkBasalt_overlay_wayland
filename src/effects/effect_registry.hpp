@@ -8,6 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <filesystem>
+#include <cstdint>
 
 #include "effect_config.hpp"
 #include "config.hpp"
@@ -65,7 +66,7 @@ namespace vkBasalt
 
         std::string getEffectError(const std::string& name) const;
 
-        void setEffectError(const std::string& name, const std::string& error);
+        void setEffectError(const std::string& name, const std::string& error, bool disableEffect = true);
 
         bool effectUsesMinPrecision(const std::string& effectName) const;
         bool getAllowHalfPrecision(const std::string& effectName) const;
@@ -73,6 +74,9 @@ namespace vkBasalt
 
         std::vector<PreprocessorDefinition>& getPreprocessorDefs(const std::string& effectName);
         const std::vector<PreprocessorDefinition>& getPreprocessorDefs(const std::string& effectName) const;
+        std::vector<PreprocessorDefinition> getCompilePreprocessorDefs(const std::string& effectName) const;
+        uint64_t getBuildStateRevision() const;
+        std::string getBuildStateSignature(const std::vector<std::string>& orderedEffects) const;
 
         void setPreprocessorDefValue(const std::string& effectName, const std::string& macroName, const std::string& value);
 
@@ -89,6 +93,7 @@ namespace vkBasalt
         std::vector<std::string> selectedEffects;
         bool initializedFromConfig = false;
         Config* pConfig = nullptr;
+        uint64_t buildStateRevision = 1;
         mutable std::mutex mutex;
 
         void initBuiltInEffect(const std::string& instanceName, const std::string& effectType);

@@ -1,5 +1,7 @@
 #include "image_view.hpp"
 
+#include <stdexcept>
+
 namespace vkBasalt
 {
     std::vector<VkImageView> createImageViews(LogicalDevice*       pLogicalDevice,
@@ -9,7 +11,7 @@ namespace vkBasalt
                                               VkImageAspectFlags   aspectMask,
                                               uint32_t             mipLevels)
     {
-        std::vector<VkImageView> imageViews(images.size());
+        std::vector<VkImageView> imageViews(images.size(), VK_NULL_HANDLE);
 
         VkImageViewCreateInfo imageViewCreateInfo;
 
@@ -34,7 +36,18 @@ namespace vkBasalt
         {
             imageViewCreateInfo.image = images[i];
             VkResult result           = pLogicalDevice->vkd.CreateImageView(pLogicalDevice->device, &imageViewCreateInfo, nullptr, &(imageViews[i]));
-            ASSERT_VULKAN(result);
+            if (result != VK_SUCCESS)
+            {
+                for (VkImageView created : imageViews)
+                {
+                    if (created != VK_NULL_HANDLE)
+                        pLogicalDevice->vkd.DestroyImageView(
+                            pLogicalDevice->device, created, nullptr);
+                }
+                throw std::runtime_error(
+                    "vkCreateImageView failed while constructing an effect: "
+                    + std::to_string(result));
+            }
         }
 
         return imageViews;

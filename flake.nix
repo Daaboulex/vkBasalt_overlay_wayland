@@ -237,7 +237,10 @@
                 src=${./src/memory.cpp}
                 grep -q 'g_memorySoftLimit != 0' "$src" \
                   || { echo "an unset limit must mean no limit, not a limit of zero"; exit 1; }
-                if grep -qE 'return VK_ERROR_OUT_OF_DEVICE_MEMORY|softLimit.*return .*ERROR|if \(g_memorySoftLimit.*\breturn\b' "$src"; then
+                softLimitPath=$(sed -n '/if (announce)/,/return VK_SUCCESS/p' "$src")
+                grep -q 'Logger::warn' <<< "$softLimitPath" \
+                  || { echo "exceeding the soft limit no longer emits its warning"; exit 1; }
+                if grep -qE 'return VK_ERROR_OUT_OF_DEVICE_MEMORY|softLimit.*return .*ERROR|if \(g_memorySoftLimit.*\breturn\b' <<< "$softLimitPath"; then
                   echo "exceeding the soft limit must warn and continue -- refusing the allocation makes it a reservation"
                   exit 1
                 fi
@@ -602,9 +605,15 @@
           # measured at 45 percent of the wait. Waiting on the layer's own submission is the same
           # guarantee for the objects being freed, without the rest.
           checks.waits-are-scoped-to-our-own-work = pkgs.runCommand "waits-are-scoped-to-our-own-work" { } ''
-            reload=$(sed -n '/void reloadEffectsForSwapchain/,/^        Logger::info("reloading/p' ${./src/basalt.cpp})
-            grep -q 'WaitForFences' <<< "$reload" \
-              || { echo "the reload drains the queue again instead of waiting on the layer's own passes"; exit 1; }
+            reload=$(sed -n '/bool reloadEffectsForSwapchain/,/^    }/p' ${./src/basalt.cpp})
+            grep -q 'QueueWaitIdle' <<< "$reload" \
+              && { echo "ordinary effect replacement drains the queue instead of retiring generations behind fences"; exit 1; }
+
+            retirement=$(sed -n '/EffectCollection::retirementStatus/,/^    }/p' ${./src/logical_swapchain.cpp})
+            grep -q 'WaitForFences' <<< "$retirement" \
+              || { echo "retired effect generations are not polled through their own fences"; exit 1; }
+            grep -q 'submissionsInFlight' <<< "$retirement" \
+              || { echo "retirement waits on fences that were never submitted"; exit 1; }
 
             grep -q 'QueueSubmit(pLogicalDevice->queue, 1, &submitInfo, effectFence)' ${./src/basalt.cpp} \
               || { echo "the effect submission carries no fence, so nothing can wait on just that work"; exit 1; }
@@ -619,7 +628,7 @@
           checks.depth-tracking-cannot-drift = pkgs.runCommand "depth-tracking-cannot-drift" { } ''
             grep -qE 'depthFormats|depthImageViews' ${./src/logical_device.hpp} ${./src/basalt.cpp} \
               && { echo "depth tracking is back to parallel vectors -- they drift apart when images are created from several threads"; exit 1; }
-            grep -q 'std::vector<DepthImage>  depthImages;' ${./src/logical_device.hpp} \
+            grep -qE 'std::vector<DepthImage>[[:space:]]+depthImages;' ${./src/logical_device.hpp} \
               || { echo "depth images are no longer one record each"; exit 1; }
             grep -q 'depthImage.image == image' ${./src/basalt.cpp} \
               || { echo "depth images are matched by position again rather than by handle"; exit 1; }
@@ -644,13 +653,15 @@
           '';
 
           checks.effect-image-pool-only-appends = pkgs.runCommand "effect-image-pool-only-appends" { } ''
-            body=$(sed -n '/bool growFakeSwapchainImages/,/^    }/p' ${./src/basalt.cpp})
+            body=$(sed -n '/bool growFakeSwapchainImages/,/struct EffectImagePoolCheckpoint/p' ${./src/basalt.cpp})
             [ -n "$body" ] || { echo "growFakeSwapchainImages is gone -- the pool can no longer grow"; exit 1; }
 
-            grep -qE 'FreeMemory|DestroyImage|fakeImages\.clear|fakeImages\.resize|fakeImages\.erase|fakeImages\.assign' <<< "$body" \
+            grep -qE 'fakeImages\.clear|fakeImages\.resize|fakeImages\.erase|fakeImages\.assign' <<< "$body" \
               && { echo "growing the effect image pool releases or reorders it -- the application is still holding those handles"; exit 1; }
             grep -q 'fakeImages.insert(pLogicalSwapchain->fakeImages.end()' <<< "$body" \
               || { echo "growth no longer appends at the end -- earlier slots would shift under the application"; exit 1; }
+            grep -q 'appendOnlyHandleGrowthPreservesPrefix(existingImages' <<< "$body" \
+              || { echo "growth no longer proves that every application-visible image prefix is unchanged"; exit 1; }
             grep -q 'settingsManager.getMaxEffects()' <<< "$body" \
               || { echo "growth is unbounded -- a runaway effect list could exhaust video memory"; exit 1; }
             touch $out

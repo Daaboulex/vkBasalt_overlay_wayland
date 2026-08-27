@@ -34,6 +34,7 @@ namespace vkBasalt
         VkDeviceSize                                     g_memoryPeakBytes = 0;
         VkDeviceSize                                     g_memorySoftLimit = 0;
         bool                                             g_softLimitWarned = false;
+        uint32_t                                         g_testAllocationCountdown = 0;
     } // namespace
 
     VkResult allocateTrackedMemory(LogicalDevice*               pLogicalDevice,
@@ -41,6 +42,20 @@ namespace vkBasalt
                                    const VkAllocationCallbacks* pAllocator,
                                    VkDeviceMemory*              pMemory)
     {
+        {
+            std::lock_guard<std::mutex> lock(g_memoryMutex);
+            if (g_testAllocationCountdown > 0)
+            {
+                --g_testAllocationCountdown;
+                if (g_testAllocationCountdown == 0)
+                {
+                    *pMemory = VK_NULL_HANDLE;
+                    Logger::warn("test fault injection returned VK_ERROR_OUT_OF_DEVICE_MEMORY before driver allocation");
+                    return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+                }
+            }
+        }
+
         const VkResult result = pLogicalDevice->vkd.AllocateMemory(pLogicalDevice->device, pAllocateInfo, pAllocator, pMemory);
         if (result != VK_SUCCESS)
             return result;
@@ -103,5 +118,22 @@ namespace vkBasalt
         std::lock_guard<std::mutex> lock(g_memoryMutex);
         g_memorySoftLimit = bytes;
         g_softLimitWarned = false;
+    }
+
+    void failNextTrackedAllocationForTest()
+    {
+        failTrackedAllocationForTest(1);
+    }
+
+    void failTrackedAllocationForTest(uint32_t ordinal)
+    {
+        std::lock_guard<std::mutex> lock(g_memoryMutex);
+        g_testAllocationCountdown = std::max(ordinal, uint32_t{1});
+    }
+
+    void clearTrackedAllocationFailureForTest()
+    {
+        std::lock_guard<std::mutex> lock(g_memoryMutex);
+        g_testAllocationCountdown = 0;
     }
 } // namespace vkBasalt

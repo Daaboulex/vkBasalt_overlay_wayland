@@ -11,7 +11,8 @@ namespace vkBasalt
             Logger::warn("createFramebuffers: empty imageViews");
             return {};
         }
-        std::vector<VkFramebuffer> framebuffers(imageViews[0].size());
+        std::vector<VkFramebuffer> framebuffers(
+            imageViews[0].size(), VK_NULL_HANDLE);
         std::vector<VkImageView>   perFrameImageViews;
         for (uint32_t i = 0; i < imageViews[0].size(); i++)
         {
@@ -32,7 +33,17 @@ namespace vkBasalt
             framebufferCreateInfo.layers          = 1;
 
             VkResult result = pLogicalDevice->vkd.CreateFramebuffer(pLogicalDevice->device, &framebufferCreateInfo, nullptr, &(framebuffers[i]));
-            ASSERT_VULKAN(result);
+            if (result != VK_SUCCESS)
+            {
+                for (VkFramebuffer created : framebuffers)
+                {
+                    if (created != VK_NULL_HANDLE)
+                        pLogicalDevice->vkd.DestroyFramebuffer(
+                            pLogicalDevice->device, created, nullptr);
+                }
+                ASSERT_VULKAN(result);
+                return {};
+            }
             perFrameImageViews.clear();
         }
         return framebuffers;

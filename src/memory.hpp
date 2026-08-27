@@ -29,6 +29,12 @@ namespace vkBasalt
     VkDeviceSize trackedMemoryBytes();
     VkDeviceSize trackedMemoryPeakBytes();
     void         setMemorySoftLimitBytes(VkDeviceSize bytes);
+
+    // Public regression harness: fail one allocation deterministically without
+    // trying to exhaust the test machine's real VRAM.
+    void failNextTrackedAllocationForTest();
+    void failTrackedAllocationForTest(uint32_t ordinal);
+    void clearTrackedAllocationFailureForTest();
 }
 
 #endif // MEMORY_HPP_INCLUDED

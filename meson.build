@@ -52,6 +52,22 @@ if get_option('with_so')
         include_directories : include_directories('src'))
     test('effect-selection', effect_selection_test)
 
+    effect_collection_state_test = executable('effect-collection-state-test',
+        'test/effect_collection_state_test.cpp',
+        include_directories : include_directories('src'))
+    test('effect-collection-state', effect_collection_state_test)
+
+    config_snapshot_test = executable('config-snapshot-test',
+        'test/config_snapshot_test.cpp', 'src/config.cpp', 'src/logger.cpp',
+        include_directories : include_directories('src'))
+    test('config-snapshot', config_snapshot_test)
+
+    vulkan_loader_dep = dependency('vulkan')
+    headless_swapchain_init = executable(
+        'headless-swapchain-init',
+        'test/headless_swapchain_init.c',
+        dependencies : [vulkan_loader_dep, x11_dep])
+
     mouse_frame_test = executable('mouse-frame-snapshot-test',
         'test/mouse_frame_snapshot_test.cpp', 'src/mouse_input.cpp',
         include_directories : include_directories('src'),

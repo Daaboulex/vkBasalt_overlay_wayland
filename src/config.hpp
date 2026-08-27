@@ -7,7 +7,9 @@
 #include <vector>
 #include <unordered_map>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
+#include <memory>
 #include <sys/stat.h>
 
 #include "vulkan_include.hpp"
@@ -21,7 +23,15 @@ namespace vkBasalt
         Config(const std::string& path);
         Config(const Config& other);
 
-        void setFallback(Config* fallback) { pFallback = fallback; }
+        void setFallback(Config* fallback)
+        {
+            if (pFallback != fallback)
+            {
+                ownedFallback.reset();
+                pFallback = fallback;
+                ++buildStateRevision;
+            }
+        }
 
         template<typename T>
         T getOption(const std::string& option, const T& defaultValue = {})
@@ -62,6 +72,8 @@ namespace vkBasalt
         std::string getConfigFilePath() const { return configFilePath; }
 
         std::unordered_map<std::string, std::string> getEffectDefinitions() const;
+        uint64_t getBuildStateRevision() const { return buildStateRevision; }
+        std::string getBuildStateSignature() const;
 
     private:
         std::unordered_map<std::string, std::string> options;
@@ -69,7 +81,9 @@ namespace vkBasalt
         std::string                                  configFilePath;
         time_t                                       lastModifiedTime = 0;
         Config*                                      pFallback = nullptr;
+        std::shared_ptr<Config>                      ownedFallback;
         std::chrono::steady_clock::time_point        lastConfigCheckTime{};
+        uint64_t                                     buildStateRevision = 1;
 
         void readConfigLine(std::string line);
         void readConfigFile(std::ifstream& stream);

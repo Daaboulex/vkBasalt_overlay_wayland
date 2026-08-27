@@ -4,6 +4,9 @@
 #include <sstream>
 #include <locale>
 #include <array>
+#include <algorithm>
+#include <functional>
+#include <set>
 
 namespace vkBasalt
 {
@@ -65,6 +68,13 @@ namespace vkBasalt
         this->overrides        = other.overrides;
         this->configFilePath   = other.configFilePath;
         this->lastModifiedTime = other.lastModifiedTime;
+        if (other.pFallback != nullptr)
+        {
+            this->ownedFallback = std::make_shared<Config>(*other.pFallback);
+            this->pFallback = this->ownedFallback.get();
+        }
+        this->lastConfigCheckTime = other.lastConfigCheckTime;
+        this->buildStateRevision = other.buildStateRevision;
     }
 
     void Config::updateLastModifiedTime()
@@ -118,6 +128,7 @@ namespace vkBasalt
             return;
         }
 
+        ++buildStateRevision;
         updateLastModifiedTime();
     }
 
@@ -254,12 +265,21 @@ namespace vkBasalt
 
     void Config::setOverride(const std::string& option, const std::string& value)
     {
-        overrides[option] = value;
+        const auto current = overrides.find(option);
+        if (current == overrides.end() || current->second != value)
+        {
+            overrides[option] = value;
+            ++buildStateRevision;
+        }
     }
 
     void Config::clearOverrides()
     {
-        overrides.clear();
+        if (!overrides.empty())
+        {
+            overrides.clear();
+            ++buildStateRevision;
+        }
     }
 
     void Config::parseOverride(const std::string& value, int32_t& result)
@@ -319,6 +339,51 @@ namespace vkBasalt
                 effects[key] = value;
         }
         return effects;
+    }
+
+    std::string Config::getBuildStateSignature() const
+    {
+        std::ostringstream signature;
+        std::set<const Config*> visited;
+
+        const auto appendField = [&signature](const std::string& value) {
+            signature << value.size() << ':' << value << ';';
+        };
+        const auto appendMap = [&appendField](
+            const std::unordered_map<std::string, std::string>& values) {
+            std::vector<std::pair<std::string, std::string>> ordered(
+                values.begin(), values.end());
+            std::sort(ordered.begin(), ordered.end());
+            for (const auto& [key, value] : ordered)
+            {
+                appendField(key);
+                appendField(value);
+            }
+        };
+
+        std::function<void(const Config*)> appendConfig = [&](const Config* config) {
+            if (config == nullptr)
+            {
+                appendField("<null>");
+                return;
+            }
+            if (!visited.insert(config).second)
+            {
+                appendField("<cycle>");
+                return;
+            }
+
+            appendField(std::to_string(config->buildStateRevision));
+            appendField(config->configFilePath);
+            appendMap(config->options);
+            appendField("<overrides>");
+            appendMap(config->overrides);
+            appendField("<fallback>");
+            appendConfig(config->pFallback);
+        };
+
+        appendConfig(this);
+        return signature.str();
     }
 
 } // namespace vkBasalt

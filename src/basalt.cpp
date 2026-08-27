@@ -8,6 +8,7 @@
 #include <vector>
 #include <unordered_map>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <memory>
 #include <cstring>
@@ -170,35 +171,27 @@ namespace vkBasalt
         return state;
     }
 
-    void reallocateCommandBuffers(
-        LogicalDevice* pLogicalDevice,
-        LogicalSwapchain* pLogicalSwapchain,
-        const DepthState& depth)
+    EffectCollectionBuildSpec captureEffectCollectionBuildSpec(
+        LogicalSwapchain* pLogicalSwapchain, Config* pBuildSource,
+        const std::vector<std::string>& orderedEffects, const DepthState& depth)
     {
-        if (!pLogicalSwapchain->commandBuffersEffect.empty())
-        {
-            pLogicalDevice->vkd.FreeCommandBuffers(
-                pLogicalDevice->device, pLogicalDevice->commandPool,
-                pLogicalSwapchain->commandBuffersEffect.size(),
-                pLogicalSwapchain->commandBuffersEffect.data());
-        }
-        if (!pLogicalSwapchain->commandBuffersNoEffect.empty())
-        {
-            pLogicalDevice->vkd.FreeCommandBuffers(
-                pLogicalDevice->device, pLogicalDevice->commandPool,
-                pLogicalSwapchain->commandBuffersNoEffect.size(),
-                pLogicalSwapchain->commandBuffersNoEffect.data());
-        }
-
-        pLogicalSwapchain->commandBuffersEffect = allocateCommandBuffer(pLogicalDevice, pLogicalSwapchain->imageCount);
-        writeCommandBuffers(pLogicalDevice, pLogicalSwapchain->effects,
-                           depth.image, depth.imageView, depth.format,
-                           pLogicalSwapchain->commandBuffersEffect);
-
-        pLogicalSwapchain->commandBuffersNoEffect = allocateCommandBuffer(pLogicalDevice, pLogicalSwapchain->imageCount);
-        writeCommandBuffers(pLogicalDevice, {pLogicalSwapchain->defaultTransfer},
-                           VK_NULL_HANDLE, VK_NULL_HANDLE, VK_FORMAT_UNDEFINED,
-                           pLogicalSwapchain->commandBuffersNoEffect);
+        EffectCollectionBuildSpec spec;
+        spec.orderedActiveEffects = orderedEffects;
+        spec.configRevision = pBuildSource->getBuildStateRevision();
+        spec.configState = pBuildSource->getBuildStateSignature();
+        spec.registryRevision = effectRegistry.getBuildStateRevision();
+        spec.registryState = effectRegistry.getBuildStateSignature(orderedEffects);
+        spec.format = pLogicalSwapchain->format;
+        spec.colorSpace = pLogicalSwapchain->swapchainCreateInfo.imageColorSpace;
+        spec.extent = pLogicalSwapchain->imageExtent;
+        spec.imageCount = pLogicalSwapchain->imageCount;
+        spec.maxEffectSlots = pLogicalSwapchain->maxEffectSlots;
+        spec.realImages = pLogicalSwapchain->images;
+        spec.intermediateImages = pLogicalSwapchain->fakeImages;
+        spec.depthImage = depth.image;
+        spec.depthView = depth.imageView;
+        spec.depthFormat = depth.format;
+        return spec;
     }
 
     static std::string detectedGameName;
@@ -423,38 +416,99 @@ namespace vkBasalt
             return false;
         }
 
+        const std::vector<VkImage> existingImages = pLogicalSwapchain->fakeImages;
         pLogicalSwapchain->fakeImageMemory.push_back(block);
         pLogicalSwapchain->fakeImages.insert(pLogicalSwapchain->fakeImages.end(), grown.begin(), grown.end());
+        if (!appendOnlyHandleGrowthPreservesPrefix(existingImages, pLogicalSwapchain->fakeImages))
+        {
+            Logger::err("effect image-pool growth changed an existing image handle prefix");
+            for (VkImage image : grown)
+                pLogicalDevice->vkd.DestroyImage(pLogicalDevice->device, image, nullptr);
+            freeTrackedMemory(pLogicalDevice, block, nullptr);
+            pLogicalSwapchain->fakeImages = existingImages;
+            pLogicalSwapchain->fakeImageMemory.pop_back();
+            return false;
+        }
         pLogicalSwapchain->maxEffectSlots = neededSlots;
 
         Logger::debug("grew the effect image pool to " + std::to_string(neededSlots) + " slots");
         return true;
     }
 
-    void createEffectsForSwapchain(
+    struct EffectImagePoolCheckpoint
+    {
+        size_t imageCount = 0;
+        size_t memoryBlockCount = 0;
+        size_t maxEffectSlots = 0;
+        std::vector<VkImage> imagePrefix;
+    };
+
+    EffectImagePoolCheckpoint checkpointEffectImagePool(const LogicalSwapchain* pLogicalSwapchain)
+    {
+        return {
+            pLogicalSwapchain->fakeImages.size(),
+            pLogicalSwapchain->fakeImageMemory.size(),
+            pLogicalSwapchain->maxEffectSlots,
+            pLogicalSwapchain->fakeImages,
+        };
+    }
+
+    void rollbackEffectImagePool(
+        LogicalDevice* pLogicalDevice, LogicalSwapchain* pLogicalSwapchain,
+        const EffectImagePoolCheckpoint& checkpoint)
+    {
+        for (size_t i = checkpoint.imageCount; i < pLogicalSwapchain->fakeImages.size(); ++i)
+            pLogicalDevice->vkd.DestroyImage(
+                pLogicalDevice->device, pLogicalSwapchain->fakeImages[i], nullptr);
+        for (size_t i = checkpoint.memoryBlockCount; i < pLogicalSwapchain->fakeImageMemory.size(); ++i)
+            freeTrackedMemory(pLogicalDevice, pLogicalSwapchain->fakeImageMemory[i], nullptr);
+
+        pLogicalSwapchain->fakeImages.resize(checkpoint.imageCount);
+        pLogicalSwapchain->fakeImageMemory.resize(checkpoint.memoryBlockCount);
+        pLogicalSwapchain->maxEffectSlots = checkpoint.maxEffectSlots;
+        if (pLogicalSwapchain->fakeImages != checkpoint.imagePrefix)
+            Logger::err("transaction rollback did not restore the original effect image handles");
+        Logger::info("transaction rollback restored effect image pool to "
+                     + std::to_string(checkpoint.maxEffectSlots) + " slots");
+    }
+
+    bool consumeTransactionFault(const std::string& stage)
+    {
+        const char* configured = std::getenv("VKBASALT_TEST_TRANSACTION_FAIL_STAGE");
+        if (configured == nullptr || stage != configured)
+            return false;
+
+        static std::set<std::string> consumedStages;
+        if (consumedStages.contains(stage))
+            return false;
+        consumedStages.insert(stage);
+        Logger::warn("test fault injection at transaction stage: " + stage);
+        return true;
+    }
+
+    EffectCreationSummary createEffectsForSwapchain(
         LogicalSwapchain* pLogicalSwapchain,
         LogicalDevice* pLogicalDevice,
         Config* pConfig,
+        EffectCollection* pCollection,
         const std::vector<std::string>& effectStrings,
-        bool checkEnabledState = true)
+        bool checkEnabledState,
+        bool disableFailedEffects)
     {
         VkFormat unormFormat = convertToUNORM(pLogicalSwapchain->format);
         VkFormat srgbFormat = convertToSRGB(pLogicalSwapchain->format);
+        EffectCreationSummary summary;
+        summary.requestedEffects = effectStrings.size();
 
         if (effectStrings.empty())
         {
             std::vector<VkImage> firstImages(pLogicalSwapchain->fakeImages.begin(),
                                              pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount);
-            pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new TransferEffect(
+            pCollection->effects.push_back(std::shared_ptr<Effect>(new TransferEffect(
                 pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent,
                 firstImages, pLogicalSwapchain->images, pConfig)));
-            return;
+            return summary;
         }
-
-        // ReShade shares matching generated texture names across the effects
-        // in one runtime. Keep that ownership local to this swapchain's current
-        // effect collection so separate swapchains cannot collide.
-        const auto sharedTexturePool = std::make_shared<SharedReshadeTexturePool>(pLogicalDevice);
 
         for (uint32_t i = 0; i < effectStrings.size(); i++)
         {
@@ -483,7 +537,8 @@ namespace vkBasalt
             if (effectFailed || effectDisabled)
             {
                 Logger::debug("effect " + std::string(effectFailed ? "failed" : "disabled") + ", using pass-through: " + effectStrings[i]);
-                pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
+                ++summary.fallbackEffects;
+                pCollection->effects.push_back(std::shared_ptr<Effect>(
                     new TransferEffect(pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
                 continue;
             }
@@ -507,124 +562,463 @@ namespace vkBasalt
 
                 try
                 {
+                    ScopedAssertVulkanFailure failFast;
                     VkFormat format = def->usesSrgbFormat ? srgbFormat : unormFormat;
-                    pLogicalSwapchain->effects.push_back(
+                    pCollection->effects.push_back(
                         def->factory(pLogicalDevice, format, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig));
+                    ++summary.constructedRequestedEffects;
                 }
                 catch (const std::exception& e)
                 {
                     Logger::err("Failed to create built-in effect " + effectStrings[i] + ": " + e.what());
-                    effectRegistry.setEffectError(effectStrings[i], e.what());
-                    pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
+                    if (disableFailedEffects)
+                        effectRegistry.setEffectError(effectStrings[i], e.what());
+                    ++summary.fallbackEffects;
+                    pCollection->effects.push_back(std::shared_ptr<Effect>(
                         new TransferEffect(pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
                 }
             }
             else
             {
                 std::string effectPath = effectRegistry.getEffectFilePath(effectStrings[i]);
-                auto customDefs = effectRegistry.getPreprocessorDefs(effectStrings[i]);
+                auto customDefs = effectRegistry.getCompilePreprocessorDefs(effectStrings[i]);
 
-                installCrashHandlers();
-                bool signalCrash = false;
-                if (sigsetjmp(crashJmpBuf, 1) != 0)
+                try
                 {
-                    crashJmpActive = 0;
-                    signalCrash = true;
-                    std::string sigName = (crashCaughtSignal == SIGFPE) ? "SIGFPE" : "SIGABRT";
-                    Logger::err("Caught " + sigName + " creating ReshadeEffect " + effectStrings[i]);
-                    effectRegistry.setEffectError(effectStrings[i], sigName + " during shader compilation");
-                    pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
-                        new TransferEffect(pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
+                    ScopedAssertVulkanFailure failFast;
+                    pCollection->effects.push_back(std::shared_ptr<Effect>(new ReshadeEffect(
+                        pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent,
+                        pLogicalSwapchain->swapchainCreateInfo.imageColorSpace,
+                        firstImages, secondImages, &effectRegistry, pCollection->sharedTexturePool,
+                        effectStrings[i], effectPath, customDefs)));
+                    ++summary.constructedRequestedEffects;
                 }
-
-                if (!signalCrash)
+                catch (const std::exception& e)
                 {
-                    crashJmpActive = 1;
-                    try
-                    {
-                        pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new ReshadeEffect(
-                            pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent,
-                            pLogicalSwapchain->swapchainCreateInfo.imageColorSpace,
-                            firstImages, secondImages, &effectRegistry, sharedTexturePool,
-                            effectStrings[i], effectPath, customDefs)));
-                    }
-                    catch (const std::exception& e)
-                    {
-                        Logger::err("Failed to create ReshadeEffect " + effectStrings[i] + ": " + e.what());
+                    Logger::err("Failed to create ReshadeEffect " + effectStrings[i] + ": " + e.what());
+                    if (disableFailedEffects)
                         effectRegistry.setEffectError(effectStrings[i], e.what());
-                        pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
-                            new TransferEffect(pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
-                    }
-                    crashJmpActive = 0;
+                    ++summary.fallbackEffects;
+                    pCollection->effects.push_back(std::shared_ptr<Effect>(
+                        new TransferEffect(pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
                 }
             }
         }
 
         if (!pLogicalDevice->supportsMutableFormat)
         {
-            pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new TransferEffect(
+            pCollection->effects.push_back(std::shared_ptr<Effect>(new TransferEffect(
                 pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent,
                 std::vector<VkImage>(pLogicalSwapchain->fakeImages.end() - pLogicalSwapchain->imageCount, pLogicalSwapchain->fakeImages.end()),
                 pLogicalSwapchain->images, pConfig)));
         }
+
+        return summary;
     }
 
-    void reloadEffectsForSwapchain(LogicalSwapchain* pLogicalSwapchain, Config* pConfig,
-                                   const std::vector<std::string>& activeEffects = {})
+    std::vector<VkFence> createSignaledEffectFences(
+        LogicalDevice* pLogicalDevice, uint32_t count)
+    {
+        std::vector<VkFence> fences(count, VK_NULL_HANDLE);
+        VkFenceCreateInfo fenceInfo = {};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            const VkResult result = pLogicalDevice->vkd.CreateFence(
+                pLogicalDevice->device, &fenceInfo, nullptr, &fences[i]);
+            if (result != VK_SUCCESS)
+            {
+                Logger::err("failed to create effect-collection fence " + std::to_string(i)
+                            + ": " + std::to_string(result));
+                for (VkFence created : fences)
+                {
+                    if (created != VK_NULL_HANDLE)
+                        pLogicalDevice->vkd.DestroyFence(
+                            pLogicalDevice->device, created, nullptr);
+                }
+                return {};
+            }
+        }
+        return fences;
+    }
+
+    std::unique_ptr<EffectCollection> buildEffectCollection(
+        LogicalSwapchain* pLogicalSwapchain,
+        Config* pConfig,
+        const std::vector<std::string>& effectStrings,
+        bool requireComplete)
     {
         LogicalDevice* pLogicalDevice = pLogicalSwapchain->pLogicalDevice;
+        auto collection = std::make_unique<EffectCollection>(pLogicalDevice);
+        collection->generation = pLogicalSwapchain->nextEffectCollectionGeneration++;
+        const DepthState depth = getDepthState(pLogicalDevice);
+        collection->buildSpec = captureEffectCollectionBuildSpec(
+            pLogicalSwapchain, pConfig, effectStrings, depth);
+        collection->configSnapshot = std::make_shared<Config>(*pConfig);
+        collection->sharedTexturePool =
+            std::make_shared<SharedReshadeTexturePool>(pLogicalDevice);
+        Config* pBuildConfig = collection->configSnapshot.get();
 
-        // Only the layer's own passes touch what is about to be destroyed. Draining the whole queue
-        // also waits out the application's next frame, measured at 45 percent of the wait.
-        std::vector<VkFence> pending;
-        for (VkFence fence : pLogicalSwapchain->effectFences)
-            if (fence != VK_NULL_HANDLE)
-                pending.push_back(fence);
-
-        const uint64_t reloadWaitNs = 2'000'000'000ull;
-        if (pending.empty()
-            || pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, pending.size(), pending.data(), VK_TRUE, reloadWaitNs)
-                   != VK_SUCCESS)
+        const EffectCreationSummary creation = createEffectsForSwapchain(
+            pLogicalSwapchain, pLogicalDevice, pBuildConfig, collection.get(),
+            effectStrings, false, !requireComplete);
+        if (requireComplete && !creation.allRequestedEffectsConstructed())
         {
-            pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
+            Logger::err("effect collection generation " + std::to_string(collection->generation)
+                        + " was incomplete; retaining the live collection");
+            return nullptr;
         }
+        if (requireComplete && consumeTransactionFault("after-effects"))
+            return nullptr;
 
-        pLogicalSwapchain->effects.clear();
-        pLogicalSwapchain->defaultTransfer.reset();
-
-        std::vector<std::string> effectStrings = activeEffects;
-
-        if (effectStrings.size() > pLogicalSwapchain->maxEffectSlots
-            && !growFakeSwapchainImages(pLogicalDevice, pLogicalSwapchain, effectStrings.size()))
-        {
-            effectStrings.resize(pLogicalSwapchain->maxEffectSlots);
-        }
-
-        Logger::info("reloading " + std::to_string(effectStrings.size()) + " effects");
-
-        createEffectsForSwapchain(pLogicalSwapchain, pLogicalDevice, pConfig, effectStrings, true);
-
-        pLogicalSwapchain->defaultTransfer = std::shared_ptr<Effect>(new TransferEffect(
+        collection->defaultTransfer = std::shared_ptr<Effect>(new TransferEffect(
             pLogicalDevice,
             pLogicalSwapchain->format,
             pLogicalSwapchain->imageExtent,
-            std::vector<VkImage>(pLogicalSwapchain->fakeImages.begin(), pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount),
+            std::vector<VkImage>(
+                pLogicalSwapchain->fakeImages.begin(),
+                pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount),
             pLogicalSwapchain->images,
-            pConfig));
+            pBuildConfig));
 
-        DepthState depth = getDepthState(pLogicalDevice);
-        reallocateCommandBuffers(pLogicalDevice, pLogicalSwapchain, depth);
+        collection->commandBuffersEffect = allocateCommandBuffer(
+            pLogicalDevice, pLogicalSwapchain->imageCount);
+        if (collection->commandBuffersEffect.size() != pLogicalSwapchain->imageCount
+            || writeCommandBuffers(
+                pLogicalDevice, collection->effects,
+                depth.image, depth.imageView, depth.format,
+                collection->commandBuffersEffect) != VK_SUCCESS)
+        {
+            Logger::err("effect collection generation " + std::to_string(collection->generation)
+                        + " could not record its effect command buffers");
+            return nullptr;
+        }
 
-        Logger::info("effects reloaded successfully");
+        collection->commandBuffersNoEffect = allocateCommandBuffer(
+            pLogicalDevice, pLogicalSwapchain->imageCount);
+        if (collection->commandBuffersNoEffect.size() != pLogicalSwapchain->imageCount
+            || writeCommandBuffers(
+                pLogicalDevice, {collection->defaultTransfer},
+                VK_NULL_HANDLE, VK_NULL_HANDLE, VK_FORMAT_UNDEFINED,
+                collection->commandBuffersNoEffect) != VK_SUCCESS)
+        {
+            Logger::err("effect collection generation " + std::to_string(collection->generation)
+                        + " could not record its bypass command buffers");
+            return nullptr;
+        }
+        if (requireComplete && consumeTransactionFault("after-command-recording"))
+            return nullptr;
+
+        collection->fences = createSignaledEffectFences(
+            pLogicalDevice, pLogicalSwapchain->imageCount);
+        collection->submissionsInFlight.assign(collection->fences.size(), false);
+        if (requireComplete && consumeTransactionFault("after-fence-creation"))
+            return nullptr;
+
+        const size_t nullFences = static_cast<size_t>(std::count(
+            collection->fences.begin(), collection->fences.end(), VK_NULL_HANDLE));
+        const bool allEffectsPresent = std::all_of(
+            collection->effects.begin(), collection->effects.end(),
+            [](const std::shared_ptr<Effect>& effect) { return effect != nullptr; });
+        const EffectCollectionReadiness readiness{
+            creation.requestedEffects,
+            creation.constructedRequestedEffects,
+            creation.fallbackEffects,
+            collection->effects.size(),
+            collection->commandBuffersEffect.size(),
+            collection->commandBuffersNoEffect.size(),
+            collection->fences.size(),
+            nullFences,
+            pLogicalSwapchain->imageCount,
+            collection->defaultTransfer != nullptr,
+        };
+        if (!allEffectsPresent
+            || !effectCollectionUsable(readiness, requireComplete)
+            || !collection->hasCompleteSubmissionTracking(pLogicalSwapchain->imageCount))
+        {
+            Logger::err("effect collection generation " + std::to_string(collection->generation)
+                        + " failed its usability/submission-tracking contract");
+            return nullptr;
+        }
+        return collection;
     }
 
-    void reloadAllSwapchains(LogicalDevice* pLogicalDevice, const std::vector<std::string>& activeEffects)
+    void collectRetiredEffectCollections(LogicalSwapchain* pLogicalSwapchain)
     {
+        auto& retired = pLogicalSwapchain->retiredEffectCollections;
+        for (auto it = retired.begin(); it != retired.end();)
+        {
+            const EffectCollectionRetirementStatus status = (*it)->retirementStatus();
+            if (status == EffectCollectionRetirementStatus::Ready)
+            {
+                Logger::debug("retiring completed effect collection generation "
+                              + std::to_string((*it)->generation));
+                it = retired.erase(it);
+            }
+            else
+            {
+                if (status == EffectCollectionRetirementStatus::Error)
+                    Logger::err("could not query retired effect-collection fences");
+                ++it;
+            }
+        }
+    }
+
+    bool replacementOwnershipIsDisjoint(
+        const LogicalSwapchain* target, const EffectCollection* replacement)
+    {
+        if (replacement == nullptr || replacement->sharedTexturePool == nullptr
+            || !replacement->hasCompleteSubmissionTracking(target->imageCount))
+            return false;
+
+        const auto disjointFrom = [&](const std::unique_ptr<EffectCollection>& other) {
+            return !other
+                || (replacement->sharedTexturePool.get() != other->sharedTexturePool.get()
+                    && handleSetsDisjoint(replacement->fences, other->fences));
+        };
+        if (!disjointFrom(target->activeEffectCollection))
+            return false;
+        for (const auto& retired : target->retiredEffectCollections)
+        {
+            if (!disjointFrom(retired))
+                return false;
+        }
+        for (const auto& [_, swapchain] : swapchainMap)
+        {
+            if (!swapchain || swapchain.get() == target
+                || swapchain->pLogicalDevice != target->pLogicalDevice)
+                continue;
+            if (!disjointFrom(swapchain->activeEffectCollection))
+                return false;
+            for (const auto& retired : swapchain->retiredEffectCollections)
+            {
+                if (!disjointFrom(retired))
+                    return false;
+            }
+        }
+        return true;
+    }
+
+    enum class EffectCollectionPublishResult
+    {
+        Published,
+        Stale,
+        Invalid,
+    };
+
+    EffectCollectionPublishResult publishEffectCollection(
+        LogicalSwapchain* pLogicalSwapchain, Config* pBuildSource,
+        std::unique_ptr<EffectCollection> replacement)
+    {
+        if (!replacementOwnershipIsDisjoint(pLogicalSwapchain, replacement.get()))
+        {
+            Logger::err("refusing to publish an effect collection with incomplete or shared ownership");
+            return EffectCollectionPublishResult::Invalid;
+        }
+
+        const std::vector<std::string> desiredEffects = activeEffectNames();
+        const EffectCollectionBuildSpec desiredSpec = captureEffectCollectionBuildSpec(
+            pLogicalSwapchain, pBuildSource, desiredEffects,
+            getDepthState(pLogicalSwapchain->pLogicalDevice));
+        if (replacement->buildSpec != desiredSpec)
+        {
+            Logger::warn("discarding stale effect collection generation "
+                         + std::to_string(replacement->generation)
+                         + "; desired build inputs changed before publication");
+            return EffectCollectionPublishResult::Stale;
+        }
+
+        const uint64_t generation = replacement->generation;
+        commitReplacementPreservingLastGood(
+            pLogicalSwapchain->activeEffectCollection,
+            pLogicalSwapchain->retiredEffectCollections,
+            std::move(replacement));
+        Logger::info("published effect collection generation " + std::to_string(generation));
+        collectRetiredEffectCollections(pLogicalSwapchain);
+        return EffectCollectionPublishResult::Published;
+    }
+
+    bool reloadEffectsForSwapchain(
+        LogicalSwapchain* pLogicalSwapchain, Config* pConfig,
+        const std::vector<std::string>& activeEffects = {}, uint32_t staleRetry = 0)
+    {
+        LogicalDevice* pLogicalDevice = pLogicalSwapchain->pLogicalDevice;
+        collectRetiredEffectCollections(pLogicalSwapchain);
+        EffectCollection* const lastGood =
+            pLogicalSwapchain->activeEffectCollection.get();
+        const uint64_t lastGoodGeneration = lastGood ? lastGood->generation : 0;
+        const VkDeviceSize stagingMemoryBaseline = trackedMemoryBytes();
+        const auto proveLastGoodSurvived = [&] {
+            const bool survived =
+                pLogicalSwapchain->activeEffectCollection.get() == lastGood;
+            if (survived)
+            {
+                Logger::info("last-good effect collection generation "
+                             + std::to_string(lastGoodGeneration)
+                             + " remains active after failed rebuild");
+            }
+            else
+            {
+                Logger::err("failed rebuild changed the active effect collection");
+            }
+            return survived;
+        };
+        const auto proveStagingMemoryRolledBack = [&] {
+            const VkDeviceSize current = trackedMemoryBytes();
+            if (current == stagingMemoryBaseline)
+            {
+                Logger::info("staged effect memory returned to the pre-transaction baseline");
+                return true;
+            }
+            if (current > stagingMemoryBaseline)
+            {
+                Logger::err("failed transaction leaked "
+                            + std::to_string(current - stagingMemoryBaseline)
+                            + " bytes of tracked effect memory");
+            }
+            else
+            {
+                Logger::err("failed transaction released memory owned by the active generation");
+            }
+            return false;
+        };
+
+        const EffectImagePoolCheckpoint imagePoolCheckpoint =
+            checkpointEffectImagePool(pLogicalSwapchain);
+        const bool needsGrowth = activeEffects.size() > pLogicalSwapchain->maxEffectSlots;
+
+        if (needsGrowth && consumeTransactionFault("image-growth-oom"))
+            failNextTrackedAllocationForTest();
+        if (needsGrowth
+            && !growFakeSwapchainImages(
+                pLogicalDevice, pLogicalSwapchain, activeEffects.size()))
+        {
+            clearTrackedAllocationFailureForTest();
+            Logger::err("effect collection transaction could not reserve image slots; previous generation remains live");
+            proveLastGoodSurvived();
+            proveStagingMemoryRolledBack();
+            Logger::err("effect collection transaction aborted; previous generation remains live");
+            return false;
+        }
+        if (needsGrowth && consumeTransactionFault("after-image-growth"))
+        {
+            rollbackEffectImagePool(pLogicalDevice, pLogicalSwapchain, imagePoolCheckpoint);
+            proveLastGoodSurvived();
+            proveStagingMemoryRolledBack();
+            Logger::err("effect collection transaction aborted; previous generation remains live");
+            return false;
+        }
+        if (consumeTransactionFault("effect-allocation-oom"))
+        {
+            uint32_t allocationOrdinal = 1;
+            const char* configuredOrdinal =
+                std::getenv("VKBASALT_TEST_TRANSACTION_ALLOCATION_FAIL_INDEX");
+            if (configuredOrdinal != nullptr && *configuredOrdinal != '\0')
+            {
+                char* end = nullptr;
+                const unsigned long parsed = std::strtoul(
+                    configuredOrdinal, &end, 10);
+                if (end != configuredOrdinal && *end == '\0'
+                    && parsed > 0 && parsed <= UINT32_MAX)
+                    allocationOrdinal = static_cast<uint32_t>(parsed);
+            }
+            failTrackedAllocationForTest(allocationOrdinal);
+            Logger::warn("test fault injection will fail tracked staging allocation #"
+                         + std::to_string(allocationOrdinal));
+        }
+
+        Logger::info("transactionally rebuilding "
+                     + std::to_string(activeEffects.size()) + " effects");
+        const uint64_t startingConfigRevision = pConfig->getBuildStateRevision();
+        const std::string startingConfigState = pConfig->getBuildStateSignature();
+        const uint64_t startingRegistryRevision = effectRegistry.getBuildStateRevision();
+        std::unique_ptr<EffectCollection> replacement;
+        try
+        {
+            replacement = buildEffectCollection(
+                pLogicalSwapchain, pConfig, activeEffects, true);
+        }
+        catch (const std::exception& e)
+        {
+            Logger::err("effect collection staging threw: " + std::string(e.what()));
+        }
+        catch (...)
+        {
+            Logger::err("effect collection staging threw an unknown error");
+        }
+        clearTrackedAllocationFailureForTest();
+
+        if (!replacement)
+        {
+            if (needsGrowth)
+                rollbackEffectImagePool(pLogicalDevice, pLogicalSwapchain, imagePoolCheckpoint);
+            const bool desiredStateChanged =
+                pConfig->getBuildStateRevision() != startingConfigRevision
+                || pConfig->getBuildStateSignature() != startingConfigState
+                || effectRegistry.getBuildStateRevision() != startingRegistryRevision;
+            if (desiredStateChanged && staleRetry < 2)
+            {
+                proveLastGoodSurvived();
+                proveStagingMemoryRolledBack();
+                return reloadEffectsForSwapchain(
+                    pLogicalSwapchain, pConfig, activeEffectNames(), staleRetry + 1);
+            }
+            proveLastGoodSurvived();
+            proveStagingMemoryRolledBack();
+            Logger::err("effect collection transaction aborted; previous generation remains live");
+            return false;
+        }
+
+        const char* staleBuildTest = std::getenv("VKBASALT_TEST_TRANSACTION_STALE_ONCE");
+        static bool staleBuildTestConsumed = false;
+        if (!staleBuildTestConsumed && staleBuildTest != nullptr
+            && std::string(staleBuildTest) == "1")
+        {
+            staleBuildTestConsumed = true;
+            pConfig->setOverride("__vkbasalt_test_build_spec_revision", "1");
+            Logger::warn("test fault injection changed desired config state before publication");
+        }
+
+        const EffectCollectionPublishResult result = publishEffectCollection(
+            pLogicalSwapchain, pConfig, std::move(replacement));
+        if (result != EffectCollectionPublishResult::Published)
+        {
+            if (needsGrowth)
+                rollbackEffectImagePool(pLogicalDevice, pLogicalSwapchain, imagePoolCheckpoint);
+            if (result == EffectCollectionPublishResult::Stale && staleRetry < 2)
+            {
+                proveLastGoodSurvived();
+                proveStagingMemoryRolledBack();
+                Logger::info("restarting transaction from the newest desired state");
+                return reloadEffectsForSwapchain(
+                    pLogicalSwapchain, pConfig, activeEffectNames(), staleRetry + 1);
+            }
+            proveLastGoodSurvived();
+            proveStagingMemoryRolledBack();
+            Logger::err("effect collection transaction aborted at publication; previous generation remains live");
+            return false;
+        }
+        Logger::info("effect collection transaction committed successfully");
+        return true;
+    }
+
+    bool reloadAllSwapchains(
+        LogicalDevice* pLogicalDevice, const std::vector<std::string>& activeEffects)
+    {
+        bool allSucceeded = true;
         for (auto& [_, pLogicalSwapchain] : swapchainMap)
         {
-            if (!pLogicalSwapchain->fakeImages.empty())
-                reloadEffectsForSwapchain(pLogicalSwapchain.get(), pConfig.get(), activeEffects);
+            if (pLogicalSwapchain->pLogicalDevice == pLogicalDevice
+                && !pLogicalSwapchain->fakeImages.empty())
+            {
+                allSucceeded = reloadEffectsForSwapchain(
+                    pLogicalSwapchain.get(), pConfig.get(), activeEffects)
+                    && allSucceeded;
+            }
         }
+        return allSucceeded;
     }
 
     void updateOverlayState(LogicalDevice* pLogicalDevice, bool effectsEnabled)
@@ -1034,6 +1428,24 @@ namespace vkBasalt
 
         LogicalDevice* pLogicalDevice = deviceMap[GetKey(device)].get();
 
+        // Establish completion once before releasing any swapchain generation,
+        // overlay resource, depth view, or the shared command pool. Vulkan apps
+        // normally destroy swapchains first, but device teardown must not rely
+        // on that convention for generation-owned command buffers.
+        pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
+        for (auto it = swapchainMap.begin(); it != swapchainMap.end();)
+        {
+            if (it->second && it->second->pLogicalDevice == pLogicalDevice)
+            {
+                it->second->destroy(true);
+                it = swapchainMap.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+
         pLogicalDevice->imguiOverlay.reset();
 
         for (const auto& depthImage : pLogicalDevice->depthImages)
@@ -1290,82 +1702,46 @@ namespace vkBasalt
             return *pCount < pLogicalSwapchain->imageCount ? VK_INCOMPLETE : VK_SUCCESS;
         }
 
+        std::vector<std::string> initialEffects = activeEffects;
         if (!isFirstRun && !activeEffects.empty())
         {
             Logger::debug("using pass-through during resize, will restore effects after debounce");
-            std::vector<VkImage> firstImages(pLogicalSwapchain->fakeImages.begin(),
-                                             pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount);
-            pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new TransferEffect(
-                pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent,
-                firstImages, pLogicalSwapchain->images, pConfig.get())));
-
+            initialEffects.clear();
             resizeDebounce.pending = true;
             resizeDebounce.lastResizeTime = std::chrono::steady_clock::now();
-        }
-        else
-        {
-            createEffectsForSwapchain(pLogicalSwapchain, pLogicalDevice, pConfig.get(), activeEffects, false);
-        }
-
-        DepthState depth = getDepthState(pLogicalDevice);
-
-        Logger::debug("active effect count: " + std::to_string(activeEffects.size()));
-        Logger::debug("effect count: " + std::to_string(pLogicalSwapchain->effects.size()));
-
-        pLogicalSwapchain->commandBuffersEffect = allocateCommandBuffer(pLogicalDevice, pLogicalSwapchain->imageCount);
-        Logger::debug("allocated ComandBuffers " + std::to_string(pLogicalSwapchain->commandBuffersEffect.size()) + " for swapchain "
-                      + convertToString(swapchain));
-
-        writeCommandBuffers(
-            pLogicalDevice, pLogicalSwapchain->effects, depth.image, depth.imageView, depth.format, pLogicalSwapchain->commandBuffersEffect);
-        Logger::debug("wrote CommandBuffers");
-
-        pLogicalSwapchain->effectFences.resize(pLogicalSwapchain->imageCount);
-        {
-            VkFenceCreateInfo fenceInfo = {};
-            fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-            fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-            for (uint32_t i = 0; i < pLogicalSwapchain->imageCount; i++)
-            {
-                if (pLogicalDevice->vkd.CreateFence(pLogicalDevice->device, &fenceInfo, nullptr,
-                                                    &pLogicalSwapchain->effectFences[i]) != VK_SUCCESS)
-                {
-                    Logger::err("failed to create effect fence " + std::to_string(i));
-                    pLogicalSwapchain->effectFences[i] = VK_NULL_HANDLE;
-                }
-            }
         }
 
         pLogicalSwapchain->semaphores = createSemaphores(pLogicalDevice, pLogicalSwapchain->imageCount);
         pLogicalSwapchain->overlaySemaphores = createSemaphores(pLogicalDevice, pLogicalSwapchain->imageCount);
         Logger::debug("created semaphores");
-        for (unsigned int i = 0; i < pLogicalSwapchain->imageCount; i++)
+
+        try
         {
-            Logger::debug(std::to_string(i) + " written commandbuffer " + convertToString(pLogicalSwapchain->commandBuffersEffect[i]));
+            pLogicalSwapchain->activeEffectCollection = buildEffectCollection(
+                pLogicalSwapchain, pConfig.get(), initialEffects, false);
         }
+        catch (const std::exception& e)
+        {
+            Logger::err("initial effect collection construction failed: " + std::string(e.what()));
+        }
+        if (!pLogicalSwapchain->activeEffectCollection)
+        {
+            Logger::err("could not construct a usable initial effect collection; passing real swapchain images through");
+            for (VkImage image : pLogicalSwapchain->fakeImages)
+                pLogicalDevice->vkd.DestroyImage(pLogicalDevice->device, image, nullptr);
+            for (VkDeviceMemory memory : pLogicalSwapchain->fakeImageMemory)
+                freeTrackedMemory(pLogicalDevice, memory, nullptr);
+            pLogicalSwapchain->fakeImages.clear();
+            pLogicalSwapchain->fakeImageMemory.clear();
+            *pCount = std::min<uint32_t>(*pCount, pLogicalSwapchain->imageCount);
+            std::memcpy(pSwapchainImages, pLogicalSwapchain->images.data(), sizeof(VkImage) * (*pCount));
+            return *pCount < pLogicalSwapchain->imageCount ? VK_INCOMPLETE : VK_SUCCESS;
+        }
+
+        Logger::debug("active effect count: " + std::to_string(initialEffects.size()));
+        Logger::debug("effect object count: "
+                      + std::to_string(pLogicalSwapchain->activeEffectCollection->effects.size()));
         Logger::trace("vkGetSwapchainImagesKHR");
-
-        pLogicalSwapchain->defaultTransfer = std::shared_ptr<Effect>(new TransferEffect(
-            pLogicalDevice,
-            pLogicalSwapchain->format,
-            pLogicalSwapchain->imageExtent,
-            std::vector<VkImage>(pLogicalSwapchain->fakeImages.begin(), pLogicalSwapchain->fakeImages.begin() + pLogicalSwapchain->imageCount),
-            pLogicalSwapchain->images,
-            pConfig.get()));
-
-        pLogicalSwapchain->commandBuffersNoEffect = allocateCommandBuffer(pLogicalDevice, pLogicalSwapchain->imageCount);
-
-        writeCommandBuffers(pLogicalDevice,
-                            {pLogicalSwapchain->defaultTransfer},
-                            VK_NULL_HANDLE,
-                            VK_NULL_HANDLE,
-                            VK_FORMAT_UNDEFINED,
-                            pLogicalSwapchain->commandBuffersNoEffect);
-
-        for (unsigned int i = 0; i < pLogicalSwapchain->imageCount; i++)
-        {
-            Logger::debug(std::to_string(i) + " written commandbuffer " + convertToString(pLogicalSwapchain->commandBuffersNoEffect[i]));
-        }
 
         if (!pLogicalDevice->imguiOverlay)
         {
@@ -1445,6 +1821,7 @@ namespace vkBasalt
             presentEffect = !presentEffect;
 
         bool shouldReload = false;
+        std::vector<std::string> testActiveEffectOverride;
         if (handleKeyPress(reloadKeySymbol, reloadPressed))
         {
             Logger::debug("reload key pressed");
@@ -1453,6 +1830,55 @@ namespace vkBasalt
         if (pConfig->hasConfigChanged())
         {
             Logger::debug("config file changed detected");
+            shouldReload = true;
+        }
+
+        static const uint64_t testTransactionReloadEvery = [] {
+            const char* value = std::getenv("VKBASALT_TEST_TRANSACTION_RELOAD_EVERY");
+            if (value == nullptr || *value == '\0')
+                return uint64_t{0};
+            char* end = nullptr;
+            const unsigned long long parsed = std::strtoull(value, &end, 10);
+            return end != value && *end == '\0'
+                ? static_cast<uint64_t>(parsed) : uint64_t{0};
+        }();
+        static const std::vector<std::vector<std::string>> testEffectSequence = [] {
+            std::vector<std::vector<std::string>> result;
+            const char* value = std::getenv("VKBASALT_TEST_TRANSACTION_EFFECT_SEQUENCE");
+            if (value == nullptr || *value == '\0')
+                return result;
+
+            std::stringstream collections(value);
+            std::string collectionValue;
+            while (std::getline(collections, collectionValue, ';'))
+            {
+                std::vector<std::string> collection;
+                std::stringstream names(collectionValue);
+                std::string name;
+                while (std::getline(names, name, ':'))
+                {
+                    if (!name.empty())
+                        collection.push_back(name);
+                }
+                if (!collection.empty())
+                    result.push_back(std::move(collection));
+            }
+            return result;
+        }();
+        static uint64_t testPresentCycle = 0;
+        static size_t testEffectSequenceIndex = 1;
+        ++testPresentCycle;
+        if (testTransactionReloadEvery != 0
+            && testPresentCycle % testTransactionReloadEvery == 0)
+        {
+            if (!testEffectSequence.empty())
+            {
+                testActiveEffectOverride = testEffectSequence[
+                    testEffectSequenceIndex % testEffectSequence.size()];
+                ++testEffectSequenceIndex;
+            }
+            Logger::info("test-triggered effect collection transaction at present cycle "
+                         + std::to_string(testPresentCycle));
             shouldReload = true;
         }
 
@@ -1511,6 +1937,16 @@ namespace vkBasalt
                 std::vector<std::string> activeEffects = pLogicalDevice->imguiOverlay
                     ? pLogicalDevice->imguiOverlay->getActiveEffects()
                     : activeEffectNames();
+
+                if (!testActiveEffectOverride.empty())
+                {
+                    const std::set<std::string> activeSet(
+                        testActiveEffectOverride.begin(), testActiveEffectOverride.end());
+                    for (const std::string& effectName : effectRegistry.getSelectedEffects())
+                        effectRegistry.setEffectEnabled(
+                            effectName, activeSet.contains(effectName));
+                    activeEffects = testActiveEffectOverride;
+                }
 
                 // A reload is where a newly added effect is compiled for the first time, so this is
                 // the cold path. Compile it before the reload rather than during, with the lock let
@@ -1582,37 +2018,52 @@ namespace vkBasalt
             uint32_t          index             = pPresentInfo->pImageIndices[i];
             VkSwapchainKHR    swapchain         = pPresentInfo->pSwapchains[i];
             LogicalSwapchain* pLogicalSwapchain = swapchainMap[swapchain].get();
+            collectRetiredEffectCollections(pLogicalSwapchain);
+            EffectCollection* pCollection = pLogicalSwapchain->activeEffectCollection.get();
 
             // Nothing was set up for this swapchain -- the image allocation was
             // abandoned, so the application is presenting the real images itself
             // and there is nothing of ours to submit.
-            if (pLogicalSwapchain->fakeImages.empty() || index >= pLogicalSwapchain->commandBuffersEffect.size()
-                || index >= pLogicalSwapchain->commandBuffersNoEffect.size())
+            if (pLogicalSwapchain->fakeImages.empty() || pCollection == nullptr
+                || index >= pCollection->commandBuffersEffect.size()
+                || index >= pCollection->commandBuffersNoEffect.size()
+                || index >= pCollection->fences.size())
             {
                 continue;
             }
 
             if (presentEffect)
             {
-                for (auto& effect : pLogicalSwapchain->effects)
+                for (auto& effect : pCollection->effects)
                     effect->updateEffect();
             }
 
             // This command buffer is about to be submitted again, so the previous submission of it
             // must have finished. Re-acquiring the image usually means it already has, making this
             // wait free, but "usually" is not a synchronisation guarantee.
-            VkFence effectFence = index < pLogicalSwapchain->effectFences.size()
-                ? pLogicalSwapchain->effectFences[index]
-                : VK_NULL_HANDLE;
-
-            if (effectFence != VK_NULL_HANDLE)
+            VkFence effectFence = pCollection->fences[index];
+            if (effectFence == VK_NULL_HANDLE)
             {
-                if (pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, 1, &effectFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS
-                    || pLogicalDevice->vkd.ResetFences(pLogicalDevice->device, 1, &effectFence) != VK_SUCCESS)
+                Logger::err("active effect collection has a null submission fence");
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            if (pCollection->submissionsInFlight[index])
+            {
+                const VkResult waitResult = pLogicalDevice->vkd.WaitForFences(
+                    pLogicalDevice->device, 1, &effectFence, VK_TRUE, UINT64_MAX);
+                if (waitResult != VK_SUCCESS)
                 {
-                    Logger::err("effect fence wait or reset failed for image " + std::to_string(index));
-                    effectFence = VK_NULL_HANDLE;
+                    Logger::err("effect fence wait failed for image " + std::to_string(index));
+                    return waitResult;
                 }
+                pCollection->markSubmissionComplete(index);
+            }
+            const VkResult resetResult = pLogicalDevice->vkd.ResetFences(
+                pLogicalDevice->device, 1, &effectFence);
+            if (resetResult != VK_SUCCESS)
+            {
+                Logger::err("effect fence reset failed for image " + std::to_string(index));
+                return resetResult;
             }
 
             VkSubmitInfo submitInfo = {};
@@ -1627,8 +2078,8 @@ namespace vkBasalt
             appWaitsConsumed              = true;
             submitInfo.commandBufferCount = 1;
             submitInfo.pCommandBuffers    = presentEffect
-                ? &pLogicalSwapchain->commandBuffersEffect[index]
-                : &pLogicalSwapchain->commandBuffersNoEffect[index];
+                ? &pCollection->commandBuffersEffect[index]
+                : &pCollection->commandBuffersNoEffect[index];
             submitInfo.signalSemaphoreCount = 1;
             submitInfo.pSignalSemaphores    = &pLogicalSwapchain->semaphores[index];
 
@@ -1637,19 +2088,19 @@ namespace vkBasalt
             {
                 // The fence was reset for a submission that never happened, so nothing will ever
                 // signal it. Put it back to signalled, or the next wait on it never returns.
-                if (effectFence != VK_NULL_HANDLE)
-                {
-                    pLogicalDevice->vkd.DestroyFence(pLogicalDevice->device, effectFence, nullptr);
+                pLogicalDevice->vkd.DestroyFence(pLogicalDevice->device, effectFence, nullptr);
 
-                    VkFenceCreateInfo fenceInfo = {};
-                    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-                    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-                    if (pLogicalDevice->vkd.CreateFence(pLogicalDevice->device, &fenceInfo, nullptr,
-                                                        &pLogicalSwapchain->effectFences[index]) != VK_SUCCESS)
-                        pLogicalSwapchain->effectFences[index] = VK_NULL_HANDLE;
-                }
+                VkFenceCreateInfo fenceInfo = {};
+                fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+                fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+                if (pLogicalDevice->vkd.CreateFence(
+                        pLogicalDevice->device, &fenceInfo, nullptr,
+                        &pCollection->fences[index]) != VK_SUCCESS)
+                    pCollection->fences[index] = VK_NULL_HANDLE;
+                pCollection->markSubmissionComplete(index);
                 return vr;
             }
+            pCollection->markSubmissionStarted(index);
 
             VkSemaphore finalSemaphore;
             vr = submitOverlayFrame(pLogicalDevice, pLogicalSwapchain, index, finalSemaphore);
@@ -1761,10 +2212,25 @@ namespace vkBasalt
                                           [image](const auto& depthImage) { return depthImage.image == image; });
         if (tracked == pLogicalDevice->depthImages.end() || tracked->view != VK_NULL_HANDLE)
             return result;
+        if (result != VK_SUCCESS)
+            return result;
 
         Logger::debug("before creating depth image view");
-        tracked->view = createImageViews(pLogicalDevice, tracked->format, {image},
-                                         VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_DEPTH_BIT)[0];
+        try
+        {
+            const std::vector<VkImageView> views = createImageViews(
+                pLogicalDevice, tracked->format, {image},
+                VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_DEPTH_BIT);
+            if (views.empty() || views.front() == VK_NULL_HANDLE)
+                return result;
+            tracked->view = views.front();
+        }
+        catch (const std::exception& e)
+        {
+            Logger::warn("failed to create a depth image view: "
+                         + std::string(e.what()));
+            return result;
+        }
         Logger::debug("created depth image view");
 
         const size_t viewCount = std::count_if(pLogicalDevice->depthImages.begin(), pLogicalDevice->depthImages.end(),
@@ -1772,16 +2238,17 @@ namespace vkBasalt
         if (viewCount > 1)
             return result;
 
-        DepthState depth = getDepthState(pLogicalDevice);
         for (auto& [swapchainHandle, pLogicalSwapchain] : swapchainMap)
         {
             if (pLogicalSwapchain->pLogicalDevice != pLogicalDevice)
                 continue;
-            if (pLogicalSwapchain->commandBuffersEffect.empty())
+            if (!pLogicalSwapchain->activeEffectCollection)
                 continue;
 
-            reallocateCommandBuffers(pLogicalDevice, pLogicalSwapchain.get(), depth);
-            Logger::debug("reallocated CommandBuffers for swapchain " + convertToString(swapchainHandle));
+            reloadEffectsForSwapchain(
+                pLogicalSwapchain.get(), pConfig.get(), activeEffectNames());
+            Logger::debug("transactionally rebound depth for swapchain "
+                          + convertToString(swapchainHandle));
         }
 
         return result;
@@ -1800,22 +2267,59 @@ namespace vkBasalt
                                [image](const auto& depthImage) { return depthImage.image == image; });
         if (it != pLogicalDevice->depthImages.end())
         {
-            if (it->view != VK_NULL_HANDLE)
-                pLogicalDevice->vkd.DestroyImageView(pLogicalDevice->device, it->view, nullptr);
-
+            const VkImageView removedView = it->view;
             pLogicalDevice->depthImages.erase(it);
 
-            DepthState depth = getDepthState(pLogicalDevice);
             for (auto& [swapchainHandle, pLogicalSwapchain] : swapchainMap)
             {
                 if (pLogicalSwapchain->pLogicalDevice != pLogicalDevice)
                     continue;
-                if (pLogicalSwapchain->commandBuffersEffect.empty())
+                if (!pLogicalSwapchain->activeEffectCollection)
                     continue;
 
-                reallocateCommandBuffers(pLogicalDevice, pLogicalSwapchain.get(), depth);
-                Logger::debug("reallocated CommandBuffers for swapchain " + convertToString(swapchainHandle));
+                if (!reloadEffectsForSwapchain(
+                        pLogicalSwapchain.get(), pConfig.get(), activeEffectNames()))
+                {
+                    Logger::warn("depth disappeared while a requested replacement was unusable; installing a safe bypass generation");
+                    std::unique_ptr<EffectCollection> bypass;
+                    try
+                    {
+                        bypass = buildEffectCollection(
+                            pLogicalSwapchain.get(), pConfig.get(), {}, false);
+                    }
+                    catch (...)
+                    {
+                    }
+                    if (bypass)
+                    {
+                        commitReplacementPreservingLastGood(
+                            pLogicalSwapchain->activeEffectCollection,
+                            pLogicalSwapchain->retiredEffectCollections,
+                            std::move(bypass));
+                    }
+                    else
+                    {
+                        pLogicalSwapchain->retiredEffectCollections.push_back(
+                            std::move(pLogicalSwapchain->activeEffectCollection));
+                    }
+                }
+                Logger::debug("transactionally rebound destroyed depth for swapchain "
+                              + convertToString(swapchainHandle));
             }
+
+            // The application is allowed to destroy its image now. One queue
+            // completion is required to finish any already-submitted old
+            // generation that referenced it; ordinary effect replacement does
+            // not drain the queue.
+            pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
+            for (auto& [_, pLogicalSwapchain] : swapchainMap)
+            {
+                if (pLogicalSwapchain->pLogicalDevice == pLogicalDevice)
+                    pLogicalSwapchain->retiredEffectCollections.clear();
+            }
+            if (removedView != VK_NULL_HANDLE)
+                pLogicalDevice->vkd.DestroyImageView(
+                    pLogicalDevice->device, removedView, nullptr);
         }
 
         pLogicalDevice->vkd.DestroyImage(pLogicalDevice->device, image, pAllocator);

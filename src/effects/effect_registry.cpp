@@ -147,6 +147,7 @@ namespace vkBasalt
         }
 
         Logger::debug("EffectRegistry: initialized " + std::to_string(effects.size()) + " effects");
+        ++buildStateRevision;
     }
 
     void EffectRegistry::initBuiltInEffect(const std::string& instanceName, const std::string& effectType)
@@ -305,8 +306,11 @@ namespace vkBasalt
         std::lock_guard<std::mutex> lock(mutex);
 
         EffectConfig* effect = findEffect(effectName);
-        if (effect)
+        if (effect && effect->enabled != enabled)
+        {
             effect->enabled = enabled;
+            ++buildStateRevision;
+        }
     }
 
     bool EffectRegistry::isEffectEnabled(const std::string& effectName) const
@@ -336,8 +340,12 @@ namespace vkBasalt
             return;
 
         EffectParam* param = findParam(*effect, paramName);
-        if (param && param->getType() == ParamType::Float)
+        if (param && param->getType() == ParamType::Float
+            && static_cast<FloatParam*>(param)->value != value)
+        {
             static_cast<FloatParam*>(param)->value = value;
+            ++buildStateRevision;
+        }
     }
 
     void EffectRegistry::setParameterValue(const std::string& effectName, const std::string& paramName, int value)
@@ -349,8 +357,12 @@ namespace vkBasalt
             return;
 
         EffectParam* param = findParam(*effect, paramName);
-        if (param && param->getType() == ParamType::Int)
+        if (param && param->getType() == ParamType::Int
+            && static_cast<IntParam*>(param)->value != value)
+        {
             static_cast<IntParam*>(param)->value = value;
+            ++buildStateRevision;
+        }
     }
 
     void EffectRegistry::setParameterValue(const std::string& effectName, const std::string& paramName, bool value)
@@ -362,8 +374,12 @@ namespace vkBasalt
             return;
 
         EffectParam* param = findParam(*effect, paramName);
-        if (param && param->getType() == ParamType::Bool)
+        if (param && param->getType() == ParamType::Bool
+            && static_cast<BoolParam*>(param)->value != value)
+        {
             static_cast<BoolParam*>(param)->value = value;
+            ++buildStateRevision;
+        }
     }
 
     EffectParam* EffectRegistry::getParameter(const std::string& effectName, const std::string& paramName)
@@ -444,14 +460,22 @@ namespace vkBasalt
         return effect ? effect->compileError : "";
     }
 
-    void EffectRegistry::setEffectError(const std::string& name, const std::string& error)
+    void EffectRegistry::setEffectError(
+        const std::string& name, const std::string& error, bool disableEffect)
     {
         std::lock_guard<std::mutex> lock(mutex);
         EffectConfig* effect = findEffect(name);
         if (effect)
         {
+            bool changed = effect->compileError != error;
             effect->compileError = error;
-            effect->enabled = false;
+            if (disableEffect)
+            {
+                changed = changed || effect->enabled;
+                effect->enabled = false;
+            }
+            if (changed)
+                ++buildStateRevision;
         }
     }
 
@@ -503,15 +527,19 @@ namespace vkBasalt
             initBuiltInEffect(instanceName, type);
         else
             initReshadeEffect(instanceName, path);
+        ++buildStateRevision;
     }
 
     void EffectRegistry::removeEffect(const std::string& name)
     {
         std::lock_guard<std::mutex> lock(mutex);
+        const size_t oldSize = effects.size();
         effects.erase(
             std::remove_if(effects.begin(), effects.end(),
                 [&](const EffectConfig& e) { return e.name == name; }),
             effects.end());
+        if (effects.size() != oldSize)
+            ++buildStateRevision;
     }
 
     bool EffectRegistry::effectUsesMinPrecision(const std::string& effectName) const
@@ -532,8 +560,11 @@ namespace vkBasalt
     {
         std::lock_guard<std::mutex> lock(mutex);
         EffectConfig* effect = findEffect(effectName);
-        if (effect)
+        if (effect && effect->allowHalfPrecision != allow)
+        {
             effect->allowHalfPrecision = allow;
+            ++buildStateRevision;
+        }
     }
 
     std::vector<PreprocessorDefinition>& EffectRegistry::getPreprocessorDefs(const std::string& effectName)
@@ -557,6 +588,14 @@ namespace vkBasalt
         return emptyDefs;
     }
 
+    std::vector<PreprocessorDefinition> EffectRegistry::getCompilePreprocessorDefs(
+        const std::string& effectName) const
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        const EffectConfig* effect = findEffect(effectName);
+        return effect ? effect->preprocessorDefs : std::vector<PreprocessorDefinition>{};
+    }
+
     void EffectRegistry::setPreprocessorDefValue(const std::string& effectName, const std::string& macroName, const std::string& value)
     {
         std::lock_guard<std::mutex> lock(mutex);
@@ -568,7 +607,11 @@ namespace vkBasalt
         {
             if (def.name == macroName)
             {
-                def.value = value;
+                if (def.value != value)
+                {
+                    def.value = value;
+                    ++buildStateRevision;
+                }
                 return;
             }
         }
@@ -577,13 +620,21 @@ namespace vkBasalt
     void EffectRegistry::setSelectedEffects(const std::vector<std::string>& effects)
     {
         std::lock_guard<std::mutex> lock(mutex);
-        selectedEffects = effects;
+        if (selectedEffects != effects)
+        {
+            selectedEffects = effects;
+            ++buildStateRevision;
+        }
     }
 
     void EffectRegistry::clearSelectedEffects()
     {
         std::lock_guard<std::mutex> lock(mutex);
-        selectedEffects.clear();
+        if (!selectedEffects.empty())
+        {
+            selectedEffects.clear();
+            ++buildStateRevision;
+        }
     }
 
     void EffectRegistry::initializeSelectedEffectsFromConfig()
@@ -602,6 +653,7 @@ namespace vkBasalt
         {
             std::lock_guard<std::mutex> lock(mutex);
             selectedEffects = configEffects;
+            ++buildStateRevision;
         }
 
         for (const auto& effectName : configEffects)
@@ -613,9 +665,75 @@ namespace vkBasalt
             setEffectEnabled(effectName, enabled);
         }
 
-        initializedFromConfig = true;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            initializedFromConfig = true;
+            ++buildStateRevision;
+        }
         Logger::debug("EffectRegistry: initialized " + std::to_string(configEffects.size()) +
                       " effects from config (" + std::to_string(disabledEffects.size()) + " disabled)");
+    }
+
+    uint64_t EffectRegistry::getBuildStateRevision() const
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        return buildStateRevision;
+    }
+
+    std::string EffectRegistry::getBuildStateSignature(
+        const std::vector<std::string>& orderedEffects) const
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        std::ostringstream signature;
+        const auto append = [&signature](const std::string& value) {
+            signature << value.size() << ':' << value << ';';
+        };
+
+        append(std::to_string(buildStateRevision));
+        append("<selected>");
+        for (const std::string& name : selectedEffects)
+            append(name);
+        append("<registry-enabled>");
+        for (const EffectConfig& effect : effects)
+        {
+            append(effect.name);
+            append(effect.enabled ? "1" : "0");
+        }
+
+        append("<ordered-build>");
+        for (const std::string& name : orderedEffects)
+        {
+            append(name);
+            const EffectConfig* effect = findEffect(name);
+            if (effect == nullptr)
+            {
+                append("<missing>");
+                continue;
+            }
+
+            append(effect->effectType);
+            append(effect->filePath);
+            append(std::to_string(static_cast<int>(effect->type)));
+            append(effect->enabled ? "1" : "0");
+            append(effect->allowHalfPrecision ? "1" : "0");
+            append(effect->compileError);
+            append(std::to_string(effect->fileModTime.time_since_epoch().count()));
+            for (const auto& parameter : effect->parameters)
+            {
+                append(parameter->name);
+                for (const auto& [suffix, value] : parameter->serialize())
+                {
+                    append(suffix);
+                    append(value);
+                }
+            }
+            for (const auto& definition : effect->preprocessorDefs)
+            {
+                append(definition.name);
+                append(definition.value);
+            }
+        }
+        return signature.str();
     }
 
 } // namespace vkBasalt

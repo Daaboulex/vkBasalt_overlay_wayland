@@ -3,6 +3,8 @@
 #include "buffer.hpp"
 #include "format.hpp"
 
+#include <stdexcept>
+
 namespace vkBasalt
 {
     // Waits for this one submission rather than draining the queue. A drain also waits out whatever
@@ -42,7 +44,25 @@ namespace vkBasalt
                                       VkDeviceMemory&       imageMemory,
                                       uint32_t              mipLevels)
     {
-        std::vector<VkImage> images(count);
+        std::vector<VkImage> images(count, VK_NULL_HANDLE);
+        imageMemory = VK_NULL_HANDLE;
+        if (count == 0)
+            return images;
+
+        auto abandon = [&](VkResult result, const std::string& operation) -> void {
+            for (VkImage image : images)
+            {
+                if (image != VK_NULL_HANDLE)
+                    pLogicalDevice->vkd.DestroyImage(pLogicalDevice->device, image, nullptr);
+            }
+            if (imageMemory != VK_NULL_HANDLE)
+            {
+                freeTrackedMemory(pLogicalDevice, imageMemory, nullptr);
+                imageMemory = VK_NULL_HANDLE;
+            }
+            throw std::runtime_error(
+                operation + " failed while creating effect images: " + std::to_string(result));
+        };
 
         VkFormat srgbFormat  = isSRGB(format) ? format : convertToSRGB(format);
         VkFormat unormFormat = isSRGB(format) ? convertToUNORM(format) : format;
@@ -83,7 +103,8 @@ namespace vkBasalt
         for (uint32_t i = 0; i < count; i++)
         {
             result = pLogicalDevice->vkd.CreateImage(pLogicalDevice->device, &imageCreateInfo, nullptr, &(images[i]));
-            ASSERT_VULKAN(result);
+            if (result != VK_SUCCESS)
+                abandon(result, "vkCreateImage");
         }
         VkMemoryRequirements memoryRequirements;
         pLogicalDevice->vkd.GetImageMemoryRequirements(pLogicalDevice->device, images[0], &memoryRequirements);
@@ -100,12 +121,14 @@ namespace vkBasalt
         memoryAllocateInfo.memoryTypeIndex = findMemoryTypeIndex(pLogicalDevice, memoryRequirements.memoryTypeBits, properties);
 
         result = allocateTrackedMemory(pLogicalDevice, &memoryAllocateInfo, nullptr, &imageMemory);
-        ASSERT_VULKAN(result);
+        if (result != VK_SUCCESS)
+            abandon(result, "vkAllocateMemory");
 
         for (uint32_t i = 0; i < count; i++)
         {
             result = pLogicalDevice->vkd.BindImageMemory(pLogicalDevice->device, images[i], imageMemory, memoryRequirements.size * i);
-            ASSERT_VULKAN(result);
+            if (result != VK_SUCCESS)
+                abandon(result, "vkBindImageMemory");
         }
         return images;
     }

@@ -12,10 +12,41 @@
 #include "vulkan_include.hpp"
 
 #include "logical_device.hpp"
+#include "effect_collection_state.hpp"
+#include "effect_collection_build_spec.hpp"
 
 namespace vkBasalt
 {
     class Config;
+    class SharedReshadeTexturePool;
+
+    struct EffectCollection
+    {
+        explicit EffectCollection(LogicalDevice* pLogicalDevice);
+        ~EffectCollection();
+
+        EffectCollection(const EffectCollection&) = delete;
+        EffectCollection& operator=(const EffectCollection&) = delete;
+
+        EffectCollectionRetirementStatus retirementStatus() const;
+        void release();
+
+        LogicalDevice* pLogicalDevice;
+        uint64_t generation = 0;
+        EffectCollectionBuildSpec buildSpec;
+        std::shared_ptr<Config> configSnapshot;
+        std::vector<std::shared_ptr<Effect>> effects;
+        std::shared_ptr<Effect> defaultTransfer;
+        std::vector<VkCommandBuffer> commandBuffersEffect;
+        std::vector<VkCommandBuffer> commandBuffersNoEffect;
+        std::vector<VkFence> fences;
+        std::vector<bool> submissionsInFlight;
+        std::shared_ptr<SharedReshadeTexturePool> sharedTexturePool;
+
+        bool hasCompleteSubmissionTracking(uint32_t imageCount) const;
+        void markSubmissionComplete(uint32_t imageIndex);
+        void markSubmissionStarted(uint32_t imageIndex);
+    };
 
     struct LogicalSwapchain
     {
@@ -28,18 +59,14 @@ namespace vkBasalt
         std::vector<VkImageView>             imageViews;  // for overlay rendering
         std::vector<VkImage>                 fakeImages;
         size_t                               maxEffectSlots = 0;  // Max number of effects supported
-        std::vector<VkCommandBuffer>         commandBuffersEffect;
-        std::vector<VkCommandBuffer>         commandBuffersNoEffect;
         std::vector<VkSemaphore>             semaphores;
         std::vector<VkSemaphore>             overlaySemaphores;
-        std::vector<std::shared_ptr<Effect>> effects;
-        std::shared_ptr<Effect>              defaultTransfer;
         std::vector<VkDeviceMemory>          fakeImageMemory;
-        // One per swapchain image, so a reload waits for the layer's own passes rather than draining
-        // the whole queue, and so a command buffer is never re-recorded while it is still pending.
-        std::vector<VkFence>                 effectFences;
+        std::unique_ptr<EffectCollection>     activeEffectCollection;
+        std::vector<std::unique_ptr<EffectCollection>> retiredEffectCollections;
+        uint64_t                              nextEffectCollectionGeneration = 1;
 
-        void destroy();
+        void destroy(bool queueAlreadyIdle = false);
         void reloadEffects(Config* pConfig);
     };
 } // namespace vkBasalt
