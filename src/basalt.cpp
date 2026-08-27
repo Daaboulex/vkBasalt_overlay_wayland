@@ -48,6 +48,7 @@
 #include "config_serializer.hpp"
 #include "shader_cache.hpp"
 #include "settings_manager.hpp"
+#include "effect_selection.hpp"
 #include "fake_swapchain.hpp"
 #include "renderpass.hpp"
 #include "format.hpp"
@@ -75,6 +76,13 @@ namespace vkBasalt
     EffectRegistry effectRegistry;
 
     Logger Logger::s_instance;
+
+    std::vector<std::string> activeEffectNames()
+    {
+        return enabledEffectNames(
+            effectRegistry.getSelectedEffects(),
+            effectRegistry.getEffectEnabledStates());
+    }
 
     std::unordered_map<void*, InstanceDispatch>                           instanceDispatchMap;
     std::unordered_map<void*, VkInstance>                                 instanceMap;
@@ -1187,7 +1195,7 @@ namespace vkBasalt
             if (!pLogicalSwapchain->fakeImages.empty())
                 return;
 
-            requests = gatherEffectCompileRequests(effectRegistry.getSelectedEffects(),
+            requests = gatherEffectCompileRequests(activeEffectNames(),
                                                    pLogicalSwapchain->imageExtent,
                                                    convertToUNORM(pLogicalSwapchain->format),
                                                    pLogicalSwapchain->swapchainCreateInfo.imageColorSpace);
@@ -1254,13 +1262,13 @@ namespace vkBasalt
         if (isFirstRun)
             effectRegistry.initializeSelectedEffectsFromConfig();
 
-        const auto& selectedEffects = effectRegistry.getSelectedEffects();
+        const std::vector<std::string> activeEffects = activeEffectNames();
 
         // Only what the current chain needs. Adding effects later grows this instead of reserving
         // the maximum up front, which at 4K reserved most of a gigabyte to hold effects nobody had
         // selected. growFakeSwapchainImages only ever appends, so the images already handed to the
         // application keep their handles.
-        size_t effectSlots = std::max<size_t>(selectedEffects.size(), 1);
+        size_t effectSlots = std::max<size_t>(activeEffects.size(), 1);
         pLogicalSwapchain->maxEffectSlots = effectSlots;
 
         VkDeviceMemory fakeImageBlock = VK_NULL_HANDLE;
@@ -1282,7 +1290,7 @@ namespace vkBasalt
             return *pCount < pLogicalSwapchain->imageCount ? VK_INCOMPLETE : VK_SUCCESS;
         }
 
-        if (!isFirstRun && !selectedEffects.empty())
+        if (!isFirstRun && !activeEffects.empty())
         {
             Logger::debug("using pass-through during resize, will restore effects after debounce");
             std::vector<VkImage> firstImages(pLogicalSwapchain->fakeImages.begin(),
@@ -1296,12 +1304,12 @@ namespace vkBasalt
         }
         else
         {
-            createEffectsForSwapchain(pLogicalSwapchain, pLogicalDevice, pConfig.get(), selectedEffects, true);
+            createEffectsForSwapchain(pLogicalSwapchain, pLogicalDevice, pConfig.get(), activeEffects, false);
         }
 
         DepthState depth = getDepthState(pLogicalDevice);
 
-        Logger::debug("selected effect count: " + std::to_string(selectedEffects.size()));
+        Logger::debug("active effect count: " + std::to_string(activeEffects.size()));
         Logger::debug("effect count: " + std::to_string(pLogicalSwapchain->effects.size()));
 
         pLogicalSwapchain->commandBuffersEffect = allocateCommandBuffer(pLogicalDevice, pLogicalSwapchain->imageCount);
@@ -1502,7 +1510,7 @@ namespace vkBasalt
 
                 std::vector<std::string> activeEffects = pLogicalDevice->imguiOverlay
                     ? pLogicalDevice->imguiOverlay->getActiveEffects()
-                    : pConfig->getOption<std::vector<std::string>>("effects", {});
+                    : activeEffectNames();
 
                 // A reload is where a newly added effect is compiled for the first time, so this is
                 // the cold path. Compile it before the reload rather than during, with the lock let
@@ -1549,12 +1557,12 @@ namespace vkBasalt
                 Logger::info("debounced resize reload after " + std::to_string(resizeElapsed) + "ms");
                 resizeDebounce.pending = false;
 
-                const auto& selectedEffects = effectRegistry.getSelectedEffects();
+                const std::vector<std::string> activeEffects = activeEffectNames();
                 for (auto& [_, pSwapchain] : swapchainMap)
                 {
                     if (pSwapchain->fakeImages.empty())
                         continue;
-                    reloadEffectsForSwapchain(pSwapchain.get(), pConfig.get(), selectedEffects);
+                    reloadEffectsForSwapchain(pSwapchain.get(), pConfig.get(), activeEffects);
                 }
             }
         }
