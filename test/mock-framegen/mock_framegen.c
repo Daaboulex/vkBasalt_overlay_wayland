@@ -31,7 +31,9 @@
 #include <vulkan/vulkan.h>
 #include <vulkan/vk_layer.h>
 
+#include <dlfcn.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define RING       8
@@ -80,6 +82,64 @@ static VkCommandPool   g_pool = VK_NULL_HANDLE;
 static unsigned        g_slot = 0;
 static unsigned        g_frames = 0;
 static int             g_ready = 0;
+static int             g_nested_probe_done = 0;
+
+/*
+ * Some frame-generation layers create a nested Vulkan instance while their
+ * vkCreateSwapchainKHR hook is running. Go back through the public loader
+ * entry point (not g_next_gipa, which only walks down-chain) to reproduce that
+ * same-layer re-entry without depending on a proprietary implementation.
+ */
+static int runNestedLoaderProbe(void)
+{
+    const char* enabled = getenv("MOCK_FRAMEGEN_REENTER_LOADER");
+    if (enabled == NULL || strcmp(enabled, "1") != 0 || g_nested_probe_done)
+        return 1;
+
+    g_nested_probe_done = 1;
+
+    void* loader = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
+    if (loader == NULL)
+    {
+        fprintf(stderr, "mock_framegen: nested loader re-entry failed: %s\n", dlerror());
+        return 0;
+    }
+
+    PFN_vkCreateInstance createInstance =
+        (PFN_vkCreateInstance) dlsym(loader, "vkCreateInstance");
+    PFN_vkDestroyInstance destroyInstance =
+        (PFN_vkDestroyInstance) dlsym(loader, "vkDestroyInstance");
+    if (createInstance == NULL || destroyInstance == NULL)
+    {
+        fprintf(stderr, "mock_framegen: nested loader re-entry failed: missing loader entry point\n");
+        dlclose(loader);
+        return 0;
+    }
+
+    VkApplicationInfo app = { 0 };
+    app.sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    app.pApplicationName   = "mock-framegen-nested-loader-probe";
+    app.apiVersion         = VK_API_VERSION_1_1;
+
+    VkInstanceCreateInfo createInfo = { 0 };
+    createInfo.sType                = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    createInfo.pApplicationInfo     = &app;
+
+    VkInstance nestedInstance = VK_NULL_HANDLE;
+    fprintf(stderr, "mock_framegen: nested loader probe starting\n");
+    VkResult result = createInstance(&createInfo, NULL, &nestedInstance);
+    if (result != VK_SUCCESS)
+    {
+        fprintf(stderr, "mock_framegen: nested loader re-entry failed: %d\n", result);
+        dlclose(loader);
+        return 0;
+    }
+
+    destroyInstance(nestedInstance, NULL);
+    dlclose(loader);
+    fprintf(stderr, "mock_framegen: nested loader re-entry ok\n");
+    return 1;
+}
 
 static VkImageMemoryBarrier barrier(VkImage img, VkAccessFlags src, VkAccessFlags dst,
                                     VkImageLayout old, VkImageLayout nw)
@@ -144,6 +204,9 @@ static VKAPI_ATTR VkResult VKAPI_CALL mock_CreateSwapchainKHR(VkDevice          
                                                               const VkAllocationCallbacks*    alloc,
                                                               VkSwapchainKHR*                 swapchain)
 {
+    if (!runNestedLoaderProbe())
+        return VK_ERROR_INITIALIZATION_FAILED;
+
     /* lsfg-vk needs spare images and transfer access on them. */
     VkSwapchainCreateInfoKHR mod = *info;
     mod.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;

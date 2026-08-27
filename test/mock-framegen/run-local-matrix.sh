@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# Local layer-order regression matrix on lavapipe: runs vkcube with vkBasalt
-# and a mock frame-generation layer that replicates lsfg-vk's structural
-# present behavior (consume the caller's semaphores in a submit, acquire an
-# extra swapchain image INSIDE the present call, present generated + original).
+# Local layer-order and loader-re-entry regression matrix on lavapipe: runs
+# vkcube with vkBasalt and a mock frame-generation layer that replicates
+# frame-generation swapchain behavior. The mock also creates a nested Vulkan
+# instance inside vkCreateSwapchainKHR, exercising loader re-entry while the
+# outer swapchain call is still down-chain.
 #
 # It proves BOTH orders survive, and it proves WHICH order actually ran: the
 # log interleaving gives vkBasalt present-cycles per mock frame --
@@ -46,7 +47,7 @@ trap 'rm -rf "$WORK"' EXIT
 
 # shellcheck disable=SC2046
 gcc -shared -fPIC -O2 $(pkg-config --cflags vulkan 2>/dev/null || true) \
-    -o "$WORK/libmock_framegen.so" "$HERE/mock_framegen.c" || exit 1
+    -o "$WORK/libmock_framegen.so" "$HERE/mock_framegen.c" -ldl || exit 1
 
 mkdir -p "$WORK/mock/vulkan/implicit_layer.d"
 cat >"$WORK/mock/vulkan/implicit_layer.d/mock_framegen.json" <<JSON
@@ -72,11 +73,15 @@ else
 fi
 fail=0
 
-run_case() { # run_case <name> <xdg_data_dirs> <expected_cycles_per_frame>
+run_case() { # run_case <name> <layer_order> <expected_cycles_per_frame>
     local name="$1" layers="$2" want="$3" log="$WORK/$1.log"
     (
-        export VK_DRIVER_FILES="$ICD" XDG_DATA_DIRS="$BASALT_SHARE:$WORK/mock:${XDG_DATA_DIRS:-/usr/share}"
+        # Keep the manifest search isolated: a system vkBasalt installation
+        # uses the same enable variable and would otherwise add a second,
+        # unrelated global lock to this re-entry test.
+        export VK_DRIVER_FILES="$ICD" XDG_DATA_DIRS="$BASALT_SHARE:$WORK/mock"
         export ENABLE_VKBASALT=1 VK_INSTANCE_LAYERS="$layers"
+        export MOCK_FRAMEGEN_REENTER_LOADER=1
         # trace: EVERY present is logged, so the counts below are real counts,
         # not a sampled rate (debug logs only a bounded sample).
         export VKBASALT_LOG_LEVEL=trace
@@ -89,10 +94,12 @@ run_case() { # run_case <name> <xdg_data_dirs> <expected_cycles_per_frame>
 
     # Real counts: vkBasalt presents vs mock generated frames. 1 = vkBasalt
     # above the framegen layer (it sees only real frames), 2 = below it.
-    local presents frames ratio anomalies hooked
+    local presents frames ratio anomalies hooked nested_ok create_instances
     presents=$({ grep -c 'present cycle' "$log" || true; })
     frames=$({ grep -cE 'mock_framegen: frame [0-9]+ ok' "$log" || true; })
     hooked=$({ grep -c 'mock_framegen: device hooked' "$log" || true; })
+    nested_ok=$({ grep -c 'mock_framegen: nested loader re-entry ok' "$log" || true; })
+    create_instances=$({ grep -c 'vkCreateInstance' "$log" || true; })
     anomalies=$({ grep -cE 'mock_framegen: .*(failed|STALL|TIMEOUT)|down-chain present returned|Vulkan Loader.*ERROR' "$log" || true; })
     if [ "$frames" -gt 0 ]; then
         ratio=$(awk -v p="$presents" -v f="$frames" 'BEGIN { printf "%.0f", p / f }')
@@ -100,11 +107,12 @@ run_case() { # run_case <name> <xdg_data_dirs> <expected_cycles_per_frame>
         ratio=0
     fi
 
-    if [ "$ratio" = "$want" ] && [ "$anomalies" -eq 0 ] && [ "$hooked" -ge 1 ] && [ "$frames" -gt 20 ]; then
-        echo "$name: PASS (presents=$presents generated=$frames ratio=$ratio, no anomalies)"
+    if [ "$ratio" = "$want" ] && [ "$anomalies" -eq 0 ] && [ "$hooked" -ge 1 ] \
+        && [ "$nested_ok" -eq 1 ] && [ "$create_instances" -ge 2 ] && [ "$frames" -gt 20 ]; then
+        echo "$name: PASS (presents=$presents generated=$frames ratio=$ratio, nested re-entry completed, no anomalies)"
     else
-        echo "$name: FAIL (presents=$presents generated=$frames ratio=$ratio want=$want, hooked=$hooked, anomalies=$anomalies)"
-        { grep -E 'mock_framegen: .*(failed|STALL|TIMEOUT)|down-chain present returned|ERROR' "$log" || true; } | head -4 | sed 's/^/    /'
+        echo "$name: FAIL (presents=$presents generated=$frames ratio=$ratio want=$want, hooked=$hooked, nested_ok=$nested_ok, vkCreateInstance=$create_instances, anomalies=$anomalies)"
+        { grep -E 'mock_framegen: (nested|.*(failed|STALL|TIMEOUT))|down-chain present returned|ERROR' "$log" || true; } | head -8 | sed 's/^/    /'
         fail=1
     fi
 }
