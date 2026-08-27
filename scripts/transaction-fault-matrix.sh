@@ -43,13 +43,6 @@ cat >"$layer_dir/vkBasalt-transaction-test.json" <<EOF
 }
 EOF
 
-cat >"$config_dir/settings.conf" <<'EOF'
-overlayBlockInput = false
-maxEffects = 10
-autoApply = false
-enableOnLaunch = true
-depthCapture = off
-EOF
 printf 'effects =\n' >"$config_dir/vkBasalt.conf"
 
 driver_environment=()
@@ -62,14 +55,34 @@ run_probe() {
     local fail_stage=$2
     local effect_sequence=$3
     local stale_once=$4
-    local allocation_index=${5:-0}
+    local reload_every=$5
+    local depth_churn=$6
+    local allocation_index=${7:-0}
     local profile="$test_root/profile.conf"
     local output="$test_root/output.log"
+
+    {
+        printf 'overlayBlockInput = false\n'
+        printf 'maxEffects = 10\n'
+        printf 'autoApply = false\n'
+        printf 'enableOnLaunch = true\n'
+        if [[ "$depth_churn" == 1 ]]; then
+            printf 'depthCapture = on\n'
+        else
+            printf 'depthCapture = off\n'
+        fi
+    } >"$config_dir/settings.conf"
 
     {
         printf 'SharedTextureProducer = "%s"\n' "$producer"
         printf 'SharedTextureConsumer = "%s"\n' "$consumer"
         printf 'effects = SharedTextureProducer:SharedTextureConsumer\n'
+        printf 'depthRebindDebounceMs = 0\n'
+        if [[ "$depth_churn" == 1 ]]; then
+            printf 'depthRebindStablePresents = 2\n'
+        else
+            printf 'depthRebindStablePresents = 1\n'
+        fi
         if [[ -n "$effect_sequence" ]]; then
             printf 'disabledEffects = SharedTextureConsumer\n'
         fi
@@ -87,11 +100,12 @@ run_probe() {
         VKBASALT_CONFIG_FILE="$profile" \
         VKBASALT_LOG_LEVEL=debug \
         VKBASALT_HEADLESS_FRAMES="$frames" \
-        VKBASALT_TEST_TRANSACTION_RELOAD_EVERY=2 \
+        VKBASALT_TEST_TRANSACTION_RELOAD_EVERY="$reload_every" \
         VKBASALT_TEST_TRANSACTION_EFFECT_SEQUENCE="$effect_sequence" \
         VKBASALT_TEST_TRANSACTION_FAIL_STAGE="$fail_stage" \
         VKBASALT_TEST_TRANSACTION_ALLOCATION_FAIL_INDEX="$allocation_index" \
         VKBASALT_TEST_TRANSACTION_STALE_ONCE="$stale_once" \
+        VKBASALT_HEADLESS_DEPTH_CHURN="$depth_churn" \
         "${driver_environment[@]}" \
         "$initializer" >"$output" 2>&1; then
         cat "$output" >&2
@@ -118,6 +132,12 @@ run_probe() {
         grep -Fq 'restarting transaction from the newest desired state' "$output"
         [[ $(grep -Fc 'effect collection transaction committed successfully' "$output") -eq 2 ]]
     fi
+    if [[ "$depth_churn" == 1 ]]; then
+        grep -Fq 'depth identity changed; stale effect command buffers are bypassed immediately' "$output"
+        grep -Fq 'depth target stabilized; transactionally rebuilding recorded bindings' "$output"
+        grep -Fq 'completed depth-bound generation' "$output"
+        [[ $(grep -Fc 'effect collection transaction committed successfully' "$output") -ge 2 ]]
+    fi
 }
 
 for stage in \
@@ -128,16 +148,19 @@ for stage in \
     after-fence-creation; do
     printf 'Testing rollback at %s\n' "$stage"
     run_probe 6 "$stage" \
-        'SharedTextureProducer;SharedTextureProducer:SharedTextureConsumer' 0 0
+        'SharedTextureProducer;SharedTextureProducer:SharedTextureConsumer' 0 2 0 0
 done
 
 for allocation_index in 1 2 3; do
     printf 'Testing staged allocation rollback at allocation #%s\n' "$allocation_index"
     run_probe 6 effect-allocation-oom \
-        'SharedTextureProducer;SharedTextureProducer:SharedTextureConsumer' 0 "$allocation_index"
+        'SharedTextureProducer;SharedTextureProducer:SharedTextureConsumer' 0 2 0 "$allocation_index"
 done
 
 printf 'Testing stale-build rejection and retry\n'
-run_probe 4 '' '' 1 0
+run_probe 4 '' '' 1 2 0 0
 
-printf 'Transaction fault matrix passed: every failed rebuild retained its last-good generation and later recovered.\n'
+printf 'Testing exact-lifetime depth destruction and stable transactional rebind\n'
+run_probe 5 '' '' 0 0 1 0
+
+printf 'Transaction/depth matrix passed: failed rebuilds retained the last-good generation and depth churn rebound safely.\n'

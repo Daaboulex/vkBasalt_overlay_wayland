@@ -41,6 +41,114 @@ static uint32_t dimension_from_env(const char* name, uint32_t fallback)
     return (uint32_t)parsed;
 }
 
+static VkResult create_depth_resource(
+    VkPhysicalDevice physical_device,
+    VkDevice device,
+    VkExtent2D extent,
+    VkImage* image,
+    VkDeviceMemory* memory)
+{
+    VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    image_info.imageType = VK_IMAGE_TYPE_2D;
+    image_info.format = VK_FORMAT_D32_SFLOAT;
+    image_info.extent = (VkExtent3D){extent.width, extent.height, 1};
+    image_info.mipLevels = 1;
+    image_info.arrayLayers = 1;
+    image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+    image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+    image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VkResult result = vkCreateImage(device, &image_info, NULL, image);
+    if (result != VK_SUCCESS)
+        return result;
+
+    VkMemoryRequirements requirements;
+    vkGetImageMemoryRequirements(device, *image, &requirements);
+    VkPhysicalDeviceMemoryProperties properties;
+    vkGetPhysicalDeviceMemoryProperties(physical_device, &properties);
+    uint32_t memory_type = UINT32_MAX;
+    for (uint32_t i = 0; i < properties.memoryTypeCount; ++i)
+    {
+        if ((requirements.memoryTypeBits & (1u << i)) != 0
+            && (properties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0)
+        {
+            memory_type = i;
+            break;
+        }
+    }
+    if (memory_type == UINT32_MAX)
+    {
+        vkDestroyImage(device, *image, NULL);
+        *image = VK_NULL_HANDLE;
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+
+    VkMemoryAllocateInfo allocation = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    allocation.allocationSize = requirements.size;
+    allocation.memoryTypeIndex = memory_type;
+    result = vkAllocateMemory(device, &allocation, NULL, memory);
+    if (result != VK_SUCCESS)
+    {
+        vkDestroyImage(device, *image, NULL);
+        *image = VK_NULL_HANDLE;
+        return result;
+    }
+    result = vkBindImageMemory(device, *image, *memory, 0);
+    if (result != VK_SUCCESS)
+    {
+        vkFreeMemory(device, *memory, NULL);
+        vkDestroyImage(device, *image, NULL);
+        *memory = VK_NULL_HANDLE;
+        *image = VK_NULL_HANDLE;
+    }
+    return result;
+}
+
+static VkResult transition_depth_to_attachment(
+    VkDevice device,
+    VkQueue queue,
+    VkCommandBuffer command_buffer,
+    VkFence fence,
+    VkImage image)
+{
+    VkResult result = vkResetCommandBuffer(command_buffer, 0);
+    if (result != VK_SUCCESS)
+        return result;
+    VkCommandBufferBeginInfo begin = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if ((result = vkBeginCommandBuffer(command_buffer, &begin)) != VK_SUCCESS)
+        return result;
+
+    VkImageMemoryBarrier barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT
+        | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image;
+    barrier.subresourceRange = (VkImageSubresourceRange){VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+    vkCmdPipelineBarrier(
+        command_buffer,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+        0, 0, NULL, 0, NULL, 1, &barrier);
+    if ((result = vkEndCommandBuffer(command_buffer)) != VK_SUCCESS)
+        return result;
+
+    VkSubmitInfo submit = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    submit.commandBufferCount = 1;
+    submit.pCommandBuffers = &command_buffer;
+    if ((result = vkQueueSubmit(queue, 1, &submit, fence)) != VK_SUCCESS)
+        return result;
+    if ((result = vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX)) != VK_SUCCESS)
+        return result;
+    return vkResetFences(device, 1, &fence);
+}
+
 int main(void)
 {
     const int use_xlib = getenv("VKBASALT_TEST_XLIB") != NULL
@@ -250,9 +358,32 @@ int main(void)
         VkFence fence = VK_NULL_HANDLE;
         CHECK(vkCreateFence(device, &fence_info, NULL, &fence));
         VkBool32* initialized = calloc(swapchain_image_count, sizeof(*initialized));
+        const int depth_churn = getenv("VKBASALT_HEADLESS_DEPTH_CHURN") != NULL
+            && strcmp(getenv("VKBASALT_HEADLESS_DEPTH_CHURN"), "1") == 0;
+        VkImage depth_image = VK_NULL_HANDLE;
+        VkDeviceMemory depth_memory = VK_NULL_HANDLE;
+        if (depth_churn)
+        {
+            CHECK(create_depth_resource(
+                physical_device, device, extent, &depth_image, &depth_memory));
+            CHECK(transition_depth_to_attachment(
+                device, queue, command_buffer, fence, depth_image));
+        }
 
         for (uint32_t frame = 0; frame < frame_count; ++frame)
         {
+            if (depth_churn && frame == 2)
+            {
+                vkDestroyImage(device, depth_image, NULL);
+                vkFreeMemory(device, depth_memory, NULL);
+                depth_image = VK_NULL_HANDLE;
+                depth_memory = VK_NULL_HANDLE;
+                CHECK(create_depth_resource(
+                    physical_device, device, extent, &depth_image, &depth_memory));
+                CHECK(transition_depth_to_attachment(
+                    device, queue, command_buffer, fence, depth_image));
+            }
+
             uint32_t image_index = 0;
             CHECK(vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, acquired, VK_NULL_HANDLE, &image_index));
             CHECK(vkResetCommandBuffer(command_buffer, 0));
@@ -326,6 +457,11 @@ int main(void)
         // Complete the queue before destroying frame semaphores so validation
         // can distinguish application teardown from layer lifetime errors.
         CHECK(vkQueueWaitIdle(queue));
+        if (depth_image != VK_NULL_HANDLE)
+        {
+            vkDestroyImage(device, depth_image, NULL);
+            vkFreeMemory(device, depth_memory, NULL);
+        }
         free(initialized);
         vkDestroyFence(device, fence, NULL);
         vkDestroySemaphore(device, rendered, NULL);

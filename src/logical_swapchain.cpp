@@ -41,6 +41,31 @@ namespace vkBasalt
         return classifyEffectCollectionFenceWait(true, result);
     }
 
+    VkResult EffectCollection::waitForTrackedSubmissions()
+    {
+        if (fences.size() != submissionsInFlight.size())
+            return VK_ERROR_INITIALIZATION_FAILED;
+
+        std::vector<VkFence> pending;
+        for (size_t i = 0; i < fences.size(); ++i)
+        {
+            if (!submissionsInFlight[i])
+                continue;
+            if (fences[i] == VK_NULL_HANDLE)
+                return VK_ERROR_INITIALIZATION_FAILED;
+            pending.push_back(fences[i]);
+        }
+        if (pending.empty())
+            return VK_SUCCESS;
+
+        const VkResult result = pLogicalDevice->vkd.WaitForFences(
+            pLogicalDevice->device, static_cast<uint32_t>(pending.size()),
+            pending.data(), VK_TRUE, UINT64_MAX);
+        if (result == VK_SUCCESS)
+            std::fill(submissionsInFlight.begin(), submissionsInFlight.end(), false);
+        return result;
+    }
+
     bool EffectCollection::hasCompleteSubmissionTracking(uint32_t imageCount) const
     {
         return fences.size() == imageCount

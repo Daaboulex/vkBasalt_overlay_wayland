@@ -50,6 +50,7 @@
 #include "shader_cache.hpp"
 #include "settings_manager.hpp"
 #include "effect_selection.hpp"
+#include "depth_rebind_state.hpp"
 #include "fake_swapchain.hpp"
 #include "renderpass.hpp"
 #include "format.hpp"
@@ -153,6 +154,7 @@ namespace vkBasalt
         VkImageView imageView = VK_NULL_HANDLE;
         VkImage image = VK_NULL_HANDLE;
         VkFormat format = VK_FORMAT_UNDEFINED;
+        DepthIdentity identity;
     };
 
     DepthState getDepthState(LogicalDevice* pLogicalDevice)
@@ -166,6 +168,7 @@ namespace vkBasalt
             state.imageView = depthImage.view;
             state.image = depthImage.image;
             state.format = depthImage.format;
+            state.identity = depthImage.identity();
             break;
         }
         return state;
@@ -188,7 +191,7 @@ namespace vkBasalt
         spec.maxEffectSlots = pLogicalSwapchain->maxEffectSlots;
         spec.realImages = pLogicalSwapchain->images;
         spec.intermediateImages = pLogicalSwapchain->fakeImages;
-        spec.depthImage = depth.image;
+        spec.depth = depth.identity;
         spec.depthView = depth.imageView;
         spec.depthFormat = depth.format;
         return spec;
@@ -1738,6 +1741,23 @@ namespace vkBasalt
             return *pCount < pLogicalSwapchain->imageCount ? VK_INCOMPLETE : VK_SUCCESS;
         }
 
+        pLogicalDevice->selectedDepthIdentity = getDepthState(pLogicalDevice).identity;
+        const bool allCollectionsBoundToCurrentDepth = std::all_of(
+            swapchainMap.begin(), swapchainMap.end(),
+            [&](const auto& entry) {
+                const auto& candidate = entry.second;
+                return !candidate || candidate->pLogicalDevice != pLogicalDevice
+                    || !candidate->activeEffectCollection
+                    || candidate->activeEffectCollection->buildSpec.depth
+                        == pLogicalDevice->selectedDepthIdentity;
+            });
+        if (allCollectionsBoundToCurrentDepth)
+        {
+            pLogicalDevice->depthSelectionDirty = false;
+            pLogicalDevice->depthStablePresentCount = 0;
+            pLogicalDevice->depthRebindBypassLogged = false;
+        }
+
         Logger::debug("active effect count: " + std::to_string(initialEffects.size()));
         Logger::debug("effect object count: "
                       + std::to_string(pLogicalSwapchain->activeEffectCollection->effects.size()));
@@ -1821,6 +1841,7 @@ namespace vkBasalt
             presentEffect = !presentEffect;
 
         bool shouldReload = false;
+        bool depthReloadRequested = false;
         std::vector<std::string> testActiveEffectOverride;
         if (handleKeyPress(reloadKeySymbol, reloadPressed))
         {
@@ -1914,6 +1935,54 @@ namespace vkBasalt
             shouldReload = true;
         }
 
+        if (pLogicalDevice->depthSelectionDirty)
+        {
+            const bool hasActiveEffects = !activeEffectNames().empty();
+            if (!hasActiveEffects)
+            {
+                pLogicalDevice->depthSelectionDirty = false;
+                pLogicalDevice->depthStablePresentCount = 0;
+                pLogicalDevice->depthRebindBypassLogged = false;
+                Logger::debug("depth selection changed with no active effects; binding deferred");
+            }
+            else if (!shouldAttemptDepthRebind(
+                         pLogicalDevice->depthSelectionDirty,
+                         pLogicalDevice->selectedDepthIdentity.valid()))
+            {
+                if (!pLogicalDevice->depthRebindBypassLogged)
+                {
+                    pLogicalDevice->depthRebindBypassLogged = true;
+                    Logger::info("bound depth allocation was removed; effects remain bypassed until a replacement exists");
+                }
+            }
+            else
+            {
+                if (pLogicalDevice->depthStablePresentCount < UINT32_MAX)
+                    ++pLogicalDevice->depthStablePresentCount;
+                const int32_t debounceMs = sanitizeDepthRebindDebounceMs(
+                    pConfig->getOption<int32_t>("depthRebindDebounceMs", 3000));
+                const uint32_t requiredStablePresents = sanitizeDepthRebindStablePresents(
+                    pConfig->getOption<int32_t>("depthRebindStablePresents", 30));
+                const auto now = std::chrono::steady_clock::now();
+                if (depthTargetStableForRebind(
+                        pLogicalDevice->depthSelectionChangedAt,
+                        now,
+                        pLogicalDevice->depthStablePresentCount,
+                        static_cast<int32_t>(requiredStablePresents),
+                        debounceMs))
+                {
+                    shouldReload = true;
+                    depthReloadRequested = true;
+                    Logger::info("depth target stabilized; transactionally rebuilding recorded bindings");
+                }
+                else if (!pLogicalDevice->depthRebindBypassLogged)
+                {
+                    pLogicalDevice->depthRebindBypassLogged = true;
+                    Logger::info("depth identity changed; stale effect command buffers are bypassed immediately");
+                }
+            }
+        }
+
         if (shouldReload)
         {
             Logger::info("hot-reloading config and effects...");
@@ -1930,7 +1999,8 @@ namespace vkBasalt
             }
             else
             {
-                pConfig->reload();
+                if (!depthReloadRequested)
+                    pConfig->reload();
                 cachedEffects.initialized = false;
                 cachedParams.dirty = true;
 
@@ -1979,7 +2049,24 @@ namespace vkBasalt
                     }
                 }
 
-                reloadAllSwapchains(pLogicalDevice, activeEffects);
+                const bool reloadSucceeded = reloadAllSwapchains(
+                    pLogicalDevice, activeEffects);
+                if (reloadSucceeded)
+                {
+                    pLogicalDevice->selectedDepthIdentity =
+                        getDepthState(pLogicalDevice).identity;
+                    if (pLogicalDevice->depthSelectionDirty)
+                    {
+                        pLogicalDevice->depthSelectionDirty = false;
+                        pLogicalDevice->depthStablePresentCount = 0;
+                        pLogicalDevice->depthRebindBypassLogged = false;
+                    }
+                    resizeDebounce.pending = false;
+                }
+                else if (depthReloadRequested)
+                {
+                    pLogicalDevice->markDepthSelectionDirty();
+                }
             }
         }
 
@@ -1988,7 +2075,8 @@ namespace vkBasalt
             auto resizeElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - resizeDebounce.lastResizeTime).count();
 
-            if (resizeElapsed >= RESIZE_DEBOUNCE_MS)
+            if (!pLogicalDevice->depthSelectionDirty
+                && resizeElapsed >= RESIZE_DEBOUNCE_MS)
             {
                 Logger::info("debounced resize reload after " + std::to_string(resizeElapsed) + "ms");
                 resizeDebounce.pending = false;
@@ -2032,7 +2120,20 @@ namespace vkBasalt
                 continue;
             }
 
-            if (presentEffect)
+            // Redundant at-submit validation covers missed interception and
+            // raw-handle reuse: collection identity includes the allocation
+            // serial, not just VkImage bits.
+            if (!pLogicalDevice->depthSelectionDirty
+                && pCollection->buildSpec.depth
+                    != pLogicalDevice->selectedDepthIdentity)
+            {
+                Logger::warn("active collection references a stale depth allocation; bypassing immediately");
+                pLogicalDevice->markDepthSelectionDirty();
+            }
+
+            const bool submitEffects = shouldSubmitDepthEffects(
+                presentEffect, pLogicalDevice->depthSelectionDirty);
+            if (submitEffects)
             {
                 for (auto& effect : pCollection->effects)
                     effect->updateEffect();
@@ -2077,7 +2178,7 @@ namespace vkBasalt
             submitInfo.pWaitDstStageMask  = appWaitsConsumed ? nullptr : waitStages.data();
             appWaitsConsumed              = true;
             submitInfo.commandBufferCount = 1;
-            submitInfo.pCommandBuffers    = presentEffect
+            submitInfo.pCommandBuffers    = submitEffects
                 ? &pCollection->commandBuffersEffect[index]
                 : &pCollection->commandBuffersNoEffect[index];
             submitInfo.signalSemaphoreCount = 1;
@@ -2191,7 +2292,17 @@ namespace vkBasalt
             VkImageCreateInfo modifiedCreateInfo = *pCreateInfo;
             modifiedCreateInfo.usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
             VkResult result = pLogicalDevice->vkd.CreateImage(device, &modifiedCreateInfo, pAllocator, pImage);
-            pLogicalDevice->depthImages.push_back({*pImage, pCreateInfo->format, VK_NULL_HANDLE});
+            if (result == VK_SUCCESS)
+            {
+                DepthImage depthImage;
+                depthImage.image = *pImage;
+                depthImage.format = pCreateInfo->format;
+                depthImage.extent = pCreateInfo->extent;
+                depthImage.samples = pCreateInfo->samples;
+                depthImage.usage = modifiedCreateInfo.usage;
+                depthImage.creationSerial = pLogicalDevice->nextDepthCreationSerial++;
+                pLogicalDevice->depthImages.push_back(depthImage);
+            }
 
             return result;
         }
@@ -2218,7 +2329,7 @@ namespace vkBasalt
         Logger::debug("before creating depth image view");
         try
         {
-            const std::vector<VkImageView> views = createImageViews(
+            std::vector<VkImageView> views = createImageViews(
                 pLogicalDevice, tracked->format, {image},
                 VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_DEPTH_BIT);
             if (views.empty() || views.front() == VK_NULL_HANDLE)
@@ -2227,29 +2338,18 @@ namespace vkBasalt
         }
         catch (const std::exception& e)
         {
-            Logger::warn("failed to create a depth image view: "
+            Logger::warn("failed to create a depth candidate view: "
                          + std::string(e.what()));
             return result;
         }
-        Logger::debug("created depth image view");
+        Logger::debug("created depth image view for allocation #"
+                      + std::to_string(tracked->creationSerial));
 
-        const size_t viewCount = std::count_if(pLogicalDevice->depthImages.begin(), pLogicalDevice->depthImages.end(),
-                                               [](const auto& depthImage) { return depthImage.view != VK_NULL_HANDLE; });
-        if (viewCount > 1)
-            return result;
-
-        for (auto& [swapchainHandle, pLogicalSwapchain] : swapchainMap)
-        {
-            if (pLogicalSwapchain->pLogicalDevice != pLogicalDevice)
-                continue;
-            if (!pLogicalSwapchain->activeEffectCollection)
-                continue;
-
-            reloadEffectsForSwapchain(
-                pLogicalSwapchain.get(), pConfig.get(), activeEffectNames());
-            Logger::debug("transactionally rebound depth for swapchain "
-                          + convertToString(swapchainHandle));
-        }
+        const DepthIdentity previousSelection =
+            pLogicalDevice->selectedDepthIdentity;
+        pLogicalDevice->selectedDepthIdentity = getDepthState(pLogicalDevice).identity;
+        if (pLogicalDevice->selectedDepthIdentity != previousSelection)
+            pLogicalDevice->markDepthSelectionDirty();
 
         return result;
     }
@@ -2267,59 +2367,53 @@ namespace vkBasalt
                                [image](const auto& depthImage) { return depthImage.image == image; });
         if (it != pLogicalDevice->depthImages.end())
         {
-            const VkImageView removedView = it->view;
-            pLogicalDevice->depthImages.erase(it);
+            const DepthIdentity destroyedIdentity = it->identity();
+            const DepthIdentity previousSelection =
+                pLogicalDevice->selectedDepthIdentity;
+            const bool destroyedBoundAllocation =
+                destroyingDepthIdentityInvalidatesBinding(
+                    previousSelection, destroyedIdentity);
 
-            for (auto& [swapchainHandle, pLogicalSwapchain] : swapchainMap)
+            // Stop only submissions that can still reference this exact image
+            // lifetime. No new effect command buffer can be selected while the
+            // global lock is held; dirty state forbids later stale submission.
+            for (const auto& [_, pLogicalSwapchain] : swapchainMap)
             {
-                if (pLogicalSwapchain->pLogicalDevice != pLogicalDevice)
+                if (!pLogicalSwapchain
+                    || pLogicalSwapchain->pLogicalDevice != pLogicalDevice)
                     continue;
-                if (!pLogicalSwapchain->activeEffectCollection)
-                    continue;
-
-                if (!reloadEffectsForSwapchain(
-                        pLogicalSwapchain.get(), pConfig.get(), activeEffectNames()))
-                {
-                    Logger::warn("depth disappeared while a requested replacement was unusable; installing a safe bypass generation");
-                    std::unique_ptr<EffectCollection> bypass;
-                    try
+                const auto waitIfBound = [&](const std::unique_ptr<EffectCollection>& collection) {
+                    if (!collection || collection->buildSpec.depth != destroyedIdentity)
+                        return;
+                    const VkResult waitResult = collection->waitForTrackedSubmissions();
+                    if (waitResult == VK_SUCCESS)
                     {
-                        bypass = buildEffectCollection(
-                            pLogicalSwapchain.get(), pConfig.get(), {}, false);
-                    }
-                    catch (...)
-                    {
-                    }
-                    if (bypass)
-                    {
-                        commitReplacementPreservingLastGood(
-                            pLogicalSwapchain->activeEffectCollection,
-                            pLogicalSwapchain->retiredEffectCollections,
-                            std::move(bypass));
+                        Logger::debug("completed depth-bound generation "
+                                      + std::to_string(collection->generation)
+                                      + " before destroying allocation #"
+                                      + std::to_string(destroyedIdentity.creationSerial));
                     }
                     else
                     {
-                        pLogicalSwapchain->retiredEffectCollections.push_back(
-                            std::move(pLogicalSwapchain->activeEffectCollection));
+                        Logger::warn("failed to wait for depth-bound collection generation "
+                                     + std::to_string(collection->generation) + ": "
+                                     + std::to_string(waitResult));
                     }
-                }
-                Logger::debug("transactionally rebound destroyed depth for swapchain "
-                              + convertToString(swapchainHandle));
+                };
+                waitIfBound(pLogicalSwapchain->activeEffectCollection);
+                for (const auto& retired : pLogicalSwapchain->retiredEffectCollections)
+                    waitIfBound(retired);
             }
 
-            // The application is allowed to destroy its image now. One queue
-            // completion is required to finish any already-submitted old
-            // generation that referenced it; ordinary effect replacement does
-            // not drain the queue.
-            pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
-            for (auto& [_, pLogicalSwapchain] : swapchainMap)
-            {
-                if (pLogicalSwapchain->pLogicalDevice == pLogicalDevice)
-                    pLogicalSwapchain->retiredEffectCollections.clear();
-            }
-            if (removedView != VK_NULL_HANDLE)
+            if (it->view != VK_NULL_HANDLE)
                 pLogicalDevice->vkd.DestroyImageView(
-                    pLogicalDevice->device, removedView, nullptr);
+                    pLogicalDevice->device, it->view, nullptr);
+            pLogicalDevice->depthImages.erase(it);
+            pLogicalDevice->selectedDepthIdentity = getDepthState(pLogicalDevice).identity;
+
+            if (destroyedBoundAllocation
+                || pLogicalDevice->selectedDepthIdentity != previousSelection)
+                pLogicalDevice->markDepthSelectionDirty();
         }
 
         pLogicalDevice->vkd.DestroyImage(pLogicalDevice->device, image, pAllocator);

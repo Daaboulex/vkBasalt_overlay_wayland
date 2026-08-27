@@ -6,7 +6,9 @@
 #include <iostream>
 #include <vector>
 #include <memory>
+#include <chrono>
 
+#include "depth_identity.hpp"
 #include "vulkan_include.hpp"
 #include "vkdispatch.hpp"
 
@@ -27,17 +29,21 @@ namespace vkBasalt
         VkCommandPool            commandPool;
         bool                     supportsMutableFormat;
         bool                     supportsStorageImageWithoutFormat = false;
-        // One record per depth image. Three parallel vectors indexed positionally used to drift
-        // apart, because a view was only appended when the image being bound happened to be the
-        // one created last, which is not true when an application creates images from several
-        // threads. A record cannot drift from itself.
-        struct DepthImage
+        std::vector<DepthImage> depthImages;
+        DepthIdentity selectedDepthIdentity;
+        bool depthSelectionDirty = false;
+        std::chrono::steady_clock::time_point depthSelectionChangedAt{};
+        uint32_t depthStablePresentCount = 0;
+        bool depthRebindBypassLogged = false;
+        uint64_t nextDepthCreationSerial = 1;
+
+        void markDepthSelectionDirty()
         {
-            VkImage     image  = VK_NULL_HANDLE;
-            VkFormat    format = VK_FORMAT_UNDEFINED;
-            VkImageView view   = VK_NULL_HANDLE;
-        };
-        std::vector<DepthImage>  depthImages;
+            depthSelectionDirty = true;
+            depthSelectionChangedAt = std::chrono::steady_clock::now();
+            depthStablePresentCount = 0;
+            depthRebindBypassLogged = false;
+        }
 
         std::unique_ptr<OverlayPersistentState> overlayPersistentState;
 

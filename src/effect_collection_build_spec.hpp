@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "depth_identity.hpp"
 #include "vulkan_include.hpp"
 
 namespace vkBasalt
@@ -28,7 +29,7 @@ namespace vkBasalt
         size_t maxEffectSlots = 0;
         std::vector<VkImage> realImages;
         std::vector<VkImage> intermediateImages;
-        VkImage depthImage = VK_NULL_HANDLE;
+        DepthIdentity depth;
         VkImageView depthView = VK_NULL_HANDLE;
         VkFormat depthFormat = VK_FORMAT_UNDEFINED;
 
@@ -47,7 +48,7 @@ namespace vkBasalt
                 && maxEffectSlots == other.maxEffectSlots
                 && realImages == other.realImages
                 && intermediateImages == other.intermediateImages
-                && depthImage == other.depthImage
+                && depth == other.depth
                 && depthView == other.depthView
                 && depthFormat == other.depthFormat;
         }

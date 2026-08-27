@@ -62,6 +62,16 @@ if get_option('with_so')
         include_directories : include_directories('src'))
     test('config-snapshot', config_snapshot_test)
 
+    depth_identity_test = executable('depth-identity-test',
+        'test/depth_identity_test.cpp',
+        include_directories : include_directories('src'))
+    test('depth-identity', depth_identity_test)
+
+    depth_rebind_state_test = executable('depth-rebind-state-test',
+        'test/depth_rebind_state_test.cpp',
+        include_directories : include_directories('src'))
+    test('depth-rebind-state', depth_rebind_state_test)
+
     vulkan_loader_dep = dependency('vulkan')
     headless_swapchain_init = executable(
         'headless-swapchain-init',

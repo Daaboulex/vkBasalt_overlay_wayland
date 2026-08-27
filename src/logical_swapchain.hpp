@@ -29,6 +29,7 @@ namespace vkBasalt
         EffectCollection& operator=(const EffectCollection&) = delete;
 
         EffectCollectionRetirementStatus retirementStatus() const;
+        VkResult waitForTrackedSubmissions();
         void release();
 
         LogicalDevice* pLogicalDevice;
