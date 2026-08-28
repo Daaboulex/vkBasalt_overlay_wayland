@@ -18,13 +18,13 @@ namespace vkBasalt
                 pLogicalDevice->device, pLogicalDevice->commandPool, commandBuffersNoEffect.size(), commandBuffersNoEffect.data());
             Logger::debug("after free commandbuffer");
 
+            // An image bound to a memory object outlives its backing only as invalid usage, so the
+            // images go before the block they were all suballocated from.
+            for (VkImage image : fakeImages)
+                pLogicalDevice->vkd.DestroyImage(pLogicalDevice->device, image, nullptr);
+
             for (VkDeviceMemory memory : fakeImageMemory)
                 freeTrackedMemory(pLogicalDevice, memory, nullptr);
-
-            for (uint32_t i = 0; i < fakeImages.size(); i++)
-            {
-                pLogicalDevice->vkd.DestroyImage(pLogicalDevice->device, fakeImages[i], nullptr);
-            }
 
             for (unsigned int i = 0; i < imageCount; i++)
             {
