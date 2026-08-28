@@ -49,7 +49,8 @@ namespace vkBasalt
         explicit SharedReshadeTexturePool(LogicalDevice* pLogicalDevice);
         ~SharedReshadeTexturePool();
 
-        SharedReshadeTexture& acquire(const std::string& uniqueName,
+        // nullptr means this declaration cannot share the live image; the caller allocates its own.
+        SharedReshadeTexture* acquire(const std::string& uniqueName,
                                       VkExtent3D        extent,
                                       VkFormat          format,
                                       VkImageUsageFlags usage,

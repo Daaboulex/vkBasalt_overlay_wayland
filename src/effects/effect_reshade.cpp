@@ -85,41 +85,51 @@ namespace vkBasalt
         }
     }
 
-    SharedReshadeTexture& SharedReshadeTexturePool::acquire(const std::string& uniqueName,
+    SharedReshadeTexture* SharedReshadeTexturePool::acquire(const std::string& uniqueName,
                                                             VkExtent3D        extent,
                                                             VkFormat          format,
                                                             VkImageUsageFlags usage,
                                                             uint32_t          mipLevels,
                                                             bool&             created)
     {
-        auto [it, inserted] = textures.try_emplace(uniqueName);
-        SharedReshadeTexture& texture = it->second;
-        created = inserted;
+        created = false;
 
-        if (inserted)
+        const auto existing = textures.find(uniqueName);
+        if (existing != textures.end())
         {
-            std::vector<VkImage> images = createImages(
-                pLogicalDevice, 1, extent, format, usage,
-                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, texture.memory, mipLevels);
-            texture.image = images[0];
-            texture.format = format;
-            texture.extent = extent;
-            texture.mipLevels = mipLevels;
-            texture.usage = usage;
-            Logger::debug("created shared effect texture " + uniqueName);
-        }
-        else if (texture.format != format
-                 || texture.extent.width != extent.width
-                 || texture.extent.height != extent.height
-                 || texture.extent.depth != extent.depth
-                 || texture.mipLevels != mipLevels
-                 || (usage & ~texture.usage) != 0)
-        {
-            throw std::runtime_error("incompatible shared effect texture declaration: " + uniqueName);
+            SharedReshadeTexture& texture = existing->second;
+            if (texture.format != format
+                || texture.extent.width != extent.width
+                || texture.extent.height != extent.height
+                || texture.extent.depth != extent.depth
+                || texture.mipLevels != mipLevels)
+            {
+                throw std::runtime_error("incompatible shared effect texture declaration: " + uniqueName);
+            }
+            // The image is already live and other effects hold views of it, so it cannot gain a
+            // usage flag now. Sharing is an optimisation; the effect gets its own image instead.
+            if ((usage & ~texture.usage) != 0)
+            {
+                Logger::warn("effect texture " + uniqueName
+                             + " needs usage the shared image was not created with; using a private copy");
+                return nullptr;
+            }
+            return &texture;
         }
 
-        Logger::debug("using shared effect texture " + uniqueName);
-        return texture;
+        SharedReshadeTexture texture;
+        std::vector<VkImage> images = createImages(
+            pLogicalDevice, 1, extent, format, usage,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, texture.memory, mipLevels);
+        texture.image = images[0];
+        texture.format = format;
+        texture.extent = extent;
+        texture.mipLevels = mipLevels;
+        texture.usage = usage;
+
+        created = true;
+        Logger::debug("created shared effect texture " + uniqueName);
+        return &textures.emplace(uniqueName, texture).first->second;
     }
 
     ReshadeEffect::ReshadeEffect(LogicalDevice*       pLogicalDevice,
@@ -268,17 +278,21 @@ namespace vkBasalt
                 std::vector<VkImage> images;
                 bool initializeImages = true;
 
+                SharedReshadeTexture* shared = nullptr;
                 if (isGeneratedSharedReshadeTexture(module.textures[i]))
                 {
                     bool created = false;
-                    SharedReshadeTexture& shared = sharedTexturePool->acquire(
+                    shared = sharedTexturePool->acquire(
                         module.textures[i].unique_name, textureExtent, textureFormat,
                         textureUsage, module.textures[i].levels, created);
-                    images = {shared.image};
-                    initializeImages = created;
-                    sharedTextureNames.insert(module.textures[i].unique_name);
+                    if (shared != nullptr)
+                    {
+                        images = {shared->image};
+                        initializeImages = created;
+                        sharedTextureNames.insert(module.textures[i].unique_name);
+                    }
                 }
-                else
+                if (shared == nullptr)
                 {
                     textureMemory.push_back(VK_NULL_HANDLE);
                     images = createImages(pLogicalDevice,
@@ -904,14 +918,26 @@ namespace vkBasalt
             subpassDescription.preserveAttachmentCount = 0;
             subpassDescription.pPreserveAttachments    = nullptr;
 
-            VkSubpassDependency subpassDependency;
-            subpassDependency.srcSubpass      = VK_SUBPASS_EXTERNAL;
-            subpassDependency.dstSubpass      = 0;
-            subpassDependency.srcStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-            subpassDependency.dstStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-            subpassDependency.srcAccessMask   = 0;
-            subpassDependency.dstAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-            subpassDependency.dependencyFlags = 0;
+            VkSubpassDependency subpassDependencies[2];
+            subpassDependencies[0].srcSubpass      = VK_SUBPASS_EXTERNAL;
+            subpassDependencies[0].dstSubpass      = 0;
+            subpassDependencies[0].srcStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+            subpassDependencies[0].dstStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+            subpassDependencies[0].srcAccessMask   = 0;
+            subpassDependencies[0].dstAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            subpassDependencies[0].dependencyFlags = 0;
+
+            // Without this the implicit trailing dependency ends at BOTTOM_OF_PIPE with an empty
+            // access mask, so what a pass renders into a texture is available but never made
+            // visible to the sampler read of the pass, or the effect, that consumes it.
+            subpassDependencies[1].srcSubpass      = 0;
+            subpassDependencies[1].dstSubpass      = VK_SUBPASS_EXTERNAL;
+            subpassDependencies[1].srcStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+            subpassDependencies[1].dstStageMask =
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            subpassDependencies[1].srcAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            subpassDependencies[1].dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
+            subpassDependencies[1].dependencyFlags = 0;
 
             VkRenderPassCreateInfo renderPassCreateInfo;
             renderPassCreateInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -921,8 +947,8 @@ namespace vkBasalt
             renderPassCreateInfo.pAttachments    = attachmentDescriptions.data();
             renderPassCreateInfo.subpassCount    = 1;
             renderPassCreateInfo.pSubpasses      = &subpassDescription;
-            renderPassCreateInfo.dependencyCount = 1;
-            renderPassCreateInfo.pDependencies   = &subpassDependency;
+            renderPassCreateInfo.dependencyCount = 2;
+            renderPassCreateInfo.pDependencies   = subpassDependencies;
 
             VkRenderPass renderPass;
             VkResult     result = pLogicalDevice->vkd.CreateRenderPass(pLogicalDevice->device, &renderPassCreateInfo, nullptr, &renderPass);

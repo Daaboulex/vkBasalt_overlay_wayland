@@ -321,6 +321,47 @@
             touch $out
           '';
 
+          # ReShade's runtime shares a generated texture between the effects that declare the same
+          # unique_name, which is how a framework shader publishes to the shaders after it. A
+          # per-effect allocation makes the reader sample its own cleared copy instead.
+          checks.generated-textures-are-shared = pkgs.runCommand "generated-textures-are-shared" { } ''
+            effect=${./src/effects/effect_reshade.cpp}
+
+            grep -q 'sharedTexturePool->acquire(' "$effect" \
+              || { echo "generated textures are allocated per effect again, so a shared name no longer resolves to one image"; exit 1; }
+
+            acquire=$(sed -n '/SharedReshadeTexture\* SharedReshadeTexturePool::acquire/,/^    }/p' "$effect")
+            grep -q 'throw std::runtime_error' <<< "$acquire" \
+              || { echo "a second declaration with a different format, extent or mip count is silently shared"; exit 1; }
+            grep -q 'return nullptr;' <<< "$acquire" \
+              || { echo "a declaration needing usage the live image lacks has no private fallback, so the effect is lost instead"; exit 1; }
+
+            dtor=$(sed -n '/ReshadeEffect::~ReshadeEffect/,/^    }/p' "$effect")
+            grep -q 'sharedTextureNames' <<< "$dtor" \
+              || { echo "the effect destroys images the pool owns -- the next effect in the chain samples a dead handle"; exit 1; }
+
+            [ "$(grep -c 'make_shared<SharedReshadeTexturePool>' ${./src/basalt.cpp})" = "1" ] \
+              || { echo "the pool is no longer one per effect-collection build; separate swapchains can collide on a name"; exit 1; }
+
+            pass=$(sed -n '/VkSubpassDependency subpassDependencies/,/renderPassCreateInfo.dependencyCount/p' "$effect")
+            grep -q 'dstSubpass      = VK_SUBPASS_EXTERNAL' <<< "$pass" \
+              || { echo "the pass declares no outgoing dependency, so what it renders into a texture is never made visible to the sampler read that consumes it"; exit 1; }
+            grep -q 'dstAccessMask   = VK_ACCESS_SHADER_READ_BIT' <<< "$pass" \
+              || { echo "the outgoing dependency does not make the colour writes visible to a shader read"; exit 1; }
+            grep -q 'renderPassCreateInfo.dependencyCount = 2;' <<< "$pass" \
+              || { echo "the render pass no longer carries both the incoming and the outgoing dependency"; exit 1; }
+
+            producer=${./test/language/shared_texture_producer.fx}
+            consumer=${./test/language/shared_texture_consumer.fx}
+            for probe in "$producer" "$consumer"; do
+              grep -q 'SharedTextureProbe' "$probe" \
+                || { echo "the sharing reproducer no longer declares the shared namespace"; exit 1; }
+              grep -q 'PublishedColor' "$probe" \
+                || { echo "the sharing reproducer pair no longer names one texture on both sides"; exit 1; }
+            done
+            touch $out
+          '';
+
           # The disk cache once dropped module.storages: compute effects worked on
           # first launch and silently broke on every warm one. Every field the
           # renderer reads must survive serialize -> deserialize.
