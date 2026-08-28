@@ -1050,11 +1050,18 @@ namespace vkBasalt
                                                                const VkAllocationCallbacks*    pAllocator,
                                                                VkSwapchainKHR*                 pSwapchain)
     {
-        scoped_lock l(globalLock);
+        std::unique_lock<std::mutex> l(globalLock);
 
         Logger::trace("vkCreateSwapchainKHR");
 
-        LogicalDevice* pLogicalDevice = deviceMap[GetKey(device)].get();
+        const auto deviceIt = deviceMap.find(GetKey(device));
+        if (deviceIt == deviceMap.end() || !deviceIt->second)
+            return VK_ERROR_DEVICE_LOST;
+
+        // Keep the wrapper alive while the downstream call is allowed to
+        // re-enter this layer through a nested Vulkan loader invocation.
+        const std::shared_ptr<LogicalDevice> logicalDevice = deviceIt->second;
+        LogicalDevice* pLogicalDevice = logicalDevice.get();
 
         VkSwapchainCreateInfoKHR modifiedCreateInfo = *pCreateInfo;
 
@@ -1104,7 +1111,23 @@ namespace vkBasalt
         pLogicalSwapchain->format              = modifiedCreateInfo.imageFormat;
         pLogicalSwapchain->imageCount          = 0;
 
-        VkResult result = pLogicalDevice->vkd.CreateSwapchainKHR(device, &modifiedCreateInfo, pAllocator, pSwapchain);
+        // A downstream layer may create a nested Vulkan instance/device from
+        // inside vkCreateSwapchainKHR. Holding globalLock across that call
+        // deadlocks when the nested loader re-enters one of our intercepts.
+        // Prepare all local state first, then release the lock at the layer
+        // boundary and validate that the original device mapping is still the
+        // same before publishing the new swapchain.
+        PFN_vkCreateSwapchainKHR downchainCreate = pLogicalDevice->vkd.CreateSwapchainKHR;
+        l.unlock();
+        VkResult result = downchainCreate(device, &modifiedCreateInfo, pAllocator, pSwapchain);
+        l.lock();
+
+        const auto currentDeviceIt = deviceMap.find(GetKey(device));
+        if (currentDeviceIt == deviceMap.end() || currentDeviceIt->second != logicalDevice)
+            return VK_ERROR_DEVICE_LOST;
+
+        if (result != VK_SUCCESS)
+            return result;
 
         swapchainMap[*pSwapchain] = pLogicalSwapchain;
 
