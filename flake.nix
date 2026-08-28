@@ -336,9 +336,12 @@
             grep -q 'return nullptr;' <<< "$acquire" \
               || { echo "a declaration needing usage the live image lacks has no private fallback, so the effect is lost instead"; exit 1; }
 
-            dtor=$(sed -n '/ReshadeEffect::~ReshadeEffect/,/^    }/p' "$effect")
-            grep -q 'sharedTextureNames' <<< "$dtor" \
+            teardown=$(sed -n '/void ReshadeEffect::destroyResources/,/^    }/p' "$effect")
+            grep -q 'sharedTextureNames' <<< "$teardown" \
               || { echo "the effect destroys images the pool owns -- the next effect in the chain samples a dead handle"; exit 1; }
+            dtor=$(sed -n '/ReshadeEffect::~ReshadeEffect/,/^    }/p' "$effect")
+            grep -q 'destroyResources();' <<< "$dtor" \
+              || { echo "the destructor no longer runs the teardown this check reads"; exit 1; }
 
             [ "$(grep -c 'make_shared<SharedReshadeTexturePool>' ${./src/basalt.cpp})" = "1" ] \
               || { echo "the pool is no longer one per effect-collection build; separate swapchains can collide on a name"; exit 1; }
