@@ -316,16 +316,7 @@ namespace vkBasalt
 
     std::vector<std::string> ImGuiOverlay::getActiveEffects() const
     {
-        std::vector<std::string> activeEffects;
-        if (!pEffectRegistry)
-            return activeEffects;
-
-        for (const auto& effectName : pEffectRegistry->getSelectedEffects())
-        {
-            if (pEffectRegistry->isEffectEnabled(effectName))
-                activeEffects.push_back(effectName);
-        }
-        return activeEffects;
+        return pEffectRegistry ? pEffectRegistry->getActiveEffects() : std::vector<std::string>{};
     }
 
     const std::vector<std::string>& ImGuiOverlay::getSelectedEffects() const

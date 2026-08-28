@@ -1,4 +1,5 @@
 #include "effect_registry.hpp"
+#include "effect_selection.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -325,6 +326,16 @@ namespace vkBasalt
         for (const auto& effect : effects)
             states[effect.name] = effect.enabled;
         return states;
+    }
+
+    std::vector<std::string> EffectRegistry::getActiveEffects() const
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+
+        std::map<std::string, bool> states;
+        for (const auto& effect : effects)
+            states[effect.name] = effect.enabled;
+        return enabledEffectNames(selectedEffects, states);
     }
 
     void EffectRegistry::setParameterValue(const std::string& effectName, const std::string& paramName, float value)

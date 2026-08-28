@@ -362,6 +362,26 @@
             touch $out
           '';
 
+          # Selected and enabled are separate state. Two places deciding which selected effects are
+          # active drift, and a disabled effect that slips through costs a full-screen copy every
+          # frame plus its slice of the image pool to render nothing.
+          checks.enabled-effects-have-one-filter = pkgs.runCommand "enabled-effects-have-one-filter" { } ''
+            others=$(grep -rl 'enabledEffectNames(' ${./src} --include='*.cpp' | grep -v 'effect_registry.cpp' || true)
+            [ -z "$others" ] \
+              || { echo "the selected-and-enabled filter is implemented in $others as well -- keep one writer"; exit 1; }
+            grep -q 'enabledEffectNames(' ${./src/effects/effect_registry.cpp} \
+              || { echo "the registry no longer owns the selected-and-enabled filter"; exit 1; }
+
+            overlay=$(sed -n '/ImGuiOverlay::getActiveEffects/,/^    }/p' ${./src/overlay/imgui_overlay.cpp})
+            grep -q 'getActiveEffects()' <<< "$overlay" \
+              || { echo "the overlay filters the selected effects itself again instead of asking the registry"; exit 1; }
+
+            build=$(sed -n '/void createEffectsForSwapchain/,/^    }/p' ${./src/basalt.cpp})
+            grep -q 'isEffectEnabled' <<< "$build" \
+              && { echo "the construction path re-checks the enabled state, so a disabled effect can still reserve a slot"; exit 1; }
+            touch $out
+          '';
+
           # The disk cache once dropped module.storages: compute effects worked on
           # first launch and silently broke on every warm one. Every field the
           # renderer reads must survive serialize -> deserialize.

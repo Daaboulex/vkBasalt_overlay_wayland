@@ -35,6 +35,8 @@ namespace vkBasalt
         bool isEffectEnabled(const std::string& effectName) const;
 
         std::map<std::string, bool> getEffectEnabledStates() const;
+        // The one selected-and-enabled filter. Everything that builds or warms a chain asks here.
+        std::vector<std::string> getActiveEffects() const;
 
         void setParameterValue(const std::string& effectName, const std::string& paramName, float value);
         void setParameterValue(const std::string& effectName, const std::string& paramName, int value);
