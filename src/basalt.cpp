@@ -1111,12 +1111,8 @@ namespace vkBasalt
         pLogicalSwapchain->format              = modifiedCreateInfo.imageFormat;
         pLogicalSwapchain->imageCount          = 0;
 
-        // A downstream layer may create a nested Vulkan instance/device from
-        // inside vkCreateSwapchainKHR. Holding globalLock across that call
-        // deadlocks when the nested loader re-enters one of our intercepts.
-        // Prepare all local state first, then release the lock at the layer
-        // boundary and validate that the original device mapping is still the
-        // same before publishing the new swapchain.
+        // A layer below us may create a nested instance from inside this call, and the nested
+        // loader re-enters vkBasalt_CreateInstance, which takes this same non-recursive lock.
         PFN_vkCreateSwapchainKHR downchainCreate = pLogicalDevice->vkd.CreateSwapchainKHR;
         l.unlock();
         VkResult result = downchainCreate(device, &modifiedCreateInfo, pAllocator, pSwapchain);
@@ -1124,7 +1120,13 @@ namespace vkBasalt
 
         const auto currentDeviceIt = deviceMap.find(GetKey(device));
         if (currentDeviceIt == deviceMap.end() || currentDeviceIt->second != logicalDevice)
+        {
+            // The device went away under us, taking any swapchain it owned with it. Reporting a
+            // failure while handing back a live-looking handle would have the application destroy
+            // it against a device that is already gone.
+            *pSwapchain = VK_NULL_HANDLE;
             return VK_ERROR_DEVICE_LOST;
+        }
 
         if (result != VK_SUCCESS)
             return result;

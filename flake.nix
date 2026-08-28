@@ -643,6 +643,30 @@
             touch $out
           '';
 
+          # A frame-generation layer below us creates a nested instance from inside its own
+          # vkCreateSwapchainKHR. That nested loader re-enters vkBasalt_CreateInstance, which takes
+          # globalLock, so holding the lock across the down-chain create hangs the application.
+          checks.down-chain-calls-never-hold-the-lock =
+            pkgs.runCommand "down-chain-calls-never-hold-the-lock" { }
+              ''
+                src=${./src/basalt.cpp}
+
+                create=$(sed -n '/VKAPI_ATTR VkResult VKAPI_CALL vkBasalt_CreateSwapchainKHR/,/^    }/p' "$src")
+                [ -n "$create" ] || { echo "vkBasalt_CreateSwapchainKHR is gone"; exit 1; }
+
+                grep -q 'l.unlock();' <<< "$create" \
+                  || { echo "swapchain creation holds globalLock across the down-chain call again -- a nested loader re-entry deadlocks the application"; exit 1; }
+                grep -q 'pLogicalDevice->vkd.CreateSwapchainKHR(' <<< "$create" \
+                  && { echo "the down-chain create reads the dispatch table at call time again -- copy the pointer before releasing the lock"; exit 1; }
+                grep -q '\*pSwapchain = VK_NULL_HANDLE;' <<< "$create" \
+                  || { echo "a failed swapchain creation hands the application a live-looking handle"; exit 1; }
+
+                present=$(sed -n '/VKAPI_ATTR VkResult VKAPI_CALL vkBasalt_QueuePresentKHR/,/^    }/p' "$src")
+                grep -q 'l.unlock();' <<< "$present" \
+                  || { echo "the present no longer releases globalLock for the down-chain present"; exit 1; }
+                touch $out
+              '';
+
           checks.effect-image-pool-only-appends = pkgs.runCommand "effect-image-pool-only-appends" { } ''
             body=$(sed -n '/bool growFakeSwapchainImages/,/^    }/p' ${./src/basalt.cpp})
             [ -n "$body" ] || { echo "growFakeSwapchainImages is gone -- the pool can no longer grow"; exit 1; }
