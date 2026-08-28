@@ -537,7 +537,7 @@ namespace vkBasalt
             else
             {
                 std::string effectPath = effectRegistry.getEffectFilePath(effectStrings[i]);
-                auto customDefs = effectRegistry.getPreprocessorDefs(effectStrings[i]);
+                auto customDefs = effectRegistry.getCompilePreprocessorDefs(effectStrings[i]);
 
                 try
                 {
@@ -1161,7 +1161,7 @@ namespace vkBasalt
                 continue;
 
             requests.push_back({std::move(path),
-                                reshadeCompileDefines(extent, unormFormat, colorSpace, effectRegistry.getPreprocessorDefs(name)),
+                                reshadeCompileDefines(extent, unormFormat, colorSpace, effectRegistry.getCompilePreprocessorDefs(name)),
                                 effectRegistry.getAllowHalfPrecision(name)});
         }
 

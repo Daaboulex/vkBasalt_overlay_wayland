@@ -557,6 +557,14 @@ namespace vkBasalt
         return emptyDefs;
     }
 
+    std::vector<PreprocessorDefinition> EffectRegistry::getCompilePreprocessorDefs(
+        const std::string& effectName) const
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        const EffectConfig* effect = findEffect(effectName);
+        return effect ? effect->preprocessorDefs : std::vector<PreprocessorDefinition>{};
+    }
+
     void EffectRegistry::setPreprocessorDefValue(const std::string& effectName, const std::string& macroName, const std::string& value)
     {
         std::lock_guard<std::mutex> lock(mutex);

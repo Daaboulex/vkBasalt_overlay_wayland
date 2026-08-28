@@ -73,6 +73,8 @@ namespace vkBasalt
 
         std::vector<PreprocessorDefinition>& getPreprocessorDefs(const std::string& effectName);
         const std::vector<PreprocessorDefinition>& getPreprocessorDefs(const std::string& effectName) const;
+        // The reference overloads hand out mutex-protected state; a compile reads a copy instead.
+        std::vector<PreprocessorDefinition> getCompilePreprocessorDefs(const std::string& effectName) const;
 
         void setPreprocessorDefValue(const std::string& effectName, const std::string& macroName, const std::string& value);
 
