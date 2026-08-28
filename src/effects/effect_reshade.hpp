@@ -85,7 +85,16 @@ namespace vkBasalt
         virtual ~ReshadeEffect();
 
     private:
-        LogicalDevice*           pLogicalDevice;
+        // A completed delegating constructor makes the object fully formed
+        // before the public constructor starts acquiring Vulkan resources.
+        // If that body throws, C++ invokes this object's destructor and rolls
+        // every already-published member back automatically.
+        explicit ReshadeEffect(LogicalDevice* pLogicalDevice) noexcept
+            : pLogicalDevice(pLogicalDevice)
+        {
+        }
+
+        LogicalDevice*           pLogicalDevice = nullptr;
         std::vector<VkImage>     inputImages;
         std::vector<VkImage>     outputImages;
         std::vector<VkImageView> inputImageViewsSRGB;
@@ -111,8 +120,8 @@ namespace vkBasalt
 
         std::vector<std::vector<VkFramebuffer>> framebuffers;
 
-        VkDescriptorSetLayout                 uniformDescriptorSetLayout;
-        VkDescriptorSetLayout                 imageSamplerDescriptorSetLayout;
+        VkDescriptorSetLayout                 uniformDescriptorSetLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout                 imageSamplerDescriptorSetLayout = VK_NULL_HANDLE;
         VkDescriptorSetLayout                 storageImageDescriptorSetLayout = VK_NULL_HANDLE;
         std::vector<VkDescriptorSet>          storageDescriptorSets;
         std::vector<std::vector<VkImageView>> storageImageViewVector;
@@ -125,17 +134,17 @@ namespace vkBasalt
             const auto it = shaderModules.find(entryPoint);
             return it != shaderModules.end() ? it->second : VK_NULL_HANDLE;
         }
-        VkDescriptorPool                      descriptorPool;
+        VkDescriptorPool                      descriptorPool = VK_NULL_HANDLE;
         std::vector<VkRenderPass>             renderPasses;
         std::vector<std::vector<std::string>> renderTargets;
         std::vector<VkRenderPassBeginInfo>    renderPassBeginInfos;
-        VkPipelineLayout                      pipelineLayout;
+        VkPipelineLayout                      pipelineLayout = VK_NULL_HANDLE;
         std::vector<VkPipeline>               graphicsPipelines;
         std::vector<bool>                     switchSamplers;
         VkExtent2D                            imageExtent;
         std::vector<VkSampler>                samplers;
         std::shared_ptr<SharedReshadeTexturePool> sharedTexturePool;
-        EffectRegistry*                       pEffectRegistry;
+        EffectRegistry*                       pEffectRegistry = nullptr;
         std::string                           effectName;
         std::string                           effectPath;  // Path to .fx file (may differ from effectName)
         std::vector<PreprocessorDefinition>   customPreprocessorDefs;  // User-defined macros
@@ -144,31 +153,33 @@ namespace vkBasalt
         std::vector<VkDeviceMemory>           textureMemory;
 
         VkColorSpaceKHR colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-        VkFormat    inputOutputFormatUNORM;
-        VkFormat    inputOutputFormatSRGB;
-        VkFormat    stencilFormat;
-        VkImage     stencilImage;
-        VkImageView stencilImageView;
+        VkFormat    inputOutputFormatUNORM = VK_FORMAT_UNDEFINED;
+        VkFormat    inputOutputFormatSRGB = VK_FORMAT_UNDEFINED;
+        VkFormat    stencilFormat = VK_FORMAT_UNDEFINED;
+        VkImage     stencilImage = VK_NULL_HANDLE;
+        VkImageView stencilImageView = VK_NULL_HANDLE;
         // how often the shader writes to the reshade back buffer
         // we need to flip the "backbuffer" after each write if there is a next one
         int                      outputWrites = 0;
         std::vector<VkImage>     backBufferImages;
         std::vector<VkImageView> backBufferImageViewsUNORM;
         std::vector<VkImageView> backBufferImageViewsSRGB;
-        VkBuffer                 stagingBuffer;
-        VkDeviceMemory           stagingBufferMemory;
-        uint32_t                 bufferSize;
+        VkBuffer                 stagingBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory           stagingBufferMemory = VK_NULL_HANDLE;
+        uint32_t                 bufferSize = 0;
         void*                    stagingBufferMapped = nullptr;  // Persistent map (HOST_COHERENT)
-        VkDescriptorSet          bufferDescriptorSet;
+        VkDescriptorSet          bufferDescriptorSet = VK_NULL_HANDLE;
 
         std::vector<std::shared_ptr<ReshadeUniform>> uniforms;
 
         void          createReshadeModule();
+        void          destroyResources() noexcept;
         VkFormat      convertReshadeFormat(reshadefx::texture_format texFormat);
         VkCompareOp   convertReshadeCompareOp(reshadefx::stencil_func compareOp);
         VkStencilOp   convertReshadeStencilOp(reshadefx::stencil_op stencilOp);
         VkBlendOp     convertReshadeBlendOp(reshadefx::blend_op blendOp);
         VkBlendFactor convertReshadeBlendFactor(reshadefx::blend_factor blendFactor);
+        bool          resourcesDestroyed = false;
     };
 } // namespace vkBasalt
 

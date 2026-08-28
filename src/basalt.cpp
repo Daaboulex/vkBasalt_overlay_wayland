@@ -18,7 +18,6 @@
 #include <setjmp.h>
 
 #include "util.hpp"
-#include "crash_guard.hpp"
 #include "keyboard_input.hpp"
 #include "mouse_input.hpp"
 #include "keyboard_input_wayland.hpp"
@@ -540,38 +539,20 @@ namespace vkBasalt
                 std::string effectPath = effectRegistry.getEffectFilePath(effectStrings[i]);
                 auto customDefs = effectRegistry.getPreprocessorDefs(effectStrings[i]);
 
-                installCrashHandlers();
-                bool signalCrash = false;
-                if (sigsetjmp(crashJmpBuf, 1) != 0)
+                try
                 {
-                    crashJmpActive = 0;
-                    signalCrash = true;
-                    std::string sigName = (crashCaughtSignal == SIGFPE) ? "SIGFPE" : "SIGABRT";
-                    Logger::err("Caught " + sigName + " creating ReshadeEffect " + effectStrings[i]);
-                    effectRegistry.setEffectError(effectStrings[i], sigName + " during shader compilation");
+                    pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new ReshadeEffect(
+                        pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent,
+                        pLogicalSwapchain->swapchainCreateInfo.imageColorSpace,
+                        firstImages, secondImages, &effectRegistry, sharedTexturePool,
+                        effectStrings[i], effectPath, customDefs)));
+                }
+                catch (const std::exception& e)
+                {
+                    Logger::err("Failed to create ReshadeEffect " + effectStrings[i] + ": " + e.what());
+                    effectRegistry.setEffectError(effectStrings[i], e.what());
                     pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
                         new TransferEffect(pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
-                }
-
-                if (!signalCrash)
-                {
-                    crashJmpActive = 1;
-                    try
-                    {
-                        pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(new ReshadeEffect(
-                            pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent,
-                            pLogicalSwapchain->swapchainCreateInfo.imageColorSpace,
-                            firstImages, secondImages, &effectRegistry, sharedTexturePool,
-                            effectStrings[i], effectPath, customDefs)));
-                    }
-                    catch (const std::exception& e)
-                    {
-                        Logger::err("Failed to create ReshadeEffect " + effectStrings[i] + ": " + e.what());
-                        effectRegistry.setEffectError(effectStrings[i], e.what());
-                        pLogicalSwapchain->effects.push_back(std::shared_ptr<Effect>(
-                            new TransferEffect(pLogicalDevice, pLogicalSwapchain->format, pLogicalSwapchain->imageExtent, firstImages, secondImages, pConfig)));
-                    }
-                    crashJmpActive = 0;
                 }
             }
         }
