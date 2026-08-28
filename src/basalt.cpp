@@ -162,11 +162,35 @@ namespace vkBasalt
         return state;
     }
 
+    // Freeing or re-recording a command buffer that is still pending is undefined, and so is
+    // updating the descriptor sets it holds. Only the layer's own passes touch these, so waiting on
+    // their fences is the same guarantee as draining the queue without waiting out the
+    // application's next frame, measured at 45 percent of that wait.
+    void waitForOurEffectSubmissions(LogicalSwapchain* pLogicalSwapchain)
+    {
+        LogicalDevice* pLogicalDevice = pLogicalSwapchain->pLogicalDevice;
+
+        std::vector<VkFence> pending;
+        for (VkFence fence : pLogicalSwapchain->effectFences)
+            if (fence != VK_NULL_HANDLE)
+                pending.push_back(fence);
+
+        const uint64_t waitNs = 2'000'000'000ull;
+        if (pending.empty()
+            || pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, pending.size(), pending.data(), VK_TRUE, waitNs)
+                   != VK_SUCCESS)
+        {
+            pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
+        }
+    }
+
     void reallocateCommandBuffers(
         LogicalDevice* pLogicalDevice,
         LogicalSwapchain* pLogicalSwapchain,
         const DepthState& depth)
     {
+        waitForOurEffectSubmissions(pLogicalSwapchain);
+
         if (!pLogicalSwapchain->commandBuffersEffect.empty())
         {
             pLogicalDevice->vkd.FreeCommandBuffers(
@@ -560,20 +584,7 @@ namespace vkBasalt
     {
         LogicalDevice* pLogicalDevice = pLogicalSwapchain->pLogicalDevice;
 
-        // Only the layer's own passes touch what is about to be destroyed. Draining the whole queue
-        // also waits out the application's next frame, measured at 45 percent of the wait.
-        std::vector<VkFence> pending;
-        for (VkFence fence : pLogicalSwapchain->effectFences)
-            if (fence != VK_NULL_HANDLE)
-                pending.push_back(fence);
-
-        const uint64_t reloadWaitNs = 2'000'000'000ull;
-        if (pending.empty()
-            || pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, pending.size(), pending.data(), VK_TRUE, reloadWaitNs)
-                   != VK_SUCCESS)
-        {
-            pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
-        }
+        waitForOurEffectSubmissions(pLogicalSwapchain);
 
         pLogicalSwapchain->effects.clear();
         pLogicalSwapchain->defaultTransfer.reset();
@@ -1811,9 +1822,7 @@ namespace vkBasalt
                                [image](const auto& depthImage) { return depthImage.image == image; });
         if (it != pLogicalDevice->depthImages.end())
         {
-            if (it->view != VK_NULL_HANDLE)
-                pLogicalDevice->vkd.DestroyImageView(pLogicalDevice->device, it->view, nullptr);
-
+            const VkImageView removedView = it->view;
             pLogicalDevice->depthImages.erase(it);
 
             DepthState depth = getDepthState(pLogicalDevice);
@@ -1827,6 +1836,11 @@ namespace vkBasalt
                 reallocateCommandBuffers(pLogicalDevice, pLogicalSwapchain.get(), depth);
                 Logger::debug("reallocated CommandBuffers for swapchain " + convertToString(swapchainHandle));
             }
+
+            // Every command buffer that could still name this view has been waited out and
+            // re-recorded above, so nothing pending refers to it any more.
+            if (removedView != VK_NULL_HANDLE)
+                pLogicalDevice->vkd.DestroyImageView(pLogicalDevice->device, removedView, nullptr);
         }
 
         pLogicalDevice->vkd.DestroyImage(pLogicalDevice->device, image, pAllocator);

@@ -602,11 +602,31 @@
           # measured at 45 percent of the wait. Waiting on the layer's own submission is the same
           # guarantee for the objects being freed, without the rest.
           checks.waits-are-scoped-to-our-own-work = pkgs.runCommand "waits-are-scoped-to-our-own-work" { } ''
-            reload=$(sed -n '/void reloadEffectsForSwapchain/,/^        Logger::info("reloading/p' ${./src/basalt.cpp})
-            grep -q 'WaitForFences' <<< "$reload" \
-              || { echo "the reload drains the queue again instead of waiting on the layer's own passes"; exit 1; }
+            src=${./src/basalt.cpp}
 
-            grep -q 'QueueSubmit(pLogicalDevice->queue, 1, &submitInfo, effectFence)' ${./src/basalt.cpp} \
+            wait=$(sed -n '/void waitForOurEffectSubmissions/,/^    }/p' "$src")
+            grep -q 'WaitForFences' <<< "$wait" \
+              || { echo "the shared wait drains the queue again instead of waiting on the layer's own passes"; exit 1; }
+
+            reload=$(sed -n '/void reloadEffectsForSwapchain/,/^        Logger::info("reloading/p' "$src")
+            grep -q 'waitForOurEffectSubmissions' <<< "$reload" \
+              || { echo "the reload frees effects without waiting for the submissions that reference them"; exit 1; }
+
+            realloc=$(sed -n '/void reallocateCommandBuffers/,/^    }/p' "$src")
+            grep -q 'waitForOurEffectSubmissions' <<< "$realloc" \
+              || { echo "command buffers are freed and re-recorded while a submission of them may still be pending"; exit 1; }
+
+            destroy=$(sed -n '/VKAPI_ATTR void VKAPI_CALL vkBasalt_DestroyImage/,/^    }/p' "$src")
+            record=$(grep -n -m1 'reallocateCommandBuffers(' <<< "$destroy" || true)
+            view=$(grep -n -m1 'DestroyImageView(' <<< "$destroy" || true)
+            [ -n "$record" ] && [ -n "$view" ] \
+              || { echo "vkDestroyImage no longer re-records the effect command buffers, or no longer releases the depth view"; exit 1; }
+            record=$(cut -d: -f1 <<< "$record")
+            view=$(cut -d: -f1 <<< "$view")
+            [ "$record" -lt "$view" ] \
+              || { echo "the depth view is destroyed before the command buffers naming it are waited out and re-recorded"; exit 1; }
+
+            grep -q 'QueueSubmit(pLogicalDevice->queue, 1, &submitInfo, effectFence)' "$src" \
               || { echo "the effect submission carries no fence, so nothing can wait on just that work"; exit 1; }
 
             grep -cE 'QueueWaitIdle' ${./src/image.cpp} | grep -qx 1 \
