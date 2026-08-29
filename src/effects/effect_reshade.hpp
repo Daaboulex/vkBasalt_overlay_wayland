@@ -137,6 +137,9 @@ namespace vkBasalt
         VkDescriptorPool                      descriptorPool = VK_NULL_HANDLE;
         std::vector<VkRenderPass>             renderPasses;
         std::vector<std::vector<std::string>> renderTargets;
+        // VkRenderPassBeginInfo stores a pointer to this data, so it must live
+        // for as long as the recorded effect rather than on the constructor stack.
+        std::vector<std::vector<VkClearValue>> renderPassClearValues;
         std::vector<VkRenderPassBeginInfo>    renderPassBeginInfos;
         VkPipelineLayout                      pipelineLayout = VK_NULL_HANDLE;
         std::vector<VkPipeline>               graphicsPipelines;
