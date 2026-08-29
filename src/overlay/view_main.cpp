@@ -43,6 +43,24 @@ namespace vkBasalt
                 ImGui::SetTooltip("Default: %s\nRight-click to reset", def.defaultValue.c_str());
         }
 
+        bool resetEffectValuesToDefaults(EffectRegistry* registry, const std::string& effectName)
+        {
+            bool changed = false;
+            for (auto* param : registry->getParametersForEffect(effectName))
+            {
+                if (!param || !param->hasChanged())
+                    continue;
+
+                FieldEditor* editor = FieldEditorFactory::instance().getEditor(param->getType());
+                if (editor)
+                {
+                    editor->resetToDefault(*param);
+                    changed = true;
+                }
+            }
+            return changed;
+        }
+
     } // anonymous namespace
 
     void ImGuiOverlay::renderMainView(const KeyboardState& keyboard)
@@ -312,14 +330,9 @@ namespace vkBasalt
                     }
                 }
 
-                if (ImGui::MenuItem("Reset to Defaults"))
+                if (ImGui::MenuItem("Reset to Defaults")
+                    && resetEffectValuesToDefaults(pEffectRegistry, effectName))
                 {
-                    for (auto* param : pEffectRegistry->getParametersForEffect(effectName))
-                    {
-                        FieldEditor* editor = FieldEditorFactory::instance().getEditor(param->getType());
-                        if (editor)
-                            editor->resetToDefault(*param);
-                    }
                     paramsDirty = true;
                     lastChangeTime = std::chrono::steady_clock::now();
                 }
@@ -361,6 +374,28 @@ namespace vkBasalt
                 ImGui::PopStyleColor();
                 ImGui::TreePop();
                 continue;
+            }
+
+            auto effectParams = pEffectRegistry->getParametersForEffect(effectName);
+            const bool hasModifiedValues = std::any_of(
+                effectParams.begin(), effectParams.end(),
+                [](const EffectParam* param) {
+                    return param != nullptr && param->hasChanged();
+                });
+            ImGui::BeginDisabled(!hasModifiedValues);
+            if (ImGui::SmallButton("Reset shader values")
+                && resetEffectValuesToDefaults(pEffectRegistry, effectName))
+            {
+                paramsDirty = true;
+                lastChangeTime = std::chrono::steady_clock::now();
+            }
+            const bool resetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
+            ImGui::EndDisabled();
+            if (resetHovered)
+            {
+                ImGui::SetTooltip(hasModifiedValues
+                    ? "Restore every runtime-adjustable value in this effect to its shader default."
+                    : "All runtime-adjustable values already match the shader defaults.");
             }
 
             if (pEffectRegistry)
@@ -414,7 +449,6 @@ namespace vkBasalt
                 }
             }
 
-            auto effectParams = pEffectRegistry->getParametersForEffect(effectName);
             for (size_t paramIdx = 0; paramIdx < effectParams.size(); paramIdx++)
             {
                 ImGui::PushID(static_cast<int>(paramIdx));

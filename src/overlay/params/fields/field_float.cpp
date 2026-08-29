@@ -1,6 +1,5 @@
 #include "../field_editor.hpp"
 #include "../../../imgui/imgui.h"
-#include "../../../imgui/imgui_internal.h"
 #include <cmath>
 
 namespace vkBasalt
@@ -18,16 +17,6 @@ namespace vkBasalt
                 if (p.step > 0.0f)
                     p.value = std::round(p.value / p.step) * p.step;
                 changed = true;
-            }
-
-            if (ImGui::BeginPopupContextItem("##reset"))
-            {
-                if (ImGui::MenuItem("Reset to default"))
-                {
-                    resetToDefault(param);
-                    changed = true;
-                }
-                ImGui::EndPopup();
             }
 
             return changed;

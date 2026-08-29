@@ -36,8 +36,27 @@ namespace vkBasalt
 
         bool changed = editor->render(param);
 
-        if (!param.tooltip.empty() && ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", param.tooltip.c_str());
+        // Query hover state before opening the shared context popup below,
+        // since popup handling changes ImGui's last-item state.
+        if (!param.tooltip.empty()
+            && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        {
+            ImGui::BeginTooltip();
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+            ImGui::TextUnformatted(param.tooltip.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::EndTooltip();
+        }
+
+        if (ImGui::BeginPopupContextItem("##reset_to_default"))
+        {
+            if (ImGui::MenuItem("Reset to default"))
+            {
+                editor->resetToDefault(param);
+                changed = true;
+            }
+            ImGui::EndPopup();
+        }
 
         return changed;
     }
