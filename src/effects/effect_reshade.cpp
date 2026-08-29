@@ -985,8 +985,8 @@ namespace vkBasalt
             renderPassBeginInfo.framebuffer     = VK_NULL_HANDLE; // changed at apply time
             renderPassBeginInfo.renderArea      = scissor;
             renderPassBeginInfo.clearValueCount = attachmentDescriptions.size();
-            VkClearValue clearValues[9]         = {};
-            renderPassBeginInfo.pClearValues    = clearValues;
+            renderPassClearValues.emplace_back(attachmentDescriptions.size());
+            renderPassBeginInfo.pClearValues    = renderPassClearValues.back().data();
 
             renderPassBeginInfos.push_back(renderPassBeginInfo);
 

@@ -299,6 +299,17 @@
                 touch $out
               '';
 
+          checks.render-pass-clear-values-outlive-recording =
+            pkgs.runCommand "render-pass-clear-values-outlive-recording" { }
+              ''
+                block=$(sed -n '/VkRenderPassBeginInfo renderPassBeginInfo/,/renderPassBeginInfos.push_back/p' ${./src/effects/effect_reshade.cpp})
+                grep -q 'renderPassClearValues' <<< "$block" \
+                  || { echo "the render pass clear values are not held in a member that outlives the recorded buffer"; exit 1; }
+                grep -q 'VkClearValue clearValues\[' <<< "$block" \
+                  && { echo "pClearValues points at a constructor-stack array. The command buffer is recorded once and submitted many times, so the driver reads it long after that scope dies, and the first pass of every ReShade effect clears stencil from it"; exit 1; }
+                touch $out
+              '';
+
           checks.depth-barriers-cover-compute-readers =
             pkgs.runCommand "depth-barriers-cover-compute-readers" { }
               ''
