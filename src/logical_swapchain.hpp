@@ -38,9 +38,19 @@ namespace vkBasalt
         // One per swapchain image, so a reload waits for the layer's own passes rather than draining
         // the whole queue, and so a command buffer is never re-recorded while it is still pending.
         std::vector<VkFence>                 effectFences;
+        VkQueryPool                         timingQueryPool = VK_NULL_HANDLE;
+        uint32_t                            timingQueryStride = 0;
+        std::vector<std::string>            timingEffectNames;
+        std::vector<float>                  timingMilliseconds;
+        std::vector<bool>                   timingValid;
+        std::vector<bool>                   timingSamplesPending;
 
         void destroy();
         void reloadEffects(Config* pConfig);
+        bool initializeEffectTimings(const std::vector<std::string>& effectNames);
+        void destroyEffectTimings();
+        VkResult collectEffectTimings(uint32_t imageIndex);
+        void markTimingSubmission(uint32_t imageIndex, bool effectCommandsSubmitted);
     };
 } // namespace vkBasalt
 

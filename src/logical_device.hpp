@@ -25,6 +25,8 @@ namespace vkBasalt
         VkQueue                  queue;
         uint32_t                 queueFamilyIndex;
         VkCommandPool            commandPool;
+        float                    timestampPeriodNanoseconds = 0.0f;
+        uint32_t                 timestampValidBits = 0;
         bool                     supportsMutableFormat;
         bool                     supportsStorageImageWithoutFormat = false;
         // One record per depth image. Three parallel vectors indexed positionally used to drift

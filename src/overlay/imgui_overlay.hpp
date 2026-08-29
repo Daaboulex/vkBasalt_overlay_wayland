@@ -27,6 +27,9 @@ namespace vkBasalt
         std::vector<std::string> currentConfigEffects;  // ReShade effects from current config (e.g., tunic.conf)
         std::vector<std::string> defaultConfigEffects;  // ReShade effects from default vkBasalt.conf (no duplicates)
         std::map<std::string, std::string> effectPaths; // Effect name -> file path (for reshade effects)
+        std::map<std::string, float> effectGpuMilliseconds;
+        float totalEffectGpuMilliseconds = 0.0f;
+        bool effectGpuTimingSupported = false;
         std::string configPath;
         std::string configName;  // Just the filename (e.g., "tunic.conf")
         bool effectsEnabled = true;

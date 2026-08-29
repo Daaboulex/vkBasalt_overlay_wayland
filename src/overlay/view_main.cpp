@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <cstdio>
 
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"
@@ -219,6 +220,21 @@ namespace vkBasalt
             toggleEffectsRequested = true;
         ImGui::SameLine();
         ImGui::TextDisabled("(%s)", settingsManager.getToggleKey().c_str());
+        if (state.effectGpuTimingSupported)
+        {
+            ImGui::SameLine();
+            if (state.effectGpuMilliseconds.empty())
+                ImGui::TextDisabled("GPU: measuring...");
+            else if (!state.effectsEnabled)
+                ImGui::TextDisabled("GPU: %.2f ms last",
+                                    state.totalEffectGpuMilliseconds);
+            else
+                ImGui::TextDisabled("GPU: %.2f ms total",
+                                    state.totalEffectGpuMilliseconds);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Smoothed GPU timestamp total for active effects.\n"
+                                  "Final swapchain copies, overlay work and presentation are excluded.");
+        }
         ImGui::Separator();
 
         if (ImGui::Button("Add Effects..."))
@@ -347,6 +363,20 @@ namespace vkBasalt
                 }
 
                 ImGui::EndPopup();
+            }
+
+            const auto timing = state.effectGpuMilliseconds.find(effectName);
+            if (timing != state.effectGpuMilliseconds.end())
+            {
+                char timingLabel[32];
+                std::snprintf(timingLabel, sizeof(timingLabel), "%.2f ms",
+                              timing->second);
+                const float timingWidth = ImGui::CalcTextSize(timingLabel).x;
+                ImGui::SameLine(ImGui::GetWindowWidth() - timingWidth
+                                - ImGui::GetStyle().WindowPadding.x);
+                ImGui::TextDisabled("%s", timingLabel);
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Smoothed GPU timestamp duration for this effect.");
             }
 
             ImGui::PopID();
