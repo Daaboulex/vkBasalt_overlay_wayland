@@ -22,6 +22,7 @@ namespace vkBasalt
                              VkImage                                        depthImage,
                              VkImageView                                    depthImageView,
                              VkFormat                                       depthFormat,
+                             VkImageLayout                                  depthSourceLayout,
                              std::vector<VkCommandBuffer>                   commandBuffers);
 
     std::vector<VkSemaphore> createSemaphores(LogicalDevice* pLogicalDevice, uint32_t count);

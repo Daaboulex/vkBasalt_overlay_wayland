@@ -78,6 +78,17 @@ The diagnostics tab auto-detects your GPU vendor via PCI vendor ID and reads sta
 
 The layer intercepts `vkCreateImage` to detect depth images and adds `VK_IMAGE_USAGE_SAMPLED_BIT` so shaders can sample them. ReShade effects with `semantic = "DEPTH"` textures receive the actual depth buffer, and the `bufready_depth` uniform correctly reports availability.
 
+Depth is assumed to remain in `DEPTH_STENCIL_ATTACHMENT_OPTIMAL`, matching the
+existing behavior. Applications that intentionally keep their depth allocation
+in `GENERAL` can declare that source contract before launch:
+
+```text
+VKBASALT_DEPTH_SOURCE_LAYOUT=general ENABLE_VKBASALT=1 %command%
+```
+
+The layer transitions from that declared layout for shader reads and restores
+the same layout afterward. Unknown values log a warning and retain the default.
+
 ### Safe Anti-Cheat Mode
 
 Per-profile toggle (`safeAntiCheat = true`) that:

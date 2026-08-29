@@ -11,6 +11,7 @@
 #include <string>
 #include <memory>
 #include <cstring>
+#include <cstdlib>
 #include <filesystem>
 #include <algorithm>
 #include <sys/stat.h>
@@ -59,6 +60,7 @@
 #include "imgui_overlay.hpp"
 #include "effects/effect_registry.hpp"
 #include "effect_submission_wait.hpp"
+#include "depth_source_layout.hpp"
 
 #define VKBASALT_NAME "VK_LAYER_VKBASALT_OVERLAY_post_processing"
 
@@ -144,11 +146,27 @@ namespace vkBasalt
         VkImageView imageView = VK_NULL_HANDLE;
         VkImage image = VK_NULL_HANDLE;
         VkFormat format = VK_FORMAT_UNDEFINED;
+        VkImageLayout sourceLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     };
+
+    VkImageLayout configuredDepthSourceLayout()
+    {
+        static const VkImageLayout layout = [] {
+            const char* value = std::getenv("VKBASALT_DEPTH_SOURCE_LAYOUT");
+            const auto parsed = parseDepthSourceLayout(value != nullptr ? value : "");
+            if (parsed)
+                return *parsed;
+            Logger::warn("invalid VKBASALT_DEPTH_SOURCE_LAYOUT='"
+                         + std::string(value) + "'; using attachment-optimal");
+            return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        }();
+        return layout;
+    }
 
     DepthState getDepthState(LogicalDevice* pLogicalDevice)
     {
         DepthState state;
+        state.sourceLayout = configuredDepthSourceLayout();
         for (const auto& depthImage : pLogicalDevice->depthImages)
         {
             if (depthImage.view == VK_NULL_HANDLE)
@@ -208,12 +226,13 @@ namespace vkBasalt
 
         pLogicalSwapchain->commandBuffersEffect = allocateCommandBuffer(pLogicalDevice, pLogicalSwapchain->imageCount);
         writeCommandBuffers(pLogicalDevice, pLogicalSwapchain->effects,
-                           depth.image, depth.imageView, depth.format,
+                           depth.image, depth.imageView, depth.format, depth.sourceLayout,
                            pLogicalSwapchain->commandBuffersEffect);
 
         pLogicalSwapchain->commandBuffersNoEffect = allocateCommandBuffer(pLogicalDevice, pLogicalSwapchain->imageCount);
         writeCommandBuffers(pLogicalDevice, {pLogicalSwapchain->defaultTransfer},
                            VK_NULL_HANDLE, VK_NULL_HANDLE, VK_FORMAT_UNDEFINED,
+                           VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                            pLogicalSwapchain->commandBuffersNoEffect);
     }
 
@@ -1323,7 +1342,8 @@ namespace vkBasalt
                       + convertToString(swapchain));
 
         writeCommandBuffers(
-            pLogicalDevice, pLogicalSwapchain->effects, depth.image, depth.imageView, depth.format, pLogicalSwapchain->commandBuffersEffect);
+            pLogicalDevice, pLogicalSwapchain->effects, depth.image, depth.imageView,
+            depth.format, depth.sourceLayout, pLogicalSwapchain->commandBuffersEffect);
         Logger::debug("wrote CommandBuffers");
 
         pLogicalSwapchain->effectFences.resize(pLogicalSwapchain->imageCount);
@@ -1366,6 +1386,7 @@ namespace vkBasalt
                             VK_NULL_HANDLE,
                             VK_NULL_HANDLE,
                             VK_FORMAT_UNDEFINED,
+                            VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                             pLogicalSwapchain->commandBuffersNoEffect);
 
         for (unsigned int i = 0; i < pLogicalSwapchain->imageCount; i++)
