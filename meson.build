@@ -58,6 +58,11 @@ if get_option('with_so')
         dependencies : [x11_dep, xi_dep])
     test('mouse-frame-snapshot', mouse_frame_test)
 
+    effect_submission_wait_test = executable('effect-submission-wait-test',
+        'test/effect_submission_wait_test.cpp',
+        include_directories : include_directories('src'))
+    test('effect-submission-wait', effect_submission_wait_test)
+
     summary({
         'wayland-client' : wayland_client_dep.version(),
         'pointer warp event handled' : cpp.has_header_symbol('wayland-client-protocol.h', 'WL_POINTER_WARP_SINCE_VERSION', dependencies : wayland_client_dep),

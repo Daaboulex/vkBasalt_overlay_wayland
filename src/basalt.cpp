@@ -58,6 +58,7 @@
 #include "effects/builtin/builtin_effects.hpp"
 #include "imgui_overlay.hpp"
 #include "effects/effect_registry.hpp"
+#include "effect_submission_wait.hpp"
 
 #define VKBASALT_NAME "VK_LAYER_VKBASALT_OVERLAY_post_processing"
 
@@ -1576,7 +1577,9 @@ namespace vkBasalt
         static thread_local std::vector<VkPipelineStageFlags> waitStages;
         presentSemaphores.clear();
         presentSemaphores.reserve(pPresentInfo->swapchainCount);
-        waitStages.assign(pPresentInfo->waitSemaphoreCount, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+        waitStages.assign(
+            pPresentInfo->waitSemaphoreCount,
+            effectSubmissionApplicationWaitStage());
 
         updateOverlayState(pLogicalDevice, presentEffect);
 
