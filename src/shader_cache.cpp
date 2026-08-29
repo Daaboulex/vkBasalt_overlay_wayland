@@ -31,7 +31,7 @@ namespace vkBasalt
     namespace
     {
         // Bump when the serialized layout, base macros, or stubs change.
-        constexpr uint32_t SCHEMA_VERSION = 6;
+        constexpr uint32_t SCHEMA_VERSION = 7;
         constexpr uint32_t MAGIC = 0x43424B56; // "VKBC"
         constexpr size_t MEMORY_CACHE_CAP = 16;
         constexpr size_t DISK_CACHE_CAP = 256;
@@ -846,7 +846,7 @@ namespace vkBasalt
 
             reshadefx::parser parser;
             std::unique_ptr<reshadefx::codegen> codegen(reshadefx::create_codegen_spirv(
-                true /* vulkan semantics */, true /* debug info */, true /* uniforms to spec constants */,
+                true /* vulkan semantics */, true /* debug info */, false /* keep live uniform buffer values */,
                 false /* 16-bit types */, true /* flip vertex shader */, relaxMinPrecision));
 
             if (!parser.parse(preprocessor.output(), codegen.get()))

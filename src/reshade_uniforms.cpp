@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <random>
+#include <utility>
 
 #include <algorithm>
 
@@ -12,6 +13,9 @@
 #include "mouse_input.hpp"
 #include "keyboard_input.hpp"
 #include "reshade_input_map.hpp"
+#include "reshade_uniform_storage.hpp"
+#include "effects/effect_registry.hpp"
+#include "effects/params/effect_param.hpp"
 
 namespace vkBasalt
 {
@@ -36,7 +40,9 @@ namespace vkBasalt
         }
     }
 
-    std::vector<std::shared_ptr<ReshadeUniform>> createReshadeUniforms(reshadefx::effect_module module)
+    std::vector<std::shared_ptr<ReshadeUniform>> createReshadeUniforms(
+        reshadefx::effect_module module, EffectRegistry* effectRegistry,
+        const std::string& effectName)
     {
         std::vector<std::shared_ptr<ReshadeUniform>> uniforms;
         for (auto& uniform : module.uniforms)
@@ -45,7 +51,11 @@ namespace vkBasalt
                            return a.name == "source";
                        });
             if (it == uniform.annotations.end())
+            {
+                uniforms.push_back(std::make_shared<ParameterUniform>(
+                    uniform, effectRegistry, effectName));
                 continue;
+            }
             auto source = it->value.string_data;
             if (source == "frametime")
             {
@@ -93,6 +103,88 @@ namespace vkBasalt
             }
         }
         return uniforms;
+    }
+
+    ParameterUniform::ParameterUniform(
+        reshadefx::uniform uniformInfo, EffectRegistry* effectRegistry,
+        std::string effectName)
+        : uniformInfo(std::move(uniformInfo)),
+          effectRegistry(effectRegistry), effectName(std::move(effectName))
+    {
+        offset = this->uniformInfo.offset;
+        size = this->uniformInfo.size;
+    }
+
+    void ParameterUniform::update(void* mappedBuffer)
+    {
+        if (mappedBuffer == nullptr)
+            return;
+
+        const size_t uniformEnd = static_cast<size_t>(uniformInfo.offset)
+            + static_cast<size_t>(uniformInfo.size);
+        const EffectParam* param = effectRegistry != nullptr
+            ? effectRegistry->getParameter(effectName, uniformInfo.name)
+            : nullptr;
+        if (param == nullptr)
+        {
+            // Unsupported array/matrix UI types still receive their declared
+            // deterministic initializer.
+            writeReshadeUniformInitializer(
+                mappedBuffer, uniformEnd,
+                uniformInfo);
+            return;
+        }
+
+        uint32_t words[16] = {};
+        size_t wordCount = 0;
+        if (const auto* value = dynamic_cast<const FloatParam*>(param))
+        {
+            std::memcpy(words, &value->value, sizeof(float));
+            wordCount = 1;
+        }
+        else if (const auto* value = dynamic_cast<const FloatVecParam*>(param))
+        {
+            wordCount = std::min<size_t>(value->componentCount, 4);
+            std::memcpy(words, value->value, wordCount * sizeof(float));
+        }
+        else if (const auto* value = dynamic_cast<const IntParam*>(param))
+        {
+            std::memcpy(words, &value->value, sizeof(int32_t));
+            wordCount = 1;
+        }
+        else if (const auto* value = dynamic_cast<const IntVecParam*>(param))
+        {
+            wordCount = std::min<size_t>(value->componentCount, 4);
+            std::memcpy(words, value->value, wordCount * sizeof(int32_t));
+        }
+        else if (const auto* value = dynamic_cast<const UintParam*>(param))
+        {
+            words[0] = value->value;
+            wordCount = 1;
+        }
+        else if (const auto* value = dynamic_cast<const UintVecParam*>(param))
+        {
+            wordCount = std::min<size_t>(value->componentCount, 4);
+            std::memcpy(words, value->value, wordCount * sizeof(uint32_t));
+        }
+        else if (const auto* value = dynamic_cast<const BoolParam*>(param))
+        {
+            words[0] = value->value ? 1u : 0u;
+            wordCount = 1;
+        }
+
+        if (wordCount != 0)
+        {
+            writeReshadeUniformWords(
+                mappedBuffer, uniformEnd,
+                uniformInfo, words, wordCount);
+        }
+        else
+        {
+            writeReshadeUniformInitializer(
+                mappedBuffer, uniformEnd,
+                uniformInfo);
+        }
     }
 
     namespace

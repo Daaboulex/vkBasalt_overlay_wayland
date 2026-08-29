@@ -15,6 +15,8 @@
 
 namespace vkBasalt
 {
+    class EffectRegistry;
+
     void enumerateReshadeUniforms(reshadefx::effect_module module);
 
     class ReshadeUniform
@@ -28,7 +30,23 @@ namespace vkBasalt
         uint32_t size;
     };
 
-    std::vector<std::shared_ptr<ReshadeUniform>> createReshadeUniforms(reshadefx::effect_module module);
+    std::vector<std::shared_ptr<ReshadeUniform>> createReshadeUniforms(
+        reshadefx::effect_module module, EffectRegistry* effectRegistry,
+        const std::string& effectName);
+
+    class ParameterUniform : public ReshadeUniform
+    {
+    public:
+        ParameterUniform(reshadefx::uniform uniformInfo,
+                         EffectRegistry* effectRegistry,
+                         std::string effectName);
+        void update(void* mappedBuffer) override;
+
+    private:
+        reshadefx::uniform uniformInfo;
+        EffectRegistry* effectRegistry = nullptr;
+        std::string effectName;
+    };
 
     class FrameTimeUniform : public ReshadeUniform
     {

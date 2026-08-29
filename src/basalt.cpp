@@ -1597,12 +1597,6 @@ namespace vkBasalt
                 continue;
             }
 
-            if (presentEffect)
-            {
-                for (auto& effect : pLogicalSwapchain->effects)
-                    effect->updateEffect();
-            }
-
             // This command buffer is about to be submitted again, so the previous submission of it
             // must have finished. Re-acquiring the image usually means it already has, making this
             // wait free, but "usually" is not a synchronisation guarantee.
@@ -1612,11 +1606,29 @@ namespace vkBasalt
 
             if (effectFence != VK_NULL_HANDLE)
             {
-                if (pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, 1, &effectFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS
-                    || pLogicalDevice->vkd.ResetFences(pLogicalDevice->device, 1, &effectFence) != VK_SUCCESS)
+                const VkResult waitResult = pLogicalDevice->vkd.WaitForFences(
+                    pLogicalDevice->device, 1, &effectFence, VK_TRUE, UINT64_MAX);
+                if (waitResult != VK_SUCCESS)
                 {
-                    Logger::err("effect fence wait or reset failed for image " + std::to_string(index));
-                    effectFence = VK_NULL_HANDLE;
+                    Logger::err("effect fence wait failed for image " + std::to_string(index));
+                    return waitResult;
+                }
+
+                // Each swapchain image owns a separate mapped uniform buffer.
+                // Update it only after this image's previous effect submission
+                // has completed, so CPU writes cannot race GPU reads.
+                if (presentEffect)
+                {
+                    for (auto& effect : pLogicalSwapchain->effects)
+                        effect->updateEffect(index);
+                }
+
+                const VkResult resetResult = pLogicalDevice->vkd.ResetFences(
+                    pLogicalDevice->device, 1, &effectFence);
+                if (resetResult != VK_SUCCESS)
+                {
+                    Logger::err("effect fence reset failed for image " + std::to_string(index));
+                    return resetResult;
                 }
             }
 

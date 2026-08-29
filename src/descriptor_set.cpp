@@ -1,25 +1,39 @@
 #include "descriptor_set.hpp"
 #include "logger.hpp"
 
+#include <algorithm>
+#include <cstdint>
+
 namespace vkBasalt
 {
 
     VkDescriptorPool createDescriptorPool(LogicalDevice* pLogicalDevice, const std::vector<VkDescriptorPoolSize>& poolSizes)
     {
-        uint32_t setCount = 0;
-
-        VkDescriptorPool descriptorPool;
-        for (uint32_t i = 0; i < poolSizes.size(); i++)
+        std::vector<VkDescriptorPoolSize> nonZeroPoolSizes;
+        nonZeroPoolSizes.reserve(poolSizes.size());
+        for (const VkDescriptorPoolSize& poolSize : poolSizes)
         {
-            setCount += poolSizes[i].descriptorCount;
+            if (poolSize.descriptorCount != 0)
+                nonZeroPoolSizes.push_back(poolSize);
+        }
+
+        uint64_t setCount = 0;
+
+        VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+        for (const VkDescriptorPoolSize& poolSize : nonZeroPoolSizes)
+        {
+            setCount += poolSize.descriptorCount;
         }
         VkDescriptorPoolCreateInfo descriptorPoolCreateInfo;
         descriptorPoolCreateInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         descriptorPoolCreateInfo.pNext         = nullptr;
         descriptorPoolCreateInfo.flags         = 0;
-        descriptorPoolCreateInfo.maxSets       = setCount;
-        descriptorPoolCreateInfo.poolSizeCount = poolSizes.size();
-        descriptorPoolCreateInfo.pPoolSizes    = poolSizes.data();
+        descriptorPoolCreateInfo.maxSets       = static_cast<uint32_t>(
+            std::min<uint64_t>(std::max<uint64_t>(setCount, 1), UINT32_MAX));
+        descriptorPoolCreateInfo.poolSizeCount =
+            static_cast<uint32_t>(nonZeroPoolSizes.size());
+        descriptorPoolCreateInfo.pPoolSizes    = nonZeroPoolSizes.empty()
+            ? nullptr : nonZeroPoolSizes.data();
 
         VkResult result = pLogicalDevice->vkd.CreateDescriptorPool(pLogicalDevice->device, &descriptorPoolCreateInfo, nullptr, &descriptorPool);
         ASSERT_VULKAN(result);
@@ -34,7 +48,8 @@ namespace vkBasalt
         descriptorSetLayoutBinding.binding            = 0;
         descriptorSetLayoutBinding.descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         descriptorSetLayoutBinding.descriptorCount    = 1;
-        descriptorSetLayoutBinding.stageFlags         = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT;
+        descriptorSetLayoutBinding.stageFlags         =
+            VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
         descriptorSetLayoutBinding.pImmutableSamplers = nullptr;
 
         VkDescriptorSetLayoutCreateInfo descriptorSetCreateInfo;
@@ -51,45 +66,48 @@ namespace vkBasalt
         return descriptorSetLayout;
     }
 
-    VkDescriptorSet writeBufferDescriptorSet(LogicalDevice*        pLogicalDevice,
-                                             VkDescriptorPool      descriptorPool,
-                                             VkDescriptorSetLayout descriptorSetLayout,
-                                             VkBuffer              buffer)
+    std::vector<VkDescriptorSet> allocateAndWriteBufferDescriptorSets(
+        LogicalDevice* pLogicalDevice, VkDescriptorPool descriptorPool,
+        VkDescriptorSetLayout descriptorSetLayout,
+        const std::vector<VkBuffer>& buffers)
     {
-        VkDescriptorSet descriptorSet;
+        if (buffers.empty())
+            return {};
 
-        VkDescriptorSetAllocateInfo descriptorSetAllocateInfo;
-        descriptorSetAllocateInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        descriptorSetAllocateInfo.pNext              = nullptr;
-        descriptorSetAllocateInfo.descriptorPool     = descriptorPool;
-        descriptorSetAllocateInfo.descriptorSetCount = 1;
-        descriptorSetAllocateInfo.pSetLayouts        = &descriptorSetLayout;
+        std::vector<VkDescriptorSet> descriptorSets(
+            buffers.size(), VK_NULL_HANDLE);
+        std::vector<VkDescriptorSetLayout> layouts(
+            buffers.size(), descriptorSetLayout);
+        VkDescriptorSetAllocateInfo allocateInfo = {};
+        allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocateInfo.descriptorPool = descriptorPool;
+        allocateInfo.descriptorSetCount =
+            static_cast<uint32_t>(descriptorSets.size());
+        allocateInfo.pSetLayouts = layouts.data();
 
-        VkResult result = pLogicalDevice->vkd.AllocateDescriptorSets(pLogicalDevice->device, &descriptorSetAllocateInfo, &descriptorSet);
+        const VkResult result = pLogicalDevice->vkd.AllocateDescriptorSets(
+            pLogicalDevice->device, &allocateInfo, descriptorSets.data());
         ASSERT_VULKAN(result);
 
-        VkDescriptorBufferInfo bufferInfo;
-        bufferInfo.buffer = buffer;
-        bufferInfo.offset = 0;
-        bufferInfo.range  = VK_WHOLE_SIZE;
+        std::vector<VkDescriptorBufferInfo> bufferInfos(buffers.size());
+        std::vector<VkWriteDescriptorSet> writes(buffers.size());
+        for (size_t i = 0; i < buffers.size(); ++i)
+        {
+            bufferInfos[i].buffer = buffers[i];
+            bufferInfos[i].offset = 0;
+            bufferInfos[i].range = VK_WHOLE_SIZE;
 
-        VkWriteDescriptorSet writeDescriptorSet = {};
-
-        writeDescriptorSet.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writeDescriptorSet.pNext            = nullptr;
-        writeDescriptorSet.dstSet           = descriptorSet;
-        writeDescriptorSet.dstBinding       = 0;
-        writeDescriptorSet.dstArrayElement  = 0;
-        writeDescriptorSet.descriptorCount  = 1;
-        writeDescriptorSet.descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writeDescriptorSet.pImageInfo       = nullptr;
-        writeDescriptorSet.pBufferInfo      = &bufferInfo;
-        writeDescriptorSet.pTexelBufferView = nullptr;
-
-        Logger::debug("before writing buffer descriptor Sets");
-        pLogicalDevice->vkd.UpdateDescriptorSets(pLogicalDevice->device, 1, &writeDescriptorSet, 0, nullptr);
-
-        return descriptorSet;
+            writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[i].dstSet = descriptorSets[i];
+            writes[i].dstBinding = 0;
+            writes[i].descriptorCount = 1;
+            writes[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            writes[i].pBufferInfo = &bufferInfos[i];
+        }
+        pLogicalDevice->vkd.UpdateDescriptorSets(
+            pLogicalDevice->device, static_cast<uint32_t>(writes.size()),
+            writes.data(), 0, nullptr);
+        return descriptorSets;
     }
 
     VkDescriptorSetLayout createImageSamplerDescriptorSetLayout(LogicalDevice* pLogicalDevice, uint32_t count)
@@ -103,7 +121,8 @@ namespace vkBasalt
             descriptorSetLayoutBinding.binding            = i;
             descriptorSetLayoutBinding.descriptorType     = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             descriptorSetLayoutBinding.descriptorCount    = 1;
-            descriptorSetLayoutBinding.stageFlags         = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT;
+            descriptorSetLayoutBinding.stageFlags         =
+                VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
             descriptorSetLayoutBinding.pImmutableSamplers = nullptr;
             bindigs[i]                                    = descriptorSetLayoutBinding;
         }

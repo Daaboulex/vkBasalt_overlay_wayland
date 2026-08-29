@@ -29,6 +29,7 @@ static std::string g_dumpSpirvDir;
 static bool g_cacheBench = false;
 static bool g_cacheVerify = false;
 static bool g_relaxPrecision = false;
+static bool g_requireLiveUniforms = false;
 
 // The swapchain-dependent macros, fixed so results are reproducible; must stay
 // one list however the compile is driven.
@@ -206,7 +207,7 @@ static TestResult testShader(
 
         reshadefx::parser parser;
         auto codegen = std::unique_ptr<reshadefx::codegen>(
-            reshadefx::create_codegen_spirv(true, true, true, false, true, g_relaxPrecision));
+            reshadefx::create_codegen_spirv(true, true, false, false, true, g_relaxPrecision));
 
         if (!parser.parse(preprocessor.output(), codegen.get()))
         {
@@ -229,6 +230,17 @@ static TestResult testShader(
         }
 
         reshadefx::effect_module module = codegen->module();
+        if (g_requireLiveUniforms
+            && (module.uniforms.empty() || !module.spec_constants.empty()
+                || module.total_uniform_size == 0))
+        {
+            result.success = false;
+            result.errorMessage =
+                "UI uniforms were not lowered into the live uniform buffer";
+            result.category = ErrorCategory::Unsupported;
+            vkBasalt::crashJmpActive = 0;
+            return result;
+        }
 
         std::map<std::string, std::vector<uint32_t>> entryPointSpirv;
         for (const auto& entryPoint : module.entry_points)
@@ -327,6 +339,11 @@ int main(int argc, char* argv[])
             if (std::string(argv[i]) == "--relax-precision")
             {
                 g_relaxPrecision = true;
+                continue;
+            }
+            if (std::string(argv[i]) == "--require-live-uniforms")
+            {
+                g_requireLiveUniforms = true;
                 continue;
             }
             if (std::string(argv[i]) == "--include" && (i + 1) < argc)

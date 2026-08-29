@@ -17,10 +17,10 @@ namespace vkBasalt
 
     VkDescriptorSetLayout createUniformBufferDescriptorSetLayout(LogicalDevice* pLogicalDevice);
 
-    VkDescriptorSet writeBufferDescriptorSet(LogicalDevice*        pLogicalDevice,
-                                             VkDescriptorPool      descriptorPool,
-                                             VkDescriptorSetLayout descriptorSetLayout,
-                                             VkBuffer              buffer);
+    std::vector<VkDescriptorSet> allocateAndWriteBufferDescriptorSets(
+        LogicalDevice* pLogicalDevice, VkDescriptorPool descriptorPool,
+        VkDescriptorSetLayout descriptorSetLayout,
+        const std::vector<VkBuffer>& buffers);
 
     VkDescriptorSetLayout createImageSamplerDescriptorSetLayout(LogicalDevice* pLogicalDevice, uint32_t count);
 

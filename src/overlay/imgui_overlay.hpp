@@ -166,6 +166,7 @@ namespace vkBasalt
         bool applyRequested = false;
         bool toggleEffectsRequested = false;
         bool paramsDirty = false;  // True when params changed, waiting for debounce
+        bool liveValuesDirty = false; // Runtime uniforms changed; debounce profile I/O only
         std::chrono::steady_clock::time_point lastChangeTime;
         bool visible = false;
         bool initialized = false;
@@ -184,6 +185,7 @@ namespace vkBasalt
 
         void disableDepthEffects();        // Disable effects that use depth buffer
         void autoSaveProfile();           // Save current state to active profile
+        void markLiveValuesChanged();
         void collectSaveData(            // Shared helper for save operations
             std::vector<std::string>& effects,
             std::vector<std::string>& disabledEffects,

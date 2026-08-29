@@ -220,22 +220,43 @@ namespace vkBasalt
 
         enumerateReshadeUniforms(module);
 
-        uniforms = createReshadeUniforms(module);
+        uniforms = createReshadeUniforms(
+            module, pEffectRegistry, effectName);
 
         bufferSize = module.total_uniform_size;
         if (bufferSize)
         {
-            createBuffer(pLogicalDevice,
-                         bufferSize,
-                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                         stagingBuffer,
-                         stagingBufferMemory);
-            VkResult mapResult = pLogicalDevice->vkd.MapMemory(pLogicalDevice->device, stagingBufferMemory, 0, bufferSize, 0, &stagingBufferMapped);
-            if (mapResult != VK_SUCCESS)
+            uniformBuffers.assign(inputImages.size(), VK_NULL_HANDLE);
+            uniformBufferMemory.assign(inputImages.size(), VK_NULL_HANDLE);
+            uniformBuffersMapped.assign(inputImages.size(), nullptr);
+            for (size_t i = 0; i < inputImages.size(); ++i)
             {
-                Logger::err("MapMemory failed for effect " + effectName + ": " + std::to_string(mapResult));
-                stagingBufferMapped = nullptr;
+                createBuffer(
+                    pLogicalDevice, bufferSize,
+                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                        | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                    uniformBuffers[i], uniformBufferMemory[i]);
+                const VkResult mapResult = pLogicalDevice->vkd.MapMemory(
+                    pLogicalDevice->device, uniformBufferMemory[i], 0,
+                    bufferSize, 0, &uniformBuffersMapped[i]);
+                if (mapResult != VK_SUCCESS)
+                {
+                    Logger::err("MapMemory failed for effect " + effectName
+                                + " image " + std::to_string(i) + ": "
+                                + std::to_string(mapResult));
+                    uniformBuffersMapped[i] = nullptr;
+                    throw std::runtime_error(
+                        "vkMapMemory failed for effect " + effectName + ": "
+                        + std::to_string(mapResult));
+                }
+
+                std::memset(uniformBuffersMapped[i], 0, bufferSize);
+                for (auto& uniform : uniforms)
+                {
+                    if (dynamic_cast<ParameterUniform*>(uniform.get()) != nullptr)
+                        uniform->update(uniformBuffersMapped[i]);
+                }
             }
         }
 
@@ -582,9 +603,13 @@ namespace vkBasalt
 
         VkDescriptorPoolSize bufferPoolSize;
         bufferPoolSize.type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        bufferPoolSize.descriptorCount = 3;
+        bufferPoolSize.descriptorCount = bufferSize
+            ? static_cast<uint32_t>(inputImages.size()) : 0;
 
-        std::vector<VkDescriptorPoolSize> poolSizes = {imagePoolSize, bufferPoolSize};
+        std::vector<VkDescriptorPoolSize> poolSizes;
+        poolSizes.reserve(3);
+        poolSizes.push_back(imagePoolSize);
+        poolSizes.push_back(bufferPoolSize);
 
         if (!module.storages.empty())
         {
@@ -603,7 +628,10 @@ namespace vkBasalt
                 pLogicalDevice, descriptorPool, storageImageDescriptorSetLayout, storageImageViewVector);
         }
 
-        std::vector<VkDescriptorSetLayout> descriptorSetLayouts = {uniformDescriptorSetLayout, imageSamplerDescriptorSetLayout};
+        std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
+        descriptorSetLayouts.reserve(3);
+        descriptorSetLayouts.push_back(uniformDescriptorSetLayout);
+        descriptorSetLayouts.push_back(imageSamplerDescriptorSetLayout);
         if (storageImageDescriptorSetLayout != VK_NULL_HANDLE)
         {
             descriptorSetLayouts.push_back(storageImageDescriptorSetLayout);
@@ -615,7 +643,9 @@ namespace vkBasalt
 
         if (bufferSize)
         {
-            bufferDescriptorSet = writeBufferDescriptorSet(pLogicalDevice, descriptorPool, uniformDescriptorSetLayout, stagingBuffer);
+            bufferDescriptorSets = allocateAndWriteBufferDescriptorSets(
+                pLogicalDevice, descriptorPool, uniformDescriptorSetLayout,
+                uniformBuffers);
         }
 
         inputDescriptorSets =
@@ -1169,12 +1199,13 @@ namespace vkBasalt
         Logger::debug("finished creating Reshade effect");
     }
 
-    void ReshadeEffect::updateEffect()
+    void ReshadeEffect::updateEffect(uint32_t imageIndex)
     {
-        if (stagingBufferMapped)
+        if (imageIndex < uniformBuffersMapped.size()
+            && uniformBuffersMapped[imageIndex] != nullptr)
         {
             for (auto& uniform : uniforms)
-                uniform->update(stagingBufferMapped);
+                uniform->update(uniformBuffersMapped[imageIndex]);
         }
     }
 
@@ -1332,8 +1363,8 @@ namespace vkBasalt
 
         if (bufferSize)
         {
-            pLogicalDevice->vkd.CmdBindDescriptorSets(
-                commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &bufferDescriptorSet, 0, nullptr);
+            bindSet(VK_PIPELINE_BIND_POINT_GRAPHICS, 0,
+                    bufferDescriptorSets);
         }
 
         bool backBufferNext = outputWrites % 2 == 0;
@@ -1377,8 +1408,8 @@ namespace vkBasalt
 
                 if (bufferSize)
                 {
-                    pLogicalDevice->vkd.CmdBindDescriptorSets(
-                        commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &bufferDescriptorSet, 0, nullptr);
+                    bindSet(VK_PIPELINE_BIND_POINT_COMPUTE, 0,
+                            bufferDescriptorSets);
                 }
 
                 bindSet(VK_PIPELINE_BIND_POINT_COMPUTE, 2, storageDescriptorSets);
@@ -1470,13 +1501,34 @@ namespace vkBasalt
             pLogicalDevice->vkd.DestroyPipeline(pLogicalDevice->device, pipeline, nullptr);
         }
 
-        if (bufferSize && stagingBuffer != VK_NULL_HANDLE)
+        if (bufferSize)
         {
-            if (stagingBufferMapped)
-                pLogicalDevice->vkd.UnmapMemory(pLogicalDevice->device, stagingBufferMemory);
-            if (stagingBufferMemory != VK_NULL_HANDLE)
-                freeTrackedMemory(pLogicalDevice, stagingBufferMemory, nullptr);
-            pLogicalDevice->vkd.DestroyBuffer(pLogicalDevice->device, stagingBuffer, nullptr);
+            for (size_t i = 0; i < uniformBuffers.size(); ++i)
+            {
+                if (i < uniformBuffersMapped.size()
+                    && uniformBuffersMapped[i] != nullptr
+                    && i < uniformBufferMemory.size()
+                    && uniformBufferMemory[i] != VK_NULL_HANDLE)
+                {
+                    pLogicalDevice->vkd.UnmapMemory(
+                        pLogicalDevice->device, uniformBufferMemory[i]);
+                }
+                if (uniformBuffers[i] != VK_NULL_HANDLE)
+                {
+                    pLogicalDevice->vkd.DestroyBuffer(
+                        pLogicalDevice->device, uniformBuffers[i], nullptr);
+                }
+                if (i < uniformBufferMemory.size()
+                    && uniformBufferMemory[i] != VK_NULL_HANDLE)
+                {
+                    freeTrackedMemory(
+                        pLogicalDevice, uniformBufferMemory[i], nullptr);
+                }
+            }
+            uniformBuffers.clear();
+            uniformBufferMemory.clear();
+            uniformBuffersMapped.clear();
+            bufferDescriptorSets.clear();
         }
 
         if (pipelineLayout != VK_NULL_HANDLE)
