@@ -418,6 +418,7 @@
                 cp ${./test/language}/*.fx ${./test/language}/*.fxh shaders/
                 cp ${./test/compute_smoke.fx} shaders/compute_smoke.fx
                 cp ${./test/lut/cube_lut.fx} shaders/cube_lut.fx
+                cp ${./test/depth_semantic_smoke.fx} shaders/depth_semantic_smoke.fx
                 export XDG_CACHE_HOME=$PWD/cache
                 vkbasalt-test-shaders --cache-verify shaders > report.txt 2>&1 \
                   || { cat report.txt; echo "the cache dropped or corrupted a field the renderer reads"; exit 1; }
