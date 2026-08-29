@@ -1576,7 +1576,7 @@ namespace vkBasalt
         static thread_local std::vector<VkPipelineStageFlags> waitStages;
         presentSemaphores.clear();
         presentSemaphores.reserve(pPresentInfo->swapchainCount);
-        waitStages.assign(pPresentInfo->waitSemaphoreCount, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+        waitStages.assign(pPresentInfo->waitSemaphoreCount, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 
         updateOverlayState(pLogicalDevice, presentEffect);
 

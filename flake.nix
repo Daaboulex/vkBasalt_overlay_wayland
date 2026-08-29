@@ -289,6 +289,28 @@
             touch $out
           '';
 
+          checks.effect-wait-covers-the-whole-submission =
+            pkgs.runCommand "effect-wait-covers-the-whole-submission" { }
+              ''
+                present=$(sed -n '/vkBasalt_QueuePresentKHR/,/^    }/p' ${./src/basalt.cpp})
+                assign=$(awk '/waitStages\.assign/ { print }' <<< "$present")
+                grep -q 'VK_PIPELINE_STAGE_ALL_COMMANDS_BIT' <<< "$assign" \
+                  || { echo "the effect submission waits on the application's present semaphores at a stage narrower than ALL_COMMANDS. The recorded buffer can open with image barriers and a transfer copy, and a ReShade pass can be compute-only, so that work would be free to run before the presented image is available"; exit 1; }
+                touch $out
+              '';
+
+          checks.depth-barriers-cover-compute-readers =
+            pkgs.runCommand "depth-barriers-cover-compute-readers" { }
+              ''
+                barriers=$(sed -n '/void writeCommandBuffers/,/^    }/p' ${./src/command_buffer.cpp})
+                grep -q 'VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT' <<< "$barriers" \
+                  || { echo "the depth barriers name no compute shader stage. The depth image view is bound at the compute bind point for ReShade compute passes, so those reads would sit outside the barrier"; exit 1; }
+                covered=$(grep -o 'VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT' <<< "$barriers" | wc -l)
+                [ "$covered" = 2 ] \
+                  || { echo "the depth acquire and restore barriers must each name the compute shader stage, found $covered of 2. Naming it on only one leaves the other barrier's transition unordered against ReShade compute passes reading the depth image"; exit 1; }
+                touch $out
+              '';
+
           # Reading the mouse drains the scroll accumulator. Two readers a frame
           # (the ReShade uniforms at present, the overlay at record) split a
           # frame's scrolling between them, so the wheel worked only when an
