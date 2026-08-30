@@ -299,17 +299,16 @@
                 touch $out
               '';
 
-          checks.effect-fence-errors-fail-closed =
-            pkgs.runCommand "effect-fence-errors-fail-closed" { } ''
-              present=$(sed -n '/vkBasalt_QueuePresentKHR/,/^    }/p' ${./src/basalt.cpp})
-              grep -Fq 'if (effectFence == VK_NULL_HANDLE)' <<< "$present" \
-                || { echo "a missing effect fence can silently continue"; exit 1; }
-              grep -Fq 'return waitResult;' <<< "$present" \
-                || { echo "effect fence wait failures do not reach the caller"; exit 1; }
-              grep -Fq 'return resetResult;' <<< "$present" \
-                || { echo "effect fence reset failures do not reach the caller"; exit 1; }
-              touch $out
-            '';
+          checks.effect-fence-errors-fail-closed = pkgs.runCommand "effect-fence-errors-fail-closed" { } ''
+            present=$(sed -n '/vkBasalt_QueuePresentKHR/,/^    }/p' ${./src/basalt.cpp})
+            grep -Fq 'if (effectFence == VK_NULL_HANDLE)' <<< "$present" \
+              || { echo "a missing effect fence can silently continue"; exit 1; }
+            grep -Fq 'return waitResult;' <<< "$present" \
+              || { echo "effect fence wait failures do not reach the caller"; exit 1; }
+            grep -Fq 'return resetResult;' <<< "$present" \
+              || { echo "effect fence reset failures do not reach the caller"; exit 1; }
+            touch $out
+          '';
 
           checks.compute-passes-see-the-sets-they-bind =
             pkgs.runCommand "compute-passes-see-the-sets-they-bind" { src = ./src/descriptor_set.cpp; }
