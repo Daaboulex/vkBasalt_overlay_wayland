@@ -332,6 +332,33 @@
                 touch $out
               '';
 
+          checks.effect-timing-is-opt-in-and-nonblocking =
+            pkgs.runCommand "effect-timing-is-opt-in-and-nonblocking" { }
+              ''
+                grep -Fq 'bool effectGpuTiming = false;' ${./src/config_serializer.hpp} \
+                  || { echo "per-effect GPU timing is not default-off"; exit 1; }
+                grep -Fq 'if (settingsManager.getEffectGpuTiming())' ${./src/basalt.cpp} \
+                  || { echo "timestamp query allocation is not gated by the SettingsManager key"; exit 1; }
+                ! grep -Fq 'VK_QUERY_RESULT_WAIT_BIT' ${./src/logical_swapchain.cpp} \
+                  || { echo "the optional timing read can block the presentation path"; exit 1; }
+                touch $out
+              '';
+
+          checks.effect-timing-is-collected-before-fence-reset =
+            pkgs.runCommand "effect-timing-is-collected-before-fence-reset" { nativeBuildInputs = [ pkgs.python3 ]; }
+              ''
+                python3 - <<'PY'
+                from pathlib import Path
+                source = Path('${./src/basalt.cpp}').read_text()
+                wait = source.index('const VkResult waitResult = pLogicalDevice->vkd.WaitForFences(')
+                collect = source.index('pLogicalSwapchain->collectEffectTimings(index);', wait)
+                reset = source.index('pLogicalDevice->vkd.ResetFences(', collect)
+                if not wait < collect < reset:
+                    raise SystemExit('timestamp results are not collected after fence completion and before fence reset')
+                PY
+                touch $out
+              '';
+
           checks.depth-barriers-cover-compute-readers =
             pkgs.runCommand "depth-barriers-cover-compute-readers" { }
               ''

@@ -292,6 +292,9 @@ depthCapture = false
 # Overlay options
 overlayBlockInput = false
 autoApplyDelay = 200  # ms delay before auto-applying changes
+
+# Optional diagnostics (off means no query pool or timestamp commands)
+effectGpuTiming = false
 ```
 
 ### Per-Game Profiles

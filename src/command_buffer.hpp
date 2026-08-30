@@ -22,7 +22,9 @@ namespace vkBasalt
                              VkImage                                        depthImage,
                              VkImageView                                    depthImageView,
                              VkFormat                                       depthFormat,
-                             std::vector<VkCommandBuffer>                   commandBuffers);
+                             std::vector<VkCommandBuffer>                   commandBuffers,
+                             VkQueryPool                                    timingQueryPool = VK_NULL_HANDLE,
+                             uint32_t                                       timedEffectCount = 0);
 
     std::vector<VkSemaphore> createSemaphores(LogicalDevice* pLogicalDevice, uint32_t count);
 } // namespace vkBasalt

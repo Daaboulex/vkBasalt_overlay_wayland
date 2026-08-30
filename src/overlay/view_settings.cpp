@@ -181,6 +181,18 @@ namespace vkBasalt
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Show debug window with effect registry data and log output.");
 
+        bool effectGpuTiming = settingsManager.getEffectGpuTiming();
+        if (ImGui::Checkbox("Per-effect GPU timing", &effectGpuTiming))
+        {
+            settingsManager.setEffectGpuTiming(effectGpuTiming);
+            saveSettings();
+            applyRequested = true;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Measure each active effect with Vulkan timestamps.\n"
+                              "Disabled by default so normal rendering records no timing commands.\n"
+                              "Changing this setting reloads the active effects.");
+
         ImGui::Spacing();
         ImGui::Text("Layout");
         ImGui::Separator();
