@@ -527,8 +527,12 @@ namespace vkBasalt
         initInfo.QueueFamily = pLogicalDevice->queueFamilyIndex;
         initInfo.Queue = pLogicalDevice->queue;
         initInfo.DescriptorPool = descriptorPool;
-        initInfo.MinImageCount = 2;
-        initInfo.ImageCount = 2;
+        // Dear ImGui rotates one vertex/index-buffer pair per configured
+        // image. Match the real swapchain image count so a larger overlay
+        // frame cannot resize storage that an earlier submission still uses.
+        const uint32_t renderBufferCount = std::max(2u, imageCount);
+        initInfo.MinImageCount = renderBufferCount;
+        initInfo.ImageCount = renderBufferCount;
         initInfo.PipelineInfoMain.RenderPass = renderPass;
 
         ImGui_ImplVulkan_Init(&initInfo);
