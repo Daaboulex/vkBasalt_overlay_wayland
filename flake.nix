@@ -299,6 +299,17 @@
                 touch $out
               '';
 
+          checks.every-param-type-can-be-reset =
+            pkgs.runCommand "every-param-type-can-be-reset" { fields = ./src/overlay/params/fields; }
+              ''
+                grep -q 'ImGui::BeginPopupContextItem' ${./src/overlay/params/field_editor.cpp} \
+                  || { echo "the reset popup is not in the shared field-editor dispatcher, so it reaches only the types that copy it. That is how the bool editor ended up as the one param type with no right-click reset"; exit 1; }
+                copies=$(grep -l 'ImGui::BeginPopupContextItem' "$fields"/*.cpp 2>/dev/null || true)
+                [ -z "$copies" ] \
+                  || { echo "a field editor carries its own reset popup: $copies. One writer, in the dispatcher, or a type gets missed again"; exit 1; }
+                touch $out
+              '';
+
           checks.render-pass-clear-values-outlive-recording =
             pkgs.runCommand "render-pass-clear-values-outlive-recording" { }
               ''

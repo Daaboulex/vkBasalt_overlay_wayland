@@ -36,8 +36,23 @@ namespace vkBasalt
 
         bool changed = editor->render(param);
 
-        if (!param.tooltip.empty() && ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", param.tooltip.c_str());
+        if (!param.tooltip.empty() && ImGui::IsItemHovered() && ImGui::BeginTooltip())
+        {
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+            ImGui::TextUnformatted(param.tooltip.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::EndTooltip();
+        }
+
+        if (ImGui::BeginPopupContextItem("##reset_to_default"))
+        {
+            if (ImGui::MenuItem("Reset to default"))
+            {
+                editor->resetToDefault(param);
+                changed = true;
+            }
+            ImGui::EndPopup();
+        }
 
         return changed;
     }

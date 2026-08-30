@@ -1,6 +1,5 @@
 #include "../field_editor.hpp"
 #include "../../../imgui/imgui.h"
-#include "../../../imgui/imgui_internal.h"
 
 namespace vkBasalt
 {
@@ -24,16 +23,6 @@ namespace vkBasalt
                     }
                 }
                 changed = true;
-            }
-
-            if (ImGui::BeginPopupContextItem("##reset"))
-            {
-                if (ImGui::MenuItem("Reset to default"))
-                {
-                    resetToDefault(param);
-                    changed = true;
-                }
-                ImGui::EndPopup();
             }
 
             return changed;
