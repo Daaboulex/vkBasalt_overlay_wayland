@@ -208,7 +208,9 @@ namespace vkBasalt
         pLogicalSwapchain->commandBuffersEffect = allocateCommandBuffer(pLogicalDevice, pLogicalSwapchain->imageCount);
         writeCommandBuffers(pLogicalDevice, pLogicalSwapchain->effects,
                            depth.image, depth.imageView, depth.format,
-                           pLogicalSwapchain->commandBuffersEffect);
+                           pLogicalSwapchain->commandBuffersEffect,
+                           pLogicalSwapchain->timingQueryPool,
+                           static_cast<uint32_t>(pLogicalSwapchain->timingEffectNames.size()));
 
         pLogicalSwapchain->commandBuffersNoEffect = allocateCommandBuffer(pLogicalDevice, pLogicalSwapchain->imageCount);
         writeCommandBuffers(pLogicalDevice, {pLogicalSwapchain->defaultTransfer},
@@ -569,6 +571,8 @@ namespace vkBasalt
 
         waitForOurEffectSubmissions(pLogicalSwapchain);
 
+        pLogicalSwapchain->destroyEffectTimings();
+
         pLogicalSwapchain->effects.clear();
         pLogicalSwapchain->defaultTransfer.reset();
 
@@ -583,6 +587,9 @@ namespace vkBasalt
         Logger::info("reloading " + std::to_string(effectStrings.size()) + " effects");
 
         createEffectsForSwapchain(pLogicalSwapchain, pLogicalDevice, pConfig, effectStrings);
+
+        if (settingsManager.getEffectGpuTiming())
+            pLogicalSwapchain->initializeEffectTimings(effectStrings);
 
         pLogicalSwapchain->defaultTransfer = std::shared_ptr<Effect>(new TransferEffect(
             pLogicalDevice,
@@ -648,6 +655,37 @@ namespace vkBasalt
         }
         overlayState.configName = cachedConfigName;
         overlayState.effectsEnabled = effectsEnabled;
+
+        const LogicalSwapchain* timingSwapchain = nullptr;
+        uint64_t timingSurfaceArea = 0;
+        for (const auto& [_, swapchain] : swapchainMap)
+        {
+            if (!swapchain || swapchain->pLogicalDevice != pLogicalDevice
+                || !swapchain->timingEnabled || swapchain->timingQueryPool == VK_NULL_HANDLE)
+                continue;
+
+            const uint64_t area = static_cast<uint64_t>(swapchain->imageExtent.width)
+                * static_cast<uint64_t>(swapchain->imageExtent.height);
+            if (timingSwapchain == nullptr || area > timingSurfaceArea)
+            {
+                timingSwapchain = swapchain.get();
+                timingSurfaceArea = area;
+            }
+        }
+        if (timingSwapchain != nullptr)
+        {
+            overlayState.effectGpuTimingSupported = true;
+            for (size_t i = 0; i < timingSwapchain->timingEffectNames.size(); ++i)
+            {
+                if (i >= timingSwapchain->timingMilliseconds.size()
+                    || i >= timingSwapchain->timingValid.size()
+                    || !timingSwapchain->timingValid[i])
+                    continue;
+                overlayState.effectGpuMilliseconds[timingSwapchain->timingEffectNames[i]] =
+                    timingSwapchain->timingMilliseconds[i];
+                overlayState.totalEffectGpuMilliseconds += timingSwapchain->timingMilliseconds[i];
+            }
+        }
 
         for (const auto& effectName : pLogicalDevice->imguiOverlay->getSelectedEffects())
         {
@@ -986,6 +1024,11 @@ namespace vkBasalt
                 Logger::debug("Found graphics capable queue");
                 pLogicalDevice->vkd.CreateCommandPool(pLogicalDevice->device, &commandPoolCreateInfo, nullptr, &pLogicalDevice->commandPool);
                 pLogicalDevice->queueFamilyIndex = queueInfo.queueFamilyIndex;
+                pLogicalDevice->timestampPeriodNanoseconds = deviceProps.limits.timestampPeriod;
+                pLogicalDevice->timestampValidBits = queueProperties[queueInfo.queueFamilyIndex].timestampValidBits;
+
+                if (pLogicalDevice->timestampValidBits == 0)
+                    Logger::info("selected graphics queue does not support timestamp queries; per-effect GPU timing is unavailable");
 
                 initializeDispatchTable(pLogicalDevice->queue, pLogicalDevice->device);
 
@@ -1295,6 +1338,7 @@ namespace vkBasalt
             return *pCount < pLogicalSwapchain->imageCount ? VK_INCOMPLETE : VK_SUCCESS;
         }
 
+        std::vector<std::string> timingEffectNames;
         if (!isFirstRun && !activeEffects.empty())
         {
             Logger::debug("using pass-through during resize, will restore effects after debounce");
@@ -1310,20 +1354,13 @@ namespace vkBasalt
         else
         {
             createEffectsForSwapchain(pLogicalSwapchain, pLogicalDevice, pConfig.get(), activeEffects);
+            timingEffectNames = activeEffects;
         }
 
         DepthState depth = getDepthState(pLogicalDevice);
 
         Logger::debug("active effect count: " + std::to_string(activeEffects.size()));
         Logger::debug("effect count: " + std::to_string(pLogicalSwapchain->effects.size()));
-
-        pLogicalSwapchain->commandBuffersEffect = allocateCommandBuffer(pLogicalDevice, pLogicalSwapchain->imageCount);
-        Logger::debug("allocated ComandBuffers " + std::to_string(pLogicalSwapchain->commandBuffersEffect.size()) + " for swapchain "
-                      + convertToString(swapchain));
-
-        writeCommandBuffers(
-            pLogicalDevice, pLogicalSwapchain->effects, depth.image, depth.imageView, depth.format, pLogicalSwapchain->commandBuffersEffect);
-        Logger::debug("wrote CommandBuffers");
 
         pLogicalSwapchain->effectFences.resize(pLogicalSwapchain->imageCount);
         {
@@ -1340,6 +1377,20 @@ namespace vkBasalt
                 }
             }
         }
+
+        if (settingsManager.getEffectGpuTiming())
+            pLogicalSwapchain->initializeEffectTimings(timingEffectNames);
+
+        pLogicalSwapchain->commandBuffersEffect = allocateCommandBuffer(pLogicalDevice, pLogicalSwapchain->imageCount);
+        Logger::debug("allocated ComandBuffers " + std::to_string(pLogicalSwapchain->commandBuffersEffect.size()) + " for swapchain "
+                      + convertToString(swapchain));
+
+        writeCommandBuffers(
+            pLogicalDevice, pLogicalSwapchain->effects, depth.image, depth.imageView,
+            depth.format, pLogicalSwapchain->commandBuffersEffect,
+            pLogicalSwapchain->timingQueryPool,
+            static_cast<uint32_t>(pLogicalSwapchain->timingEffectNames.size()));
+        Logger::debug("wrote CommandBuffers");
 
         pLogicalSwapchain->semaphores = createSemaphores(pLogicalDevice, pLogicalSwapchain->imageCount);
         pLogicalSwapchain->overlaySemaphores = createSemaphores(pLogicalDevice, pLogicalSwapchain->imageCount);
@@ -1630,6 +1681,9 @@ namespace vkBasalt
                     return waitResult;
                 }
 
+                // The fence is the proof this image's timestamps were written and are readable.
+                pLogicalSwapchain->collectEffectTimings(index);
+
                 const VkResult resetResult =
                     pLogicalDevice->vkd.ResetFences(pLogicalDevice->device, 1, &effectFence);
                 if (resetResult != VK_SUCCESS)
@@ -1683,6 +1737,7 @@ namespace vkBasalt
             VkResult vr = pLogicalDevice->vkd.QueueSubmit(pLogicalDevice->queue, 1, &submitInfo, effectFence);
             if (vr != VK_SUCCESS)
             {
+                pLogicalSwapchain->markTimingSubmission(index, false);
                 // The fence was reset for a submission that never happened, so nothing will ever
                 // signal it. Put it back to signalled, or the next wait on it never returns.
                 if (effectFence != VK_NULL_HANDLE)
@@ -1698,6 +1753,8 @@ namespace vkBasalt
                 }
                 return vr;
             }
+            pLogicalSwapchain->markTimingSubmission(
+                index, presentEffect && effectFence != VK_NULL_HANDLE);
 
             VkSemaphore finalSemaphore;
             vr = submitOverlayFrame(pLogicalDevice, pLogicalSwapchain, index, finalSemaphore);

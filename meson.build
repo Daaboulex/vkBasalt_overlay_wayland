@@ -47,6 +47,11 @@ if get_option('with_so')
         include_directories : include_directories('src'))
     test('reshade-texture-utils', reshade_texture_utils_test)
 
+    effect_timing_test = executable('effect-timing-test',
+        'test/effect_timing_test.cpp',
+        include_directories : include_directories('src'))
+    test('effect-timing', effect_timing_test)
+
     effect_selection_test = executable('effect-selection-test',
         'test/effect_selection_test.cpp',
         include_directories : include_directories('src'))

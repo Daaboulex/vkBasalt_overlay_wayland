@@ -2,6 +2,7 @@
 
 #include "format.hpp"
 #include "util.hpp"
+#include "effect_timing.hpp"
 
 namespace vkBasalt
 {
@@ -31,7 +32,9 @@ namespace vkBasalt
                              VkImage                                        depthImage,
                              VkImageView                                    depthImageView,
                              VkFormat                                       depthFormat,
-                             std::vector<VkCommandBuffer>                   commandBuffers)
+                             std::vector<VkCommandBuffer>                   commandBuffers,
+                             VkQueryPool                                    timingQueryPool,
+                             uint32_t                                       timedEffectCount)
     {
         VkCommandBufferBeginInfo beginInfo = {};
 
@@ -45,11 +48,25 @@ namespace vkBasalt
             effect->useDepthImage(depthImageView);
         }
 
+        if (timedEffectCount > effects.size())
+        {
+            Logger::warn("timestamped effect count exceeds recorded effect count; disabling timing");
+            timingQueryPool = VK_NULL_HANDLE;
+            timedEffectCount = 0;
+        }
+
         for (uint32_t i = 0; i < commandBuffers.size(); i++)
         {
 
             VkResult result = pLogicalDevice->vkd.BeginCommandBuffer(commandBuffers[i], &beginInfo);
             ASSERT_VULKAN(result);
+
+            const uint32_t timingQueryBase = effectTimingQueryBase(i, timedEffectCount);
+            if (timingQueryPool != VK_NULL_HANDLE && timedEffectCount != 0)
+            {
+                pLogicalDevice->vkd.CmdResetQueryPool(
+                    commandBuffers[i], timingQueryPool, timingQueryBase, timedEffectCount * 2u);
+            }
 
             VkImageMemoryBarrier memoryBarrier;
             memoryBarrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -85,7 +102,19 @@ namespace vkBasalt
 
             for (uint32_t j = 0; j < effects.size(); j++)
             {
+                if (timingQueryPool != VK_NULL_HANDLE && j < timedEffectCount)
+                {
+                    pLogicalDevice->vkd.CmdWriteTimestamp(
+                        commandBuffers[i], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                        timingQueryPool, timingQueryBase + j * 2u);
+                }
                 effects[j]->applyEffect(i, commandBuffers[i]);
+                if (timingQueryPool != VK_NULL_HANDLE && j < timedEffectCount)
+                {
+                    pLogicalDevice->vkd.CmdWriteTimestamp(
+                        commandBuffers[i], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                        timingQueryPool, timingQueryBase + j * 2u + 1u);
+                }
             }
 
             memoryBarrier.oldLayout     = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;

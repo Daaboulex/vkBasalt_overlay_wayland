@@ -256,6 +256,8 @@ namespace vkBasalt
             }
             else if (key == "showDebugWindow")
                 settings.showDebugWindow = (value == "true" || value == "1");
+            else if (key == "effectGpuTiming")
+                settings.effectGpuTiming = (value == "true" || value == "1");
         }
 
         return settings;
@@ -300,6 +302,7 @@ namespace vkBasalt
 
         file << "\n# Debug\n";
         file << "showDebugWindow = " << (settings.showDebugWindow ? "true" : "false") << "\n";
+        file << "effectGpuTiming = " << (settings.effectGpuTiming ? "true" : "false") << "\n";
 
         file.close();
         Logger::info("Saved settings to: " + configPath);
