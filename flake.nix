@@ -299,6 +299,57 @@
                 touch $out
               '';
 
+          checks.uniform-writes-cannot-race-the-gpu =
+            pkgs.runCommand "uniform-writes-cannot-race-the-gpu"
+              {
+                nativeBuildInputs = [ pkgs.python3 ];
+                present = ./src/basalt.cpp;
+                effect = ./src/effects/effect_reshade.cpp;
+                header = ./src/effects/effect_reshade.hpp;
+              }
+              ''
+                python3 - <<'PY'
+                from pathlib import Path
+
+                present = Path('${./src/basalt.cpp}').read_text()
+                start = present.index('vkBasalt_QueuePresentKHR(VkQueue queue')
+                wait = present.index('WaitForFences(', start)
+                update = present.index('effect->updateEffect(index);', start)
+                submit = present.index('vkd.QueueSubmit(', start)
+                if not wait < update < submit:
+                    raise SystemExit(
+                        'updateEffect writes mapped uniform memory the pending submission still reads. '
+                        'It must run AFTER the fence wait and BEFORE the submit')
+                PY
+
+                grep -Fq 'std::vector<VkBuffer>       stagingBuffers;' "$header"                   || { echo "the uniform buffer is shared across swapchain images again. One buffer is read by every image in flight, so image i's fence cannot prove a CPU write to it is safe"; exit 1; }
+
+                grep -Fq 'bindSet(VK_PIPELINE_BIND_POINT_GRAPHICS, 0, bufferDescriptorSets)' "$effect"                   || { echo "the graphics pass does not bind THIS image's uniform set"; exit 1; }
+
+                grep -Fq 'bindSet(VK_PIPELINE_BIND_POINT_COMPUTE, 0, bufferDescriptorSets)' "$effect"                   || { echo "the compute pass does not bind THIS image's uniform set, so compute reads another image's uniforms"; exit 1; }
+
+                touch $out
+              '';
+
+          checks.absent-effect-fence-still-proves-completion =
+            pkgs.runCommand "absent-effect-fence-still-proves-completion" { src = ./src/basalt.cpp; }
+              ''
+                body=$(sed -n '/This command buffer is about to be submitted again/,/effect->updateEffect(index);/p' "$src")
+
+                grep -Fq 'QueueWaitIdle' <<< "$body"                   || { echo "with no effect fence there is no proof the previous submission of this command buffer finished, and the uniform write below races it. A queue wait is the coarse proof"; exit 1; }
+
+                grep -Fq 'return waitResult;' <<< "$body"                   || { echo "a fence wait failure does not reach the caller, so the layer continues with an unsynchronised command buffer"; exit 1; }
+
+                grep -Fq 'return resetResult;' <<< "$body"                   || { echo "a fence reset failure does not reach the caller"; exit 1; }
+
+                if grep -q 'VK_ERROR_DEVICE_LOST' <<< "$body"; then
+                  echo "an absent effect fence is reported as device loss. Fence creation is ALLOWED to fail here (swapchain setup and submit-failure recovery both leave VK_NULL_HANDLE), the device is not lost, and the state is permanent -- every later frame would return it and tear the application down instead of degrading"
+                  exit 1
+                fi
+
+                touch $out
+              '';
+
           checks.compute-passes-see-the-sets-they-bind =
             pkgs.runCommand "compute-passes-see-the-sets-they-bind" { src = ./src/descriptor_set.cpp; }
               ''

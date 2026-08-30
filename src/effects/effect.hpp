@@ -17,7 +17,7 @@ namespace vkBasalt
     {
     public:
         void virtual applyEffect(uint32_t imageIndex, VkCommandBuffer commandBuffer) = 0;
-        void virtual updateEffect(){};
+        void virtual updateEffect(uint32_t imageIndex){};
         void virtual useDepthImage(VkImageView depthImageView){};
         virtual ~Effect(){};
 

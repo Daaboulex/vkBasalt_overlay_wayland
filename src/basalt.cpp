@@ -1597,12 +1597,6 @@ namespace vkBasalt
                 continue;
             }
 
-            if (presentEffect)
-            {
-                for (auto& effect : pLogicalSwapchain->effects)
-                    effect->updateEffect();
-            }
-
             // This command buffer is about to be submitted again, so the previous submission of it
             // must have finished. Re-acquiring the image usually means it already has, making this
             // wait free, but "usually" is not a synchronisation guarantee.
@@ -1610,14 +1604,63 @@ namespace vkBasalt
                 ? pLogicalSwapchain->effectFences[index]
                 : VK_NULL_HANDLE;
 
+            // Fence creation is allowed to fail, and both the swapchain setup and the
+            // submit-failure recovery leave VK_NULL_HANDLE behind when it does. Retry once so a
+            // transient failure heals instead of costing a full queue wait on every later frame.
+            if (effectFence == VK_NULL_HANDLE && index < pLogicalSwapchain->effectFences.size())
+            {
+                VkFenceCreateInfo fenceInfo = {};
+                fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+                fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+                if (pLogicalDevice->vkd.CreateFence(pLogicalDevice->device, &fenceInfo, nullptr,
+                                                    &pLogicalSwapchain->effectFences[index]) == VK_SUCCESS)
+                    effectFence = pLogicalSwapchain->effectFences[index];
+                else
+                    pLogicalSwapchain->effectFences[index] = VK_NULL_HANDLE;
+            }
+
             if (effectFence != VK_NULL_HANDLE)
             {
-                if (pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, 1, &effectFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS
-                    || pLogicalDevice->vkd.ResetFences(pLogicalDevice->device, 1, &effectFence) != VK_SUCCESS)
+                const VkResult waitResult = pLogicalDevice->vkd.WaitForFences(
+                    pLogicalDevice->device, 1, &effectFence, VK_TRUE, UINT64_MAX);
+                if (waitResult != VK_SUCCESS)
                 {
-                    Logger::err("effect fence wait or reset failed for image " + std::to_string(index));
-                    effectFence = VK_NULL_HANDLE;
+                    Logger::err("effect fence wait failed for image " + std::to_string(index) + ": "
+                                + std::to_string(waitResult));
+                    return waitResult;
                 }
+
+                const VkResult resetResult =
+                    pLogicalDevice->vkd.ResetFences(pLogicalDevice->device, 1, &effectFence);
+                if (resetResult != VK_SUCCESS)
+                {
+                    Logger::err("effect fence reset failed for image " + std::to_string(index) + ": "
+                                + std::to_string(resetResult));
+                    return resetResult;
+                }
+            }
+            else
+            {
+                // No fence to prove the previous submission of this command buffer finished, and
+                // the uniform writes below would race a GPU still reading them. A queue wait is the
+                // coarse proof. The device is not lost, so reporting that would be a lie the
+                // application acts on by tearing itself down.
+                const VkResult idleResult = pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
+                if (idleResult != VK_SUCCESS)
+                {
+                    Logger::err("queue wait idle (no effect fence) failed for image " + std::to_string(index)
+                                + ": " + std::to_string(idleResult));
+                    return idleResult;
+                }
+            }
+
+            // Writes this image's mapped uniform buffer, which the submission below reads. It must
+            // follow the wait: before it, the previous frame's read of that same buffer can still
+            // be in flight.
+            if (presentEffect)
+            {
+                for (auto& effect : pLogicalSwapchain->effects)
+                    effect->updateEffect(index);
             }
 
             VkSubmitInfo submitInfo = {};
