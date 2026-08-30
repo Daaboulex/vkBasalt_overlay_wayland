@@ -32,6 +32,15 @@ if get_option('with_so')
         env : {'XDG_CACHE_HOME' : meson.current_build_dir() / 'test-xdg-cache'},
         timeout : 300)
 
+    test('live-uniform-lowering', test_shaders_exe,
+        args : [
+            '--require-live-uniforms',
+            '--cache-verify',
+            meson.project_source_root() / 'test' / 'live_uniforms',
+        ],
+        env : {'XDG_CACHE_HOME' : meson.current_build_dir() / 'test-live-uniform-cache'},
+        timeout : 60)
+
     input_map_test = executable('reshade-input-map-test',
         'test/reshade_input_map_test.cpp',
         include_directories : include_directories('src'))
@@ -51,6 +60,16 @@ if get_option('with_so')
         'test/effect_timing_test.cpp',
         include_directories : include_directories('src'))
     test('effect-timing', effect_timing_test)
+
+    reshade_uniform_storage_test = executable('reshade-uniform-storage-test',
+        'test/reshade_uniform_storage_test.cpp',
+        include_directories : include_directories('src'))
+    test('reshade-uniform-storage', reshade_uniform_storage_test)
+
+    live_uniform_policy_test = executable('live-uniform-policy-test',
+        'test/live_uniform_policy_test.cpp',
+        include_directories : include_directories('src'))
+    test('live-uniform-policy', live_uniform_policy_test)
 
     effect_selection_test = executable('effect-selection-test',
         'test/effect_selection_test.cpp',

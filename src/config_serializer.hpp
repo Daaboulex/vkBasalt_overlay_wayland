@@ -29,6 +29,7 @@ namespace vkBasalt
         int autoApplyDelay = 200; // ms
         bool showDebugWindow = false;
         bool effectGpuTiming = false;
+        bool liveReshadeUniforms = false;
     };
 
     struct ProfileSettings

@@ -45,6 +45,11 @@ namespace vkBasalt
         EffectParam* getParameter(const std::string& effectName, const std::string& paramName);
         const EffectParam* getParameter(const std::string& effectName, const std::string& paramName) const;
 
+        bool readParameterWords(
+            const std::string& effectName, const std::string& paramName,
+            uint64_t& cachedRevision, const EffectParam*& cachedParam,
+            uint32_t* words, size_t wordCapacity, size_t& wordCount) const;
+
         std::vector<EffectParam*> getParametersForEffect(const std::string& effectName);
 
         Config* getConfig() const { return pConfig; }
@@ -93,6 +98,7 @@ namespace vkBasalt
         std::vector<std::string> selectedEffects;
         bool initializedFromConfig = false;
         Config* pConfig = nullptr;
+        uint64_t parameterStorageRevision = 1;
         mutable std::mutex mutex;
 
         void initBuiltInEffect(const std::string& instanceName, const std::string& effectType);

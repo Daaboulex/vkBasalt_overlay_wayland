@@ -1,6 +1,7 @@
 #include "imgui_overlay.hpp"
 #include "effects/effect_registry.hpp"
 #include "settings_manager.hpp"
+#include "live_uniform_policy.hpp"
 #include "reshade_parser.hpp"
 #include "logger.hpp"
 #include "mouse_input.hpp"
@@ -422,6 +423,30 @@ namespace vkBasalt
         }
     }
 
+    void ImGuiOverlay::markLiveValuesChanged()
+    {
+        liveValuesDirty = true;
+        if (!activeProfilePath.empty())
+            profileDirty = true;
+        lastChangeTime = std::chrono::steady_clock::now();
+    }
+
+    void ImGuiOverlay::markEffectValuesChanged(const std::string& effectName)
+    {
+        const bool builtIn = pEffectRegistry != nullptr
+            && pEffectRegistry->isEffectBuiltIn(effectName);
+        if (effectValueApplyMode(
+                settingsManager.getLiveReshadeUniforms(), builtIn)
+            == EffectValueApplyMode::LiveUniform)
+        {
+            markLiveValuesChanged();
+            return;
+        }
+
+        markDirty();
+        profileDirty = true;
+    }
+
     void ImGuiOverlay::setSelectedEffects(const std::vector<std::string>& effects,
                                           const std::vector<std::string>& disabledEffects)
     {
@@ -775,11 +800,14 @@ namespace vkBasalt
 
         renderDebugWindow();
 
+        const auto profileNow = std::chrono::steady_clock::now();
+        const auto profileElapsed =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                profileNow - lastChangeTime).count();
+
         if (settingsManager.getAutoApply() && paramsDirty)
         {
-            auto now = std::chrono::steady_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastChangeTime).count();
-            if (elapsed >= settingsManager.getAutoApplyDelay())
+            if (profileElapsed >= settingsManager.getAutoApplyDelay())
             {
                 applyRequested = true;
                 paramsDirty = false;
@@ -787,7 +815,23 @@ namespace vkBasalt
             }
         }
 
-        if (profileDirty && !paramsDirty && !activeProfilePath.empty())
+        if (liveValuesDirty
+            && profileElapsed >= settingsManager.getAutoApplyDelay())
+        {
+            if (!activeProfilePath.empty())
+            {
+                autoSaveProfile();
+                if (!profileDirty)
+                    liveValuesDirty = false;
+            }
+            else
+            {
+                liveValuesDirty = false;
+            }
+        }
+
+        if (profileDirty && !paramsDirty && !liveValuesDirty
+            && !activeProfilePath.empty())
             autoSaveProfile();
 
         static bool firstFrame = true;

@@ -350,6 +350,20 @@
                 touch $out
               '';
 
+          checks.live-uniforms-are-opt-in-and-builtins-rebuild =
+            pkgs.runCommand "live-uniforms-are-opt-in-and-builtins-rebuild" { }
+              ''
+                grep -Fq 'bool liveReshadeUniforms = false;' ${./src/config_serializer.hpp} \
+                  || { echo "live uniform lowering is not default-off"; exit 1; }
+                grep -Fq '!liveUniforms /* uniforms to specialization constants */' ${./src/shader_cache.cpp} \
+                  || { echo "the code generator no longer honors the selected lowering mode"; exit 1; }
+                grep -Fq 'blob += liveUniforms' ${./src/shader_cache.cpp} \
+                  || { echo "specialized and live variants can alias in the shader cache"; exit 1; }
+                grep -Fq 'settingsManager.getLiveReshadeUniforms(), builtIn' ${./src/overlay/imgui_overlay.cpp} \
+                  || { echo "built-in effect values can be routed into a nonexistent live uniform buffer"; exit 1; }
+                touch $out
+              '';
+
           checks.compute-passes-see-the-sets-they-bind =
             pkgs.runCommand "compute-passes-see-the-sets-they-bind" { src = ./src/descriptor_set.cpp; }
               ''

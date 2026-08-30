@@ -193,6 +193,18 @@ namespace vkBasalt
                               "Disabled by default so normal rendering records no timing commands.\n"
                               "Changing this setting reloads the active effects.");
 
+        bool liveReshadeUniforms = settingsManager.getLiveReshadeUniforms();
+        if (ImGui::Checkbox("Live ReShade uniforms", &liveReshadeUniforms))
+        {
+            settingsManager.setLiveReshadeUniforms(liveReshadeUniforms);
+            saveSettings();
+            applyRequested = true;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Update ReShade slider, dropdown and checkbox values through per-image uniform buffers.\n"
+                              "Disabled by default. Built-in filters still rebuild because they use specialization constants.\n"
+                              "Changing this setting reloads the active effects.");
+
         ImGui::Spacing();
         ImGui::Text("Layout");
         ImGui::Separator();
