@@ -345,7 +345,8 @@
               '';
 
           checks.effect-timing-is-collected-before-fence-reset =
-            pkgs.runCommand "effect-timing-is-collected-before-fence-reset" { nativeBuildInputs = [ pkgs.python3 ]; }
+            pkgs.runCommand "effect-timing-is-collected-before-fence-reset"
+              { nativeBuildInputs = [ pkgs.python3 ]; }
               ''
                 python3 - <<'PY'
                 from pathlib import Path
