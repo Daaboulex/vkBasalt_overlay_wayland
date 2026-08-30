@@ -80,7 +80,7 @@ namespace vkBasalt
                       std::string          effectPath = "",
                       std::vector<PreprocessorDefinition> customDefs = {});
         void virtual applyEffect(uint32_t imageIndex, VkCommandBuffer commandBuffer) override;
-        void virtual updateEffect() override;
+        void virtual updateEffect(uint32_t imageIndex) override;
         void virtual useDepthImage(VkImageView depthImageView) override;
         virtual ~ReshadeEffect();
 
@@ -165,11 +165,11 @@ namespace vkBasalt
         std::vector<VkImage>     backBufferImages;
         std::vector<VkImageView> backBufferImageViewsUNORM;
         std::vector<VkImageView> backBufferImageViewsSRGB;
-        VkBuffer                 stagingBuffer = VK_NULL_HANDLE;
-        VkDeviceMemory           stagingBufferMemory = VK_NULL_HANDLE;
         uint32_t                 bufferSize = 0;
-        void*                    stagingBufferMapped = nullptr;  // Persistent map (HOST_COHERENT)
-        VkDescriptorSet          bufferDescriptorSet = VK_NULL_HANDLE;
+        std::vector<VkBuffer>     uniformBuffers;
+        std::vector<VkDeviceMemory> uniformBufferMemory;
+        std::vector<void*>        uniformBuffersMapped;
+        std::vector<VkDescriptorSet> bufferDescriptorSets;
 
         std::vector<std::shared_ptr<ReshadeUniform>> uniforms;
 

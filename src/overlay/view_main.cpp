@@ -320,8 +320,7 @@ namespace vkBasalt
                         if (editor)
                             editor->resetToDefault(*param);
                     }
-                    paramsDirty = true;
-                    lastChangeTime = std::chrono::steady_clock::now();
+                    markEffectValuesChanged(effectName);
                 }
 
                 ImGui::Separator();
@@ -419,10 +418,7 @@ namespace vkBasalt
             {
                 ImGui::PushID(static_cast<int>(paramIdx));
                 if (renderFieldEditor(*effectParams[paramIdx]))
-                {
-                    paramsDirty = true;
-                    lastChangeTime = std::chrono::steady_clock::now();
-                }
+                    markEffectValuesChanged(effectName);
                 ImGui::PopID();
             }
 
@@ -453,6 +449,10 @@ namespace vkBasalt
         ImGui::EndChild();
 
         ImGui::Separator();
+        if (settingsManager.getLiveReshadeUniforms())
+            ImGui::TextDisabled("ReShade values update live; built-in filters rebuild after changes.");
+        else
+            ImGui::TextDisabled("Value changes apply after the configured debounce or with Apply.");
         bool autoApplyVal = settingsManager.getAutoApply();
         if (ImGui::Checkbox("Apply automatically", &autoApplyVal))
         {

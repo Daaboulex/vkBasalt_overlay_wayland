@@ -292,6 +292,9 @@ depthCapture = false
 # Overlay options
 overlayBlockInput = false
 autoApplyDelay = 200  # ms delay before auto-applying changes
+
+# Optional: keep ReShade UI parameters in per-image uniform buffers
+liveReshadeUniforms = false
 ```
 
 ### Per-Game Profiles

@@ -37,11 +37,15 @@ namespace vkBasalt
     // relaxMinPrecision lets the driver compute a shader's declared half or
     // min16float math at 16 bits; it is part of the cache key, so both variants
     // of an effect coexist on disk.
+    // liveUniforms keeps ordinary ReShade parameters in the runtime uniform
+    // buffer. It is opt-in and part of the cache key; false preserves the
+    // specialization-constant path.
     std::shared_ptr<const CompiledReshadeEffect> getOrCompileReshadeEffect(
         const std::string& fxPath,
         const std::vector<std::pair<std::string, std::string>>& macroDefinitions,
         const std::vector<std::string>& includePaths,
-        bool relaxMinPrecision = false);
+        bool relaxMinPrecision = false,
+        bool liveUniforms = false);
 
     // Serializes and deserializes the entry in memory, then compares every field
     // the renderer reads. Returns the first field that failed to round-trip, or

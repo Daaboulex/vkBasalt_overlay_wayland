@@ -1140,6 +1140,7 @@ namespace vkBasalt
         std::string                                      shaderPath;
         std::vector<std::pair<std::string, std::string>> defines;
         bool                                             relaxMinPrecision = false;
+        bool                                             liveUniforms = false;
     };
 
     // Caller HOLDS globalLock.
@@ -1158,7 +1159,8 @@ namespace vkBasalt
 
             requests.push_back({std::move(path),
                                 reshadeCompileDefines(extent, unormFormat, colorSpace, effectRegistry.getCompilePreprocessorDefs(name)),
-                                effectRegistry.getAllowHalfPrecision(name)});
+                                effectRegistry.getAllowHalfPrecision(name),
+                                settingsManager.getLiveReshadeUniforms()});
         }
 
         return requests;
@@ -1176,7 +1178,9 @@ namespace vkBasalt
         {
             try
             {
-                getOrCompileReshadeEffect(request.shaderPath, request.defines, includePaths, request.relaxMinPrecision);
+                getOrCompileReshadeEffect(
+                    request.shaderPath, request.defines, includePaths,
+                    request.relaxMinPrecision, request.liveUniforms);
             }
             catch (const std::exception& e)
             {
@@ -1597,12 +1601,6 @@ namespace vkBasalt
                 continue;
             }
 
-            if (presentEffect)
-            {
-                for (auto& effect : pLogicalSwapchain->effects)
-                    effect->updateEffect();
-            }
-
             // This command buffer is about to be submitted again, so the previous submission of it
             // must have finished. Re-acquiring the image usually means it already has, making this
             // wait free, but "usually" is not a synchronisation guarantee.
@@ -1625,6 +1623,15 @@ namespace vkBasalt
                             + std::to_string(index) + ": "
                             + std::to_string(waitResult));
                 return waitResult;
+            }
+
+            // Each swapchain image owns a separate mapped uniform buffer.
+            // Update it only after this image's previous effect submission
+            // has completed, so CPU writes cannot race GPU reads.
+            if (presentEffect)
+            {
+                for (auto& effect : pLogicalSwapchain->effects)
+                    effect->updateEffect(index);
             }
 
             const VkResult resetResult = pLogicalDevice->vkd.ResetFences(
