@@ -1610,14 +1610,31 @@ namespace vkBasalt
                 ? pLogicalSwapchain->effectFences[index]
                 : VK_NULL_HANDLE;
 
-            if (effectFence != VK_NULL_HANDLE)
+            if (effectFence == VK_NULL_HANDLE)
             {
-                if (pLogicalDevice->vkd.WaitForFences(pLogicalDevice->device, 1, &effectFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS
-                    || pLogicalDevice->vkd.ResetFences(pLogicalDevice->device, 1, &effectFence) != VK_SUCCESS)
-                {
-                    Logger::err("effect fence wait or reset failed for image " + std::to_string(index));
-                    effectFence = VK_NULL_HANDLE;
-                }
+                Logger::err("effect submission fence is unavailable for image "
+                            + std::to_string(index));
+                return VK_ERROR_DEVICE_LOST;
+            }
+
+            const VkResult waitResult = pLogicalDevice->vkd.WaitForFences(
+                pLogicalDevice->device, 1, &effectFence, VK_TRUE, UINT64_MAX);
+            if (waitResult != VK_SUCCESS)
+            {
+                Logger::err("effect fence wait failed for image "
+                            + std::to_string(index) + ": "
+                            + std::to_string(waitResult));
+                return waitResult;
+            }
+
+            const VkResult resetResult = pLogicalDevice->vkd.ResetFences(
+                pLogicalDevice->device, 1, &effectFence);
+            if (resetResult != VK_SUCCESS)
+            {
+                Logger::err("effect fence reset failed for image "
+                            + std::to_string(index) + ": "
+                            + std::to_string(resetResult));
+                return resetResult;
             }
 
             VkSubmitInfo submitInfo = {};
