@@ -299,6 +299,17 @@
                 touch $out
               '';
 
+          checks.compute-passes-see-the-sets-they-bind =
+            pkgs.runCommand "compute-passes-see-the-sets-they-bind" { src = ./src/descriptor_set.cpp; }
+              ''
+                for fn in createUniformBufferDescriptorSetLayout createImageSamplerDescriptorSetLayout; do
+                  body=$(awk "/VkDescriptorSetLayout $fn/,/^    }/" "$src")
+                  grep -q 'VK_SHADER_STAGE_COMPUTE_BIT' <<< "$body" \
+                    || { echo "$fn omits the compute stage, but ReShade compute passes bind that set at VK_PIPELINE_BIND_POINT_COMPUTE, so the layout disagrees with how the shader actually uses it"; exit 1; }
+                done
+                touch $out
+              '';
+
           checks.every-param-type-can-be-reset =
             pkgs.runCommand "every-param-type-can-be-reset" { fields = ./src/overlay/params/fields; }
               ''

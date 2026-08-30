@@ -6,20 +6,28 @@ namespace vkBasalt
 
     VkDescriptorPool createDescriptorPool(LogicalDevice* pLogicalDevice, const std::vector<VkDescriptorPoolSize>& poolSizes)
     {
+        std::vector<VkDescriptorPoolSize> nonZeroPoolSizes;
+        nonZeroPoolSizes.reserve(poolSizes.size());
+        for (const VkDescriptorPoolSize& poolSize : poolSizes)
+        {
+            if (poolSize.descriptorCount != 0)
+                nonZeroPoolSizes.push_back(poolSize);
+        }
+
         uint32_t setCount = 0;
 
-        VkDescriptorPool descriptorPool;
-        for (uint32_t i = 0; i < poolSizes.size(); i++)
+        VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+        for (const VkDescriptorPoolSize& poolSize : nonZeroPoolSizes)
         {
-            setCount += poolSizes[i].descriptorCount;
+            setCount += poolSize.descriptorCount;
         }
         VkDescriptorPoolCreateInfo descriptorPoolCreateInfo;
         descriptorPoolCreateInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         descriptorPoolCreateInfo.pNext         = nullptr;
         descriptorPoolCreateInfo.flags         = 0;
-        descriptorPoolCreateInfo.maxSets       = setCount;
-        descriptorPoolCreateInfo.poolSizeCount = poolSizes.size();
-        descriptorPoolCreateInfo.pPoolSizes    = poolSizes.data();
+        descriptorPoolCreateInfo.maxSets       = setCount > 0 ? setCount : 1;
+        descriptorPoolCreateInfo.poolSizeCount = nonZeroPoolSizes.size();
+        descriptorPoolCreateInfo.pPoolSizes    = nonZeroPoolSizes.empty() ? nullptr : nonZeroPoolSizes.data();
 
         VkResult result = pLogicalDevice->vkd.CreateDescriptorPool(pLogicalDevice->device, &descriptorPoolCreateInfo, nullptr, &descriptorPool);
         ASSERT_VULKAN(result);
@@ -34,7 +42,7 @@ namespace vkBasalt
         descriptorSetLayoutBinding.binding            = 0;
         descriptorSetLayoutBinding.descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         descriptorSetLayoutBinding.descriptorCount    = 1;
-        descriptorSetLayoutBinding.stageFlags         = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT;
+        descriptorSetLayoutBinding.stageFlags         = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
         descriptorSetLayoutBinding.pImmutableSamplers = nullptr;
 
         VkDescriptorSetLayoutCreateInfo descriptorSetCreateInfo;
@@ -103,7 +111,7 @@ namespace vkBasalt
             descriptorSetLayoutBinding.binding            = i;
             descriptorSetLayoutBinding.descriptorType     = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             descriptorSetLayoutBinding.descriptorCount    = 1;
-            descriptorSetLayoutBinding.stageFlags         = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT;
+            descriptorSetLayoutBinding.stageFlags         = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
             descriptorSetLayoutBinding.pImmutableSamplers = nullptr;
             bindigs[i]                                    = descriptorSetLayoutBinding;
         }
