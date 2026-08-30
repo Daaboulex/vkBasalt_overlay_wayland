@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <cstring>
 #include <set>
 #include <sstream>
 
@@ -148,6 +149,7 @@ namespace vkBasalt
         }
 
         Logger::debug("EffectRegistry: initialized " + std::to_string(effects.size()) + " effects");
+        ++parameterStorageRevision;
     }
 
     void EffectRegistry::initBuiltInEffect(const std::string& instanceName, const std::string& effectType)
@@ -399,6 +401,80 @@ namespace vkBasalt
         return findParam(*effect, paramName);
     }
 
+    bool EffectRegistry::readParameterWords(
+        const std::string& effectName, const std::string& paramName,
+        uint64_t& cachedRevision, const EffectParam*& cachedParam,
+        uint32_t* words, size_t wordCapacity, size_t& wordCount) const
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        wordCount = 0;
+        if (words == nullptr || wordCapacity == 0)
+            return false;
+
+        if (cachedRevision != parameterStorageRevision)
+        {
+            const EffectConfig* effect = findEffect(effectName);
+            cachedParam = effect != nullptr ? findParam(*effect, paramName) : nullptr;
+            cachedRevision = parameterStorageRevision;
+        }
+        if (cachedParam == nullptr)
+            return false;
+
+        switch (cachedParam->getType())
+        {
+            case ParamType::Float:
+            {
+                const auto* value = static_cast<const FloatParam*>(cachedParam);
+                std::memcpy(words, &value->value, sizeof(float));
+                wordCount = 1;
+                break;
+            }
+            case ParamType::FloatVec:
+            {
+                const auto* value = static_cast<const FloatVecParam*>(cachedParam);
+                wordCount = std::min<size_t>(value->componentCount, std::min<size_t>(4, wordCapacity));
+                std::memcpy(words, value->value, wordCount * sizeof(float));
+                break;
+            }
+            case ParamType::Int:
+            {
+                const auto* value = static_cast<const IntParam*>(cachedParam);
+                std::memcpy(words, &value->value, sizeof(int32_t));
+                wordCount = 1;
+                break;
+            }
+            case ParamType::IntVec:
+            {
+                const auto* value = static_cast<const IntVecParam*>(cachedParam);
+                wordCount = std::min<size_t>(value->componentCount, std::min<size_t>(4, wordCapacity));
+                std::memcpy(words, value->value, wordCount * sizeof(int32_t));
+                break;
+            }
+            case ParamType::Uint:
+            {
+                const auto* value = static_cast<const UintParam*>(cachedParam);
+                words[0] = value->value;
+                wordCount = 1;
+                break;
+            }
+            case ParamType::UintVec:
+            {
+                const auto* value = static_cast<const UintVecParam*>(cachedParam);
+                wordCount = std::min<size_t>(value->componentCount, std::min<size_t>(4, wordCapacity));
+                std::memcpy(words, value->value, wordCount * sizeof(uint32_t));
+                break;
+            }
+            case ParamType::Bool:
+            {
+                const auto* value = static_cast<const BoolParam*>(cachedParam);
+                words[0] = value->value ? 1u : 0u;
+                wordCount = 1;
+                break;
+            }
+        }
+        return wordCount != 0;
+    }
+
     std::vector<EffectParam*> EffectRegistry::getParametersForEffect(const std::string& effectName)
     {
         std::lock_guard<std::mutex> lock(mutex);
@@ -514,15 +590,19 @@ namespace vkBasalt
             initBuiltInEffect(instanceName, type);
         else
             initReshadeEffect(instanceName, path);
+        ++parameterStorageRevision;
     }
 
     void EffectRegistry::removeEffect(const std::string& name)
     {
         std::lock_guard<std::mutex> lock(mutex);
+        const size_t oldSize = effects.size();
         effects.erase(
             std::remove_if(effects.begin(), effects.end(),
                 [&](const EffectConfig& e) { return e.name == name; }),
             effects.end());
+        if (effects.size() != oldSize)
+            ++parameterStorageRevision;
     }
 
     bool EffectRegistry::effectUsesMinPrecision(const std::string& effectName) const

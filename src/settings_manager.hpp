@@ -27,6 +27,7 @@ namespace vkBasalt
         int getAutoApplyDelay() const { return settings.autoApplyDelay; }
         bool getShowDebugWindow() const { return settings.showDebugWindow; }
         bool getEffectGpuTiming() const { return settings.effectGpuTiming; }
+        bool getLiveReshadeUniforms() const { return settings.liveReshadeUniforms; }
         bool getSafeAntiCheat() const { return safeAntiCheat; }
 
         void setMaxEffects(int value) { settings.maxEffects = value; }
@@ -40,6 +41,7 @@ namespace vkBasalt
         void setAutoApplyDelay(int value) { settings.autoApplyDelay = value; }
         void setShowDebugWindow(bool value) { settings.showDebugWindow = value; }
         void setEffectGpuTiming(bool value) { settings.effectGpuTiming = value; }
+        void setLiveReshadeUniforms(bool value) { settings.liveReshadeUniforms = value; }
         void setSafeAntiCheat(bool value) { safeAntiCheat = value; }
 
         const VkBasaltSettings& getSettings() const { return settings; }

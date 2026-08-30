@@ -31,7 +31,7 @@ namespace vkBasalt
     namespace
     {
         // Bump when the serialized layout, base macros, or stubs change.
-        constexpr uint32_t SCHEMA_VERSION = 6;
+        constexpr uint32_t SCHEMA_VERSION = 7;
         constexpr uint32_t MAGIC = 0x43424B56; // "VKBC"
         constexpr size_t MEMORY_CACHE_CAP = 16;
         constexpr size_t DISK_CACHE_CAP = 256;
@@ -800,6 +800,7 @@ namespace vkBasalt
             const std::vector<std::pair<std::string, std::string>>& macroDefinitions,
             const std::vector<std::string>& includePaths,
             bool relaxMinPrecision,
+            bool liveUniforms,
             bool& cacheable)
         {
             auto e = std::make_shared<CompiledReshadeEffect>();
@@ -846,7 +847,7 @@ namespace vkBasalt
 
             reshadefx::parser parser;
             std::unique_ptr<reshadefx::codegen> codegen(reshadefx::create_codegen_spirv(
-                true /* vulkan semantics */, true /* debug info */, true /* uniforms to spec constants */,
+                true /* vulkan semantics */, true /* debug info */, !liveUniforms /* uniforms to specialization constants */,
                 false /* 16-bit types */, true /* flip vertex shader */, relaxMinPrecision));
 
             if (!parser.parse(preprocessor.output(), codegen.get()))
@@ -898,7 +899,8 @@ namespace vkBasalt
         const std::string& fxPath,
         const std::vector<std::pair<std::string, std::string>>& macroDefinitions,
         const std::vector<std::string>& includePaths,
-        bool relaxMinPrecision)
+        bool relaxMinPrecision,
+        bool liveUniforms)
     {
         std::string fxContent;
         bool haveFx = readFileBytes(fxPath, fxContent);
@@ -924,6 +926,8 @@ namespace vkBasalt
             }
             blob += '\x1f';
             blob += relaxMinPrecision ? '1' : '0';
+            blob += '\x1f';
+            blob += liveUniforms ? '1' : '0';
             blob += '\x1f';
             blob += fxPath;
             blob += '\x1f';
@@ -964,7 +968,9 @@ namespace vkBasalt
         }
 
         bool cacheable = false;
-        auto entry = compileEffect(fxPath, macroDefinitions, includePaths, relaxMinPrecision, cacheable);
+        auto entry = compileEffect(
+            fxPath, macroDefinitions, includePaths,
+            relaxMinPrecision, liveUniforms, cacheable);
 
         if (haveFx && cacheable)
         {

@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <random>
+#include <utility>
 
 #include <algorithm>
 
@@ -12,6 +13,9 @@
 #include "mouse_input.hpp"
 #include "keyboard_input.hpp"
 #include "reshade_input_map.hpp"
+#include "reshade_uniform_storage.hpp"
+#include "effects/effect_registry.hpp"
+#include "effects/params/effect_param.hpp"
 
 namespace vkBasalt
 {
@@ -36,7 +40,9 @@ namespace vkBasalt
         }
     }
 
-    std::vector<std::shared_ptr<ReshadeUniform>> createReshadeUniforms(reshadefx::effect_module module)
+    std::vector<std::shared_ptr<ReshadeUniform>> createReshadeUniforms(
+        reshadefx::effect_module module, EffectRegistry* effectRegistry,
+        const std::string& effectName, bool liveUniforms)
     {
         std::vector<std::shared_ptr<ReshadeUniform>> uniforms;
         for (auto& uniform : module.uniforms)
@@ -45,7 +51,15 @@ namespace vkBasalt
                            return a.name == "source";
                        });
             if (it == uniform.annotations.end())
+            {
+                // Only in live mode. With specialization constants the value is
+                // baked into the pipeline and is not in the uniform buffer at all,
+                // so writing it every frame is work that changes nothing.
+                if (liveUniforms)
+                    uniforms.push_back(std::make_shared<ParameterUniform>(
+                        uniform, effectRegistry, effectName));
                 continue;
+            }
             auto source = it->value.string_data;
             if (source == "frametime")
             {
@@ -93,6 +107,44 @@ namespace vkBasalt
             }
         }
         return uniforms;
+    }
+
+    ParameterUniform::ParameterUniform(
+        reshadefx::uniform uniformInfo, EffectRegistry* effectRegistry,
+        std::string effectName)
+        : uniformInfo(std::move(uniformInfo)),
+          effectRegistry(effectRegistry), effectName(std::move(effectName))
+    {
+        offset = this->uniformInfo.offset;
+        size = this->uniformInfo.size;
+    }
+
+    void ParameterUniform::update(void* mappedBuffer, size_t bufferSize)
+    {
+        if (mappedBuffer == nullptr)
+            return;
+
+        if (effectRegistry == nullptr)
+        {
+            writeReshadeUniformInitializer(mappedBuffer, bufferSize, uniformInfo);
+            return;
+        }
+
+        uint32_t words[16] = {};
+        size_t wordCount = 0;
+        if (effectRegistry->readParameterWords(
+                effectName, uniformInfo.name,
+                cachedRegistryRevision, cachedParam,
+                words, std::size(words), wordCount))
+        {
+            writeReshadeUniformWords(
+                mappedBuffer, bufferSize,
+                uniformInfo, words, wordCount);
+        }
+        else
+        {
+            writeReshadeUniformInitializer(mappedBuffer, bufferSize, uniformInfo);
+        }
     }
 
     namespace
@@ -155,7 +207,7 @@ namespace vkBasalt
         offset    = uniformInfo.offset;
         size      = uniformInfo.size;
     }
-    void FrameTimeUniform::update(void* mapedBuffer)
+    void FrameTimeUniform::update(void* mapedBuffer, size_t bufferSize)
     {
         auto                                     currentFrame = std::chrono::high_resolution_clock::now();
         std::chrono::duration<float, std::milli> duration     = currentFrame - lastFrame;
@@ -177,7 +229,7 @@ namespace vkBasalt
         offset = uniformInfo.offset;
         size   = uniformInfo.size;
     }
-    void FrameCountUniform::update(void* mapedBuffer)
+    void FrameCountUniform::update(void* mapedBuffer, size_t bufferSize)
     {
         std::memcpy((uint8_t*) mapedBuffer + offset, &(count), sizeof(int32_t));
         count++;
@@ -196,7 +248,7 @@ namespace vkBasalt
         offset = uniformInfo.offset;
         size   = uniformInfo.size;
     }
-    void DateUniform::update(void* mapedBuffer)
+    void DateUniform::update(void* mapedBuffer, size_t bufferSize)
     {
         // localtime_r only when the second changes.
         static thread_local std::time_t lastSecond = 0;
@@ -233,7 +285,7 @@ namespace vkBasalt
         offset = uniformInfo.offset;
         size   = uniformInfo.size;
     }
-    void TimerUniform::update(void* mapedBuffer)
+    void TimerUniform::update(void* mapedBuffer, size_t bufferSize)
     {
         auto                                     currentFrame = std::chrono::high_resolution_clock::now();
         std::chrono::duration<float, std::milli> duration     = currentFrame - start;
@@ -285,7 +337,7 @@ namespace vkBasalt
         offset = uniformInfo.offset;
         size   = uniformInfo.size;
     }
-    void PingPongUniform::update(void* mapedBuffer)
+    void PingPongUniform::update(void* mapedBuffer, size_t bufferSize)
     {
         auto currentFrame = std::chrono::high_resolution_clock::now();
 
@@ -340,7 +392,7 @@ namespace vkBasalt
         offset = uniformInfo.offset;
         size   = uniformInfo.size;
     }
-    void RandomUniform::update(void* mapedBuffer)
+    void RandomUniform::update(void* mapedBuffer, size_t bufferSize)
     {
         if (min > max) std::swap(min, max);
         std::uniform_int_distribution<int32_t> dist(min, max);
@@ -366,7 +418,7 @@ namespace vkBasalt
             Logger::warn("ReShade key uniform requests virtual-key " + std::to_string(keycodeFromAnnotation(uniformInfo))
                          + ", which has no keysym mapping -- it will read as not pressed");
     }
-    void KeyUniform::update(void* mapedBuffer)
+    void KeyUniform::update(void* mapedBuffer, size_t bufferSize)
     {
         VkBool32 keyDown = keysym ? (VkBool32) applyKeyMode(mode, isKeyPressed(keysym), wasDown, toggled) : VK_FALSE;
         std::memcpy((uint8_t*) mapedBuffer + offset, &(keyDown), sizeof(VkBool32));
@@ -387,7 +439,7 @@ namespace vkBasalt
         mode   = modeFromAnnotation(uniformInfo);
         button = keycodeFromAnnotation(uniformInfo);
     }
-    void MouseButtonUniform::update(void* mapedBuffer)
+    void MouseButtonUniform::update(void* mapedBuffer, size_t bufferSize)
     {
         bool isDown = false;
         switch (button)
@@ -415,7 +467,7 @@ namespace vkBasalt
         offset = uniformInfo.offset;
         size   = uniformInfo.size;
     }
-    void MousePointUniform::update(void* mapedBuffer)
+    void MousePointUniform::update(void* mapedBuffer, size_t bufferSize)
     {
         float point[2] = {static_cast<float>(sharedMouse.current.x), static_cast<float>(sharedMouse.current.y)};
         std::memcpy((uint8_t*) mapedBuffer + offset, point, sizeof(float) * 2);
@@ -434,7 +486,7 @@ namespace vkBasalt
         offset = uniformInfo.offset;
         size   = uniformInfo.size;
     }
-    void MouseDeltaUniform::update(void* mapedBuffer)
+    void MouseDeltaUniform::update(void* mapedBuffer, size_t bufferSize)
     {
         float delta[2] = {static_cast<float>(sharedMouse.current.x - sharedMouse.previous.x),
                           static_cast<float>(sharedMouse.current.y - sharedMouse.previous.y)};
@@ -454,7 +506,7 @@ namespace vkBasalt
         offset = uniformInfo.offset;
         size   = uniformInfo.size;
     }
-    void DepthUniform::update(void* mapedBuffer)
+    void DepthUniform::update(void* mapedBuffer, size_t bufferSize)
     {
         VkBool32 hasDepth = depthAvailable ? VK_TRUE : VK_FALSE;
         std::memcpy((uint8_t*) mapedBuffer + offset, &(hasDepth), sizeof(VkBool32));

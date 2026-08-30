@@ -28,6 +28,7 @@
 #include "format.hpp"
 #include "config_serializer.hpp"
 #include "shader_cache.hpp"
+#include "settings_manager.hpp"
 
 #include "util.hpp"
 
@@ -220,7 +221,9 @@ namespace vkBasalt
 
         enumerateReshadeUniforms(module);
 
-        uniforms = createReshadeUniforms(module);
+        uniforms = createReshadeUniforms(
+            module, pEffectRegistry, effectName,
+            settingsManager.getLiveReshadeUniforms());
 
         bufferSize = module.total_uniform_size;
         if (bufferSize)
@@ -1184,7 +1187,7 @@ namespace vkBasalt
             return;
 
         for (auto& uniform : uniforms)
-            uniform->update(stagingBuffersMapped[imageIndex]);
+            uniform->update(stagingBuffersMapped[imageIndex], bufferSize);
     }
 
     void ReshadeEffect::useDepthImage(VkImageView depthImageView)
@@ -1646,7 +1649,8 @@ namespace vkBasalt
         }
 
         auto compiled = getOrCompileReshadeEffect(shaderPath, defines, shaderMgrConfig.discoveredShaderPaths,
-                                                  pEffectRegistry && pEffectRegistry->getAllowHalfPrecision(effectName));
+                                                  pEffectRegistry && pEffectRegistry->getAllowHalfPrecision(effectName),
+                                                  settingsManager.getLiveReshadeUniforms());
         if (!compiled->ok())
         {
             Logger::err(shaderPath + ": " + compiled->error);

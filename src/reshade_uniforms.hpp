@@ -1,5 +1,6 @@
 #ifndef RESHADE_UNIFORMS_HPP_INCLUDED
 #define RESHADE_UNIFORMS_HPP_INCLUDED
+#include <cstddef>
 #include <vector>
 #include <fstream>
 #include <string>
@@ -15,12 +16,15 @@
 
 namespace vkBasalt
 {
+    class EffectRegistry;
+    class EffectParam;
+
     void enumerateReshadeUniforms(reshadefx::effect_module module);
 
     class ReshadeUniform
     {
     public:
-        void virtual update(void* mapedBuffer) = 0;
+        void virtual update(void* mapedBuffer, size_t bufferSize) = 0;
         virtual ~ReshadeUniform(){};
 
     protected:
@@ -28,13 +32,31 @@ namespace vkBasalt
         uint32_t size;
     };
 
-    std::vector<std::shared_ptr<ReshadeUniform>> createReshadeUniforms(reshadefx::effect_module module);
+    std::vector<std::shared_ptr<ReshadeUniform>> createReshadeUniforms(
+        reshadefx::effect_module module, EffectRegistry* effectRegistry,
+        const std::string& effectName, bool liveUniforms);
+
+    class ParameterUniform : public ReshadeUniform
+    {
+    public:
+        ParameterUniform(reshadefx::uniform uniformInfo,
+                         EffectRegistry* effectRegistry,
+                         std::string effectName);
+        void update(void* mappedBuffer, size_t bufferSize) override;
+
+    private:
+        reshadefx::uniform uniformInfo;
+        EffectRegistry* effectRegistry = nullptr;
+        std::string effectName;
+        uint64_t cachedRegistryRevision = 0;
+        const EffectParam* cachedParam = nullptr;
+    };
 
     class FrameTimeUniform : public ReshadeUniform
     {
     public:
         FrameTimeUniform(reshadefx::uniform uniformInfo);
-        void virtual update(void* mapedBuffer) override;
+        void virtual update(void* mapedBuffer, size_t bufferSize) override;
         virtual ~FrameTimeUniform();
 
     private:
@@ -45,7 +67,7 @@ namespace vkBasalt
     {
     public:
         FrameCountUniform(reshadefx::uniform uniformInfo);
-        void virtual update(void* mapedBuffer) override;
+        void virtual update(void* mapedBuffer, size_t bufferSize) override;
         virtual ~FrameCountUniform();
 
     private:
@@ -56,7 +78,7 @@ namespace vkBasalt
     {
     public:
         DateUniform(reshadefx::uniform uniformInfo);
-        void virtual update(void* mapedBuffer) override;
+        void virtual update(void* mapedBuffer, size_t bufferSize) override;
         virtual ~DateUniform();
     };
 
@@ -64,7 +86,7 @@ namespace vkBasalt
     {
     public:
         TimerUniform(reshadefx::uniform uniformInfo);
-        void virtual update(void* mapedBuffer) override;
+        void virtual update(void* mapedBuffer, size_t bufferSize) override;
         virtual ~TimerUniform();
 
     private:
@@ -75,7 +97,7 @@ namespace vkBasalt
     {
     public:
         PingPongUniform(reshadefx::uniform uniformInfo);
-        void virtual update(void* mapedBuffer) override;
+        void virtual update(void* mapedBuffer, size_t bufferSize) override;
         virtual ~PingPongUniform();
 
     private:
@@ -93,7 +115,7 @@ namespace vkBasalt
     {
     public:
         RandomUniform(reshadefx::uniform uniformInfo);
-        void virtual update(void* mapedBuffer) override;
+        void virtual update(void* mapedBuffer, size_t bufferSize) override;
         virtual ~RandomUniform();
 
     private:
@@ -112,7 +134,7 @@ namespace vkBasalt
     {
     public:
         KeyUniform(reshadefx::uniform uniformInfo);
-        void virtual update(void* mapedBuffer) override;
+        void virtual update(void* mapedBuffer, size_t bufferSize) override;
         virtual ~KeyUniform();
 
     private:
@@ -126,7 +148,7 @@ namespace vkBasalt
     {
     public:
         MouseButtonUniform(reshadefx::uniform uniformInfo);
-        void virtual update(void* mapedBuffer) override;
+        void virtual update(void* mapedBuffer, size_t bufferSize) override;
         virtual ~MouseButtonUniform();
 
     private:
@@ -140,7 +162,7 @@ namespace vkBasalt
     {
     public:
         MousePointUniform(reshadefx::uniform uniformInfo);
-        void virtual update(void* mapedBuffer) override;
+        void virtual update(void* mapedBuffer, size_t bufferSize) override;
         virtual ~MousePointUniform();
     };
 
@@ -148,7 +170,7 @@ namespace vkBasalt
     {
     public:
         MouseDeltaUniform(reshadefx::uniform uniformInfo);
-        void virtual update(void* mapedBuffer) override;
+        void virtual update(void* mapedBuffer, size_t bufferSize) override;
         virtual ~MouseDeltaUniform();
     };
 
@@ -156,7 +178,7 @@ namespace vkBasalt
     {
     public:
         DepthUniform(reshadefx::uniform uniformInfo);
-        void virtual update(void* mapedBuffer) override;
+        void virtual update(void* mapedBuffer, size_t bufferSize) override;
         void setDepthAvailable(bool available) { depthAvailable = available; }
         virtual ~DepthUniform();
 

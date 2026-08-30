@@ -299,6 +299,32 @@
                 touch $out
               '';
 
+          checks.uniform-bounds-check-can-actually-fail =
+            pkgs.runCommand "uniform-bounds-check-can-actually-fail"
+              {
+                nativeBuildInputs = [ pkgs.python3 ];
+                uniforms = ./src/reshade_uniforms.cpp;
+                effect = ./src/effects/effect_reshade.cpp;
+              }
+              ''
+                # writeReshadeUniform* bound the write against a buffer size. Handing
+                # them a size derived from the SAME variable (offset + size) makes both
+                # comparisons tautologically false, so the guard can never fire and the
+                # write is unbounded. The size must come from the real allocation.
+                if grep -qE 'writeReshadeUniform[A-Za-z]*\([^,]*,[[:space:]]*uniformEnd' "$uniforms"; then
+                  echo "a uniform write is bounded by uniformEnd (offset + size), which is derived from the very variable being bounded: 'offset > offset + size' and 'size > size' are both always false, so the check cannot fail. Pass the real buffer size"
+                  exit 1
+                fi
+
+                grep -Fq 'uniform->update(stagingBuffersMapped[imageIndex], bufferSize);' "$effect" \
+                  || { echo "updateEffect does not pass the real uniform buffer size, so the bounds check has nothing true to test against"; exit 1; }
+
+                grep -Fq 'if (liveUniforms)' "$uniforms" \
+                  || { echo "ParameterUniform is created regardless of the live-uniform setting. With specialization constants the value is baked into the pipeline and absent from the buffer, so this is per-frame work that changes nothing on the DEFAULT path"; exit 1; }
+
+                touch $out
+              '';
+
           checks.uniform-writes-cannot-race-the-gpu =
             pkgs.runCommand "uniform-writes-cannot-race-the-gpu"
               {
