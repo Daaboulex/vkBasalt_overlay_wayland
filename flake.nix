@@ -260,6 +260,20 @@
             touch $out
           '';
 
+          checks.imgui-buffers-match-the-fence-ring =
+            pkgs.runCommand "imgui-buffers-match-the-fence-ring" { src = ./src/overlay/imgui_overlay.cpp; }
+              ''
+                init=$(sed -n '/ImGuiOverlay::initVulkanBackend/,/^    }$/p' "$src")
+
+                grep -Eq 'initInfo\.ImageCount *=[^;]*imageCount' <<< "$init" \
+                  || { echo "ImGui sizes its vertex/index buffer ring from initInfo.ImageCount and rotates one slot per rendered frame, while this overlay holds one fence per swapchain image. A ring shorter than that fence ring hands a frame a slot an earlier submission is still reading, and a frame whose geometry grew frees that storage under the GPU"; exit 1; }
+
+                grep -Eq 'commandBufferFences\.resize\(imageCount\)' <<< "$init" \
+                  || { echo "the fence ring is no longer one fence per swapchain image, so sizing ImGui's ring from imageCount no longer matches it"; exit 1; }
+
+                touch $out
+              '';
+
           checks.no-dormant-modules =
             pkgs.runCommand "no-dormant-modules" { nativeBuildInputs = [ pkgs.bash ]; }
               ''

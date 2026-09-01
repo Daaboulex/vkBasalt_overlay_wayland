@@ -553,7 +553,7 @@ namespace vkBasalt
         initInfo.Queue = pLogicalDevice->queue;
         initInfo.DescriptorPool = descriptorPool;
         initInfo.MinImageCount = 2;
-        initInfo.ImageCount = 2;
+        initInfo.ImageCount = std::max(2u, imageCount);
         initInfo.PipelineInfoMain.RenderPass = renderPass;
 
         ImGui_ImplVulkan_Init(&initInfo);
