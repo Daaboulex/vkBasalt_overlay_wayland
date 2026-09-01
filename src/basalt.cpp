@@ -1445,6 +1445,11 @@ namespace vkBasalt
                 inputBlockerInited = true;
             }
         }
+        else
+        {
+            pLogicalDevice->imguiOverlay->reconfigureForSwapchain(pLogicalSwapchain->format,
+                                                                  pLogicalSwapchain->imageCount);
+        }
 
         *pCount = std::min<uint32_t>(*pCount, pLogicalSwapchain->imageCount);
         std::memcpy(pSwapchainImages, pLogicalSwapchain->fakeImages.data(), sizeof(VkImage) * (*pCount));

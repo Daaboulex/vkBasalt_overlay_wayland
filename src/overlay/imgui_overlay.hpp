@@ -95,6 +95,8 @@ namespace vkBasalt
 
         VkCommandBuffer recordFrame(uint32_t imageIndex, VkImageView imageView, uint32_t width, uint32_t height);
 
+        void reconfigureForSwapchain(VkFormat swapchainFormat, uint32_t imageCount);
+
         VkFence getCommandBufferFence(uint32_t imageIndex) const
         {
             return (imageIndex < commandBufferFences.size()) ? commandBufferFences[imageIndex] : VK_NULL_HANDLE;
@@ -102,6 +104,10 @@ namespace vkBasalt
 
     private:
         void initVulkanBackend(VkFormat swapchainFormat, uint32_t imageCount);
+        bool createRenderPass(VkFormat swapchainFormat);
+        bool initImGuiBackend(uint32_t imageCount);
+        bool provisionPerImage(uint32_t imageCount);
+        void destroyFramebuffers();
         void saveToPersistentState();
         void saveCurrentConfig();
 
@@ -127,7 +133,7 @@ namespace vkBasalt
         std::vector<VkFramebuffer> framebuffers;    // Pre-created per swapchain image
         std::vector<VkImageView> framebufferImageViews;  // Track which image views framebuffers were created for
         VkFormat swapchainFormat = VK_FORMAT_UNDEFINED;
-        uint32_t imageCount = 0;
+        uint32_t provisionedImageCount = 0;
         uint32_t framebufferWidth = 0;   // Dimensions used to create framebuffers
         uint32_t framebufferHeight = 0;
         OverlayState state;

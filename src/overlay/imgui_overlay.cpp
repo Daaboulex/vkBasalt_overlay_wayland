@@ -202,11 +202,7 @@ namespace vkBasalt
             ImGui_ImplVulkan_Shutdown();
         ImGui::DestroyContext();
 
-        for (auto fb : framebuffers)
-        {
-            if (fb != VK_NULL_HANDLE)
-                pLogicalDevice->vkd.DestroyFramebuffer(pLogicalDevice->device, fb, nullptr);
-        }
+        destroyFramebuffers();
         for (auto fence : commandBufferFences)
         {
             if (fence != VK_NULL_HANDLE)
@@ -464,34 +460,8 @@ namespace vkBasalt
         }
     }
 
-    void ImGuiOverlay::initVulkanBackend(VkFormat swapchainFormat, uint32_t imageCount)
+    bool ImGuiOverlay::createRenderPass(VkFormat swapchainFormat)
     {
-        bool loaded = ImGui_ImplVulkan_LoadFunctions(VK_API_VERSION_1_3, imguiVulkanLoaderDummy, pLogicalDevice);
-        if (!loaded)
-        {
-            Logger::err("Failed to load Vulkan functions for ImGui");
-            return;
-        }
-        Logger::debug("ImGui Vulkan functions loaded");
-
-        VkDescriptorPoolSize poolSizes[] = {
-            { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 }
-        };
-
-        VkDescriptorPoolCreateInfo poolInfo = {};
-        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-        poolInfo.maxSets = 100;
-        poolInfo.poolSizeCount = 1;
-        poolInfo.pPoolSizes = poolSizes;
-
-        VkResult vr = pLogicalDevice->vkd.CreateDescriptorPool(pLogicalDevice->device, &poolInfo, nullptr, &descriptorPool);
-        if (vr != VK_SUCCESS)
-        {
-            Logger::err("Failed to create ImGui descriptor pool: " + std::to_string(vr));
-            return;
-        }
-
         VkAttachmentDescription attachment = {};
         attachment.format = swapchainFormat;
         attachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -537,13 +507,18 @@ namespace vkBasalt
         renderPassInfo.dependencyCount = 2;
         renderPassInfo.pDependencies = dependencies;
 
-        vr = pLogicalDevice->vkd.CreateRenderPass(pLogicalDevice->device, &renderPassInfo, nullptr, &renderPass);
+        VkResult vr = pLogicalDevice->vkd.CreateRenderPass(pLogicalDevice->device, &renderPassInfo, nullptr, &renderPass);
         if (vr != VK_SUCCESS)
         {
             Logger::err("Failed to create ImGui render pass: " + std::to_string(vr));
-            return;
+            return false;
         }
 
+        return true;
+    }
+
+    bool ImGuiOverlay::initImGuiBackend(uint32_t imageCount)
+    {
         ImGui_ImplVulkan_InitInfo initInfo = {};
         initInfo.ApiVersion = VK_API_VERSION_1_3;
         initInfo.Instance = pLogicalDevice->instance;
@@ -556,10 +531,105 @@ namespace vkBasalt
         initInfo.ImageCount = std::max(2u, imageCount);
         initInfo.PipelineInfoMain.RenderPass = renderPass;
 
-        ImGui_ImplVulkan_Init(&initInfo);
+        return ImGui_ImplVulkan_Init(&initInfo);
+    }
+
+    void ImGuiOverlay::destroyFramebuffers()
+    {
+        for (auto fb : framebuffers)
+        {
+            if (fb != VK_NULL_HANDLE)
+                pLogicalDevice->vkd.DestroyFramebuffer(pLogicalDevice->device, fb, nullptr);
+        }
+        framebuffers.clear();
+        framebufferImageViews.clear();
+        framebufferWidth = 0;
+        framebufferHeight = 0;
+    }
+
+    bool ImGuiOverlay::provisionPerImage(uint32_t imageCount)
+    {
+        if (imageCount <= provisionedImageCount)
+            return true;
+
+        const uint32_t have = provisionedImageCount;
+
+        commandBuffers.resize(imageCount);
+        VkCommandBufferAllocateInfo allocInfo = {};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.commandPool = commandPool;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandBufferCount = imageCount - have;
+        VkResult vr = pLogicalDevice->vkd.AllocateCommandBuffers(
+            pLogicalDevice->device, &allocInfo, commandBuffers.data() + have);
+        if (vr != VK_SUCCESS)
+        {
+            Logger::err("Failed to allocate ImGui command buffers: " + std::to_string(vr));
+            commandBuffers.resize(have);
+            return false;
+        }
+
+        commandBufferFences.resize(imageCount, VK_NULL_HANDLE);
+        VkFenceCreateInfo fenceInfo = {};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+        for (uint32_t i = have; i < imageCount; i++)
+        {
+            vr = pLogicalDevice->vkd.CreateFence(pLogicalDevice->device, &fenceInfo, nullptr, &commandBufferFences[i]);
+            if (vr != VK_SUCCESS)
+            {
+                // recordFrame waits on this fence unconditionally, so a null one is not a
+                // degraded overlay, it is an invalid wait. Give the whole growth back instead.
+                Logger::err("Failed to create ImGui fence " + std::to_string(i) + ": " + std::to_string(vr));
+                for (uint32_t done = have; done < i; done++)
+                    pLogicalDevice->vkd.DestroyFence(pLogicalDevice->device, commandBufferFences[done], nullptr);
+                commandBuffers.resize(have);
+                commandBufferFences.resize(have);
+                return false;
+            }
+        }
+
+        provisionedImageCount = imageCount;
+        return true;
+    }
+
+    void ImGuiOverlay::initVulkanBackend(VkFormat swapchainFormat, uint32_t imageCount)
+    {
+        bool loaded = ImGui_ImplVulkan_LoadFunctions(VK_API_VERSION_1_3, imguiVulkanLoaderDummy, pLogicalDevice);
+        if (!loaded)
+        {
+            Logger::err("Failed to load Vulkan functions for ImGui");
+            return;
+        }
+        Logger::debug("ImGui Vulkan functions loaded");
+
+        VkDescriptorPoolSize poolSizes[] = {
+            { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 }
+        };
+
+        VkDescriptorPoolCreateInfo poolInfo = {};
+        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        poolInfo.maxSets = 100;
+        poolInfo.poolSizeCount = 1;
+        poolInfo.pPoolSizes = poolSizes;
+
+        VkResult vr = pLogicalDevice->vkd.CreateDescriptorPool(pLogicalDevice->device, &poolInfo, nullptr, &descriptorPool);
+        if (vr != VK_SUCCESS)
+        {
+            Logger::err("Failed to create ImGui descriptor pool: " + std::to_string(vr));
+            return;
+        }
+        if (!createRenderPass(swapchainFormat))
+            return;
+
+        if (!initImGuiBackend(imageCount))
+        {
+            Logger::err("Failed to initialize the ImGui Vulkan backend");
+            return;
+        }
 
         this->swapchainFormat = swapchainFormat;
-        this->imageCount = imageCount;
 
         VkCommandPoolCreateInfo poolCreateInfo = {};
         poolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -572,34 +642,53 @@ namespace vkBasalt
             return;
         }
 
-        commandBuffers.resize(imageCount);
-        VkCommandBufferAllocateInfo allocInfo = {};
-        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        allocInfo.commandPool = commandPool;
-        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandBufferCount = imageCount;
-        vr = pLogicalDevice->vkd.AllocateCommandBuffers(pLogicalDevice->device, &allocInfo, commandBuffers.data());
-        if (vr != VK_SUCCESS)
-        {
-            Logger::err("Failed to allocate ImGui command buffers: " + std::to_string(vr));
+        if (!provisionPerImage(imageCount))
             return;
-        }
-
-        commandBufferFences.resize(imageCount);
-        VkFenceCreateInfo fenceInfo = {};
-        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-        for (uint32_t i = 0; i < imageCount; i++)
-        {
-            vr = pLogicalDevice->vkd.CreateFence(pLogicalDevice->device, &fenceInfo, nullptr, &commandBufferFences[i]);
-            if (vr != VK_SUCCESS)
-                Logger::err("Failed to create ImGui fence " + std::to_string(i) + ": " + std::to_string(vr));
-        }
 
         backendInitialized = true;
         Logger::debug("ImGui Vulkan backend initialized");
     }
 
+    void ImGuiOverlay::reconfigureForSwapchain(VkFormat swapchainFormat, uint32_t imageCount)
+    {
+        if (!backendInitialized)
+            return;
+
+        // Every framebuffer here was built from the outgoing swapchain's image views, which are
+        // destroyed with it, and a framebuffer cannot be destroyed while a submission still uses it.
+        pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
+        destroyFramebuffers();
+
+        if (swapchainFormat == this->swapchainFormat && imageCount <= provisionedImageCount)
+            return;
+
+        ImGui_ImplVulkan_Shutdown();
+
+        if (swapchainFormat != this->swapchainFormat)
+        {
+            pLogicalDevice->vkd.DestroyRenderPass(pLogicalDevice->device, renderPass, nullptr);
+            renderPass = VK_NULL_HANDLE;
+            if (!createRenderPass(swapchainFormat))
+            {
+                backendInitialized = false;
+                Logger::err("overlay off: its render pass cannot follow the swapchain to format "
+                            + std::to_string(swapchainFormat));
+                return;
+            }
+            this->swapchainFormat = swapchainFormat;
+        }
+
+        if (!provisionPerImage(imageCount) || !initImGuiBackend(provisionedImageCount))
+        {
+            backendInitialized = false;
+            Logger::err("overlay off: it cannot follow the swapchain to " + std::to_string(imageCount)
+                        + " images");
+            return;
+        }
+
+        Logger::debug("overlay followed the swapchain: format " + std::to_string(swapchainFormat)
+                      + ", " + std::to_string(provisionedImageCount) + " images provisioned");
+    }
     VkCommandBuffer ImGuiOverlay::recordFrame(uint32_t imageIndex, VkImageView imageView, uint32_t width, uint32_t height)
     {
         if (!backendInitialized || !visible)

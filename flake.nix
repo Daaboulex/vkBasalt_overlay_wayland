@@ -17,6 +17,74 @@
 
   outputs =
     inputs@{ flake-parts, self, ... }:
+    let
+      mkVkbasaltOverlay = pkgs': mkVkbasaltOverlayWith pkgs' pkgs'.stdenv;
+
+      mkVkbasaltOverlayWith =
+        pkgs': stdenv':
+        stdenv'.mkDerivation {
+          pname = "vkbasalt-overlay";
+          # This repo IS the source; the version tracks its own git revision.
+          version = "0.1.0-unstable-${self.shortRev or "dirty"}";
+
+          src = self;
+
+          # Build tools run on the build host; buildPackages keeps them native
+          # when pkgs' is the 32-bit set.
+          nativeBuildInputs = with pkgs'.buildPackages; [
+            meson
+            ninja
+            pkg-config
+            glslang
+            wayland-scanner
+          ];
+
+          buildInputs = with pkgs'; [
+            vulkan-headers
+            vulkan-loader
+            spirv-headers
+            libx11
+            libxi
+            wayland
+            wayland-protocols
+            libxkbcommon
+          ];
+
+          mesonBuildType = "release";
+
+          mesonFlags = [
+            "-Dappend_libdir_vkbasalt=false"
+            "--sysconfdir=/etc"
+          ];
+
+          # The meson test suite runs on every build, here and for any
+          # plain-meson user (meson test -C build).
+          doCheck = true;
+
+          # Fix the layer JSON to use an absolute library path so the Vulkan
+          # loader finds it regardless of LD_LIBRARY_PATH.
+          postInstall = ''
+            substituteInPlace "$out/share/vulkan/implicit_layer.d/vkBasalt-overlay.json" \
+              --replace-fail '"library_path": "libvkbasalt-overlay.so"' \
+                             '"library_path": "'"$out/lib/libvkbasalt-overlay.so"'"'
+
+            # vkbasalt-run wrapper: sets ENABLE_VKBASALT and LD_AUDIT for Wine
+            # Wayland input interposition (dlopen RTLD_LOCAL bypass).
+            mkdir -p "$out/bin"
+            substitute ${./vkbasalt-run.sh} "$out/bin/vkbasalt-run" \
+              --subst-var out
+            chmod +x "$out/bin/vkbasalt-run"
+          '';
+
+          meta = with pkgs'.lib; {
+            description = "Vulkan post-processing layer with real-time overlay UI (Wayland + X11)";
+            homepage = "https://github.com/Daaboulex/vkBasalt_overlay_wayland";
+            license = licenses.zlib;
+            platforms = pkgs'.lib.platforms.linux;
+            mainProgram = "vkbasalt-run";
+          };
+        };
+    in
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [
         "x86_64-linux"
@@ -26,79 +94,11 @@
       imports = [ inputs.std.flakeModules.base ];
 
       flake.overlays.default = final: _prev: {
-        inherit (self.packages.${final.stdenv.hostPlatform.system}) vkbasalt-overlay;
+        vkbasalt-overlay = mkVkbasaltOverlay final;
       };
 
       perSystem =
         { pkgs, self', ... }:
-        let
-          mkVkbasaltOverlay = pkgs': mkVkbasaltOverlayWith pkgs' pkgs'.stdenv;
-
-          mkVkbasaltOverlayWith =
-            pkgs': stdenv':
-            stdenv'.mkDerivation {
-              pname = "vkbasalt-overlay";
-              # This repo IS the source; the version tracks its own git revision.
-              version = "0.1.0-unstable-${self.shortRev or "dirty"}";
-
-              src = self;
-
-              # Build tools run on the build host; buildPackages keeps them native
-              # when pkgs' is the 32-bit set.
-              nativeBuildInputs = with pkgs'.buildPackages; [
-                meson
-                ninja
-                pkg-config
-                glslang
-                wayland-scanner
-              ];
-
-              buildInputs = with pkgs'; [
-                vulkan-headers
-                vulkan-loader
-                spirv-headers
-                libx11
-                libxi
-                wayland
-                wayland-protocols
-                libxkbcommon
-              ];
-
-              mesonBuildType = "release";
-
-              mesonFlags = [
-                "-Dappend_libdir_vkbasalt=false"
-                "--sysconfdir=/etc"
-              ];
-
-              # The meson test suite runs on every build, here and for any
-              # plain-meson user (meson test -C build).
-              doCheck = true;
-
-              # Fix the layer JSON to use an absolute library path so the Vulkan
-              # loader finds it regardless of LD_LIBRARY_PATH.
-              postInstall = ''
-                substituteInPlace "$out/share/vulkan/implicit_layer.d/vkBasalt-overlay.json" \
-                  --replace-fail '"library_path": "libvkbasalt-overlay.so"' \
-                                 '"library_path": "'"$out/lib/libvkbasalt-overlay.so"'"'
-
-                # vkbasalt-run wrapper: sets ENABLE_VKBASALT and LD_AUDIT for Wine
-                # Wayland input interposition (dlopen RTLD_LOCAL bypass).
-                mkdir -p "$out/bin"
-                substitute ${./vkbasalt-run.sh} "$out/bin/vkbasalt-run" \
-                  --subst-var out
-                chmod +x "$out/bin/vkbasalt-run"
-              '';
-
-              meta = with pkgs'.lib; {
-                description = "Vulkan post-processing layer with real-time overlay UI (Wayland + X11)";
-                homepage = "https://github.com/Daaboulex/vkBasalt_overlay_wayland";
-                license = licenses.zlib;
-                platforms = pkgs'.lib.platforms.linux;
-                mainProgram = "vkbasalt-run";
-              };
-            };
-        in
         {
           # Extend the standard's lint config for this fork: src/ vendors
           # third-party markdown (ReShade's LICENSE.md) that we do not relint,
@@ -263,13 +263,47 @@
           checks.imgui-buffers-match-the-fence-ring =
             pkgs.runCommand "imgui-buffers-match-the-fence-ring" { src = ./src/overlay/imgui_overlay.cpp; }
               ''
-                init=$(sed -n '/ImGuiOverlay::initVulkanBackend/,/^    }$/p' "$src")
+                backend=$(sed -n '/ImGuiOverlay::initImGuiBackend/,/^    }$/p' "$src")
 
-                grep -Eq 'initInfo\.ImageCount *=[^;]*imageCount' <<< "$init" \
+                grep -Eq 'initInfo\.ImageCount *=[^;]*imageCount' <<< "$backend" \
                   || { echo "ImGui sizes its vertex/index buffer ring from initInfo.ImageCount and rotates one slot per rendered frame, while this overlay holds one fence per swapchain image. A ring shorter than that fence ring hands a frame a slot an earlier submission is still reading, and a frame whose geometry grew frees that storage under the GPU"; exit 1; }
 
-                grep -Eq 'commandBufferFences\.resize\(imageCount\)' <<< "$init" \
+                provision=$(sed -n '/ImGuiOverlay::provisionPerImage/,/^    }$/p' "$src")
+
+                grep -Eq 'commandBufferFences\.resize\(imageCount' <<< "$provision" \
                   || { echo "the fence ring is no longer one fence per swapchain image, so sizing ImGui's ring from imageCount no longer matches it"; exit 1; }
+
+                if grep -Eq 'commandBufferFences\[i\] = VK_NULL_HANDLE' <<< "$provision"; then
+                  echo "a fence that failed to create is left null and kept. recordFrame waits on it unconditionally, so this is an invalid wait rather than a degraded overlay: give the growth back and leave the overlay off instead"
+                  exit 1
+                fi
+
+                touch $out
+              '';
+
+          checks.overlay-follows-its-swapchain =
+            pkgs.runCommand "overlay-follows-its-swapchain"
+              {
+                overlay = ./src/overlay/imgui_overlay.cpp;
+                layer = ./src/basalt.cpp;
+              }
+              ''
+                setup=$(sed -n '/vkBasalt_GetSwapchainImagesKHR/,/^    }$/p' "$layer")
+
+                grep -Fq 'reconfigureForSwapchain' <<< "$setup" \
+                  || { echo "the overlay is built once per device and outlives every swapchain, so a swapchain that comes back with more images leaves recordFrame refusing the new indices and a swapchain that comes back with another format leaves the render pass disagreeing with the attachment. Swapchain setup has to hand the overlay the new shape"; exit 1; }
+
+                reconf=$(sed -n '/ImGuiOverlay::reconfigureForSwapchain/,/^    }$/p' "$overlay")
+
+                wait_at=$(grep -n 'QueueWaitIdle' <<< "$reconf" | head -1 | cut -d: -f1)
+                free_at=$(grep -n 'destroyFramebuffers()' <<< "$reconf" | head -1 | cut -d: -f1)
+                if [ -z "$wait_at" ] || [ -z "$free_at" ] || [ "$wait_at" -ge "$free_at" ]; then
+                  echo "the framebuffers being freed here can still be in use by a submitted overlay frame. The queue wait is what proves they are not, and it has to come first"
+                  exit 1
+                fi
+
+                grep -Fq 'backendInitialized = false' <<< "$reconf" \
+                  || { echo "a reconfigure that fails half way leaves the overlay with a shut-down backend or a destroyed render pass. It must switch itself off rather than record another frame against that"; exit 1; }
 
                 touch $out
               '';
