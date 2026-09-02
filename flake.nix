@@ -902,7 +902,8 @@
             grep -q 'QueueSubmit(pLogicalDevice->queue, 1, &submitInfo, effectFence)' "$src" \
               || { echo "the effect submission carries no fence, so nothing can wait on just that work"; exit 1; }
 
-            grep -cE 'QueueWaitIdle' ${./src/image.cpp} | grep -qx 1 \
+            queueWaitIdleCount=$(grep -cE 'QueueWaitIdle' ${./src/image.cpp} || true)
+            grep -qx 1 <<<"$queueWaitIdleCount" \
               || { echo "image.cpp should hold exactly one QueueWaitIdle, the fallback inside submitAndWait"; exit 1; }
             grep -q 'static void submitAndWait' ${./src/image.cpp} \
               || { echo "the one-shot uploads no longer share a single scoped wait"; exit 1; }
