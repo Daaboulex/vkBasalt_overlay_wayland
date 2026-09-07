@@ -308,6 +308,14 @@
                 touch $out
               '';
 
+          checks.every-dl-user-declares-the-library =
+            pkgs.runCommand "every-dl-user-declares-the-library" { nativeBuildInputs = [ pkgs.bash ]; }
+              ''
+                cp -r ${./src} src
+                bash ${./scripts/every-dl-user-declares-the-library.sh} src
+                touch $out
+              '';
+
           checks.no-dormant-modules =
             pkgs.runCommand "no-dormant-modules" { nativeBuildInputs = [ pkgs.bash ]; }
               ''
