@@ -78,6 +78,7 @@ xi_dep = dependency('xi')
 wayland_client_dep = dependency('wayland-client')
 xkbcommon_dep = dependency('xkbcommon')
 wayland_protocols_dep = dependency('wayland-protocols')
+dl_dep = cpp.find_library('dl')
 wayland_scanner = find_program('wayland-scanner')
 
 # Generate pointer-constraints-unstable-v1 protocol code
@@ -108,7 +109,8 @@ configure_file(output: 'config_paths.hpp',
 # which conflicts with the rest codebase with with Meson --unity=on option
 keyboard_input_x11_lib = static_library('keyboard_input_x11', 'keyboard_input_x11.cpp')
 mouse_input_lib = static_library('mouse_input', 'mouse_input.cpp')
-input_blocker_lib = static_library('input_blocker', 'input_blocker.cpp')
+input_blocker_lib = static_library('input_blocker', 'input_blocker.cpp',
+    dependencies: [dl_dep])
 
 # Wayland input backends are static libs to isolate wayland-client headers.
 wayland_input_common_lib = static_library('wayland_input_common',
@@ -130,7 +132,7 @@ wayland_pointer_constraints_lib = static_library('wayland_pointer_constraints',
 # Needs default visibility for the wl_proxy_add_listener symbol override.
 wayland_interpose_lib = static_library('wayland_interpose',
     'wayland_interpose.cpp',
-    dependencies: [wayland_client_dep],
+    dependencies: [wayland_client_dep, dl_dep],
     c_args: ['-fvisibility=default'],
     cpp_args: ['-fvisibility=default'])
 
@@ -147,7 +149,7 @@ shared_library(meson.project_name().to_lower(),
                 wayland_pointer_constraints_lib, wayland_interpose_lib],
     include_directories : [vkBasalt_include_path, imgui_inc, overlay_inc, effects_inc, effects_builtin_inc, effects_params_inc],
     cpp_args : ['-DIMGUI_IMPL_VULKAN_NO_PROTOTYPES'],
-    dependencies : [x11_dep, xi_dep, wayland_client_dep, xkbcommon_dep, reshade_dep],
+    dependencies : [x11_dep, xi_dep, wayland_client_dep, xkbcommon_dep, reshade_dep, dl_dep],
     gnu_symbol_visibility: 'hidden',
     install : true,
     install_dir : lib_dir)
@@ -164,7 +166,6 @@ test_shaders_exe = executable('vkbasalt-test-shaders',
 # LD_AUDIT library for Wine Wayland input interposition.
 # Redirects wl_proxy_add_listener bindings from dlopen(RTLD_LOCAL) scopes
 # (e.g. Wine's winewayland.so) to our wrapper in libvkbasalt-overlay.so.
-dl_dep = cpp.find_library('dl')
 shared_library('vkbasalt-audit',
     'wayland_audit.c',
     dependencies: [dl_dep],
