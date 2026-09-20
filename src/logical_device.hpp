@@ -19,15 +19,15 @@ namespace vkBasalt
     {
         DeviceDispatch           vkd;
         InstanceDispatch         vki;
-        VkDevice                 device;
-        VkPhysicalDevice         physicalDevice;
-        VkInstance               instance;
-        VkQueue                  queue;
-        uint32_t                 queueFamilyIndex;
-        VkCommandPool            commandPool;
+        VkDevice                 device         = VK_NULL_HANDLE;
+        VkPhysicalDevice         physicalDevice = VK_NULL_HANDLE;
+        VkInstance               instance       = VK_NULL_HANDLE;
+        VkQueue                  queue          = VK_NULL_HANDLE;
+        uint32_t                 queueFamilyIndex = 0;
+        VkCommandPool            commandPool    = VK_NULL_HANDLE;
         float                    timestampPeriodNanoseconds = 0.0f;
         uint32_t                 timestampValidBits = 0;
-        bool                     supportsMutableFormat;
+        bool                     supportsMutableFormat = false;
         bool                     supportsStorageImageWithoutFormat = false;
         // One record per depth image. Three parallel vectors indexed positionally used to drift
         // apart, because a view was only appended when the image being bound happened to be the

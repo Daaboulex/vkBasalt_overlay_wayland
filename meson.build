@@ -76,6 +76,12 @@ if get_option('with_so')
         include_directories : include_directories('src'))
     test('effect-selection', effect_selection_test)
 
+    active_profile_test = executable('active-profile-test',
+        'test/active_profile_test.cpp', 'src/config_serializer.cpp', 'src/logger.cpp',
+        include_directories : include_directories('src'))
+    test('active-profile', active_profile_test,
+        args : [meson.current_build_dir() / 'test-active-profile-config'])
+
     mouse_frame_test = executable('mouse-frame-snapshot-test',
         'test/mouse_frame_snapshot_test.cpp', 'src/mouse_input.cpp',
         include_directories : include_directories('src'),

@@ -37,6 +37,21 @@ namespace vkBasalt
         bool safeAntiCheat = false;
     };
 
+    constexpr const char* BYPASS_PROFILE_NAME = "none";
+
+    enum class ProfileKind
+    {
+        Default,
+        Named,
+        Bypass
+    };
+
+    struct ActiveProfile
+    {
+        ProfileKind kind = ProfileKind::Default;
+        std::string name = "default";
+    };
+
     struct ShaderManagerConfig
     {
         std::vector<std::string> parentDirectories;
@@ -88,7 +103,7 @@ namespace vkBasalt
 
         static std::vector<std::string> listProfilesForGame(const std::string& gameName);
 
-        static std::string getActiveProfile(const std::string& gameName);
+        static ActiveProfile getActiveProfile(const std::string& gameName);
         static void setActiveProfile(const std::string& gameName,
                                      const std::string& profileName);
 

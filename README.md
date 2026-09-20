@@ -302,7 +302,26 @@ liveReshadeUniforms = false
 
 ### Per-Game Profiles
 
-When a game is detected, vkBasalt creates a config directory at `~/.config/vkBasalt-overlay/configs/<game>/`. Multiple named profiles can be created per game from the overlay UI. The active profile is stored in `~/.config/vkBasalt-overlay/configs/<game>/active_profile`.
+A program is named after its executable. Its profiles live under
+`~/.config/vkBasalt-overlay/configs/`: the default one is `<program>.conf`,
+created on the program's first launch, and a named one made from the overlay is
+`<program>@<name>.conf`.
+
+`configs/.active_profiles` says which profile each program runs, one
+`program=profile` line each:
+
+```text
+wine-preloader=default
+mygame=performance
+alacritty=none
+```
+
+`none` is not a profile: it keeps the layer out of that program. No effect is
+compiled, no image is allocated and every frame is presented as the program
+drew it, so a program that never wants effects costs no VRAM and no GPU time.
+The overlay lists it last among the profiles; choosing it there takes effect
+from the program's next launch. A file named `<program>@none.conf` is never
+read.
 
 ### Shader Manager
 

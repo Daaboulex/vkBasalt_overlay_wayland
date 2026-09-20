@@ -620,24 +620,25 @@ namespace vkBasalt
                 continue;
 
             std::string profileName = name.substr(prefix.size(), name.size() - prefix.size() - 5);
-            if (!profileName.empty())
+            if (!profileName.empty() && profileName != BYPASS_PROFILE_NAME)
                 profiles.push_back(profileName);
         }
         closedir(d);
 
         std::sort(profiles.begin() + (profiles.empty() ? 0 : 1), profiles.end());
+        profiles.push_back(BYPASS_PROFILE_NAME);
         return profiles;
     }
 
-    std::string ConfigSerializer::getActiveProfile(const std::string& gameName)
+    ActiveProfile ConfigSerializer::getActiveProfile(const std::string& gameName)
     {
         if (gameName.empty())
-            return "default";
+            return {};
 
         std::string activePath = getConfigsDir() + "/.active_profiles";
         std::ifstream file(activePath);
         if (!file.is_open())
-            return "default";
+            return {};
 
         std::string line;
         while (std::getline(file, line))
@@ -645,12 +646,18 @@ namespace vkBasalt
             size_t eq = line.find('=');
             if (eq == std::string::npos)
                 continue;
-            std::string key = line.substr(0, eq);
-            if (key == gameName)
-                return line.substr(eq + 1);
+            if (line.substr(0, eq) != gameName)
+                continue;
+
+            std::string name = line.substr(eq + 1);
+            if (name == BYPASS_PROFILE_NAME)
+                return {ProfileKind::Bypass, name};
+            if (name.empty() || name == "default")
+                return {};
+            return {ProfileKind::Named, name};
         }
 
-        return "default";
+        return {};
     }
 
     void ConfigSerializer::setActiveProfile(const std::string& gameName,
@@ -695,7 +702,7 @@ namespace vkBasalt
                                           const std::string& profileName,
                                           const std::string& copyFromProfile)
     {
-        if (gameName.empty() || profileName.empty() || profileName == "default")
+        if (gameName.empty() || profileName.empty() || profileName == "default" || profileName == BYPASS_PROFILE_NAME)
             return false;
 
         std::string newPath = getProfilePath(gameName, profileName);
@@ -706,7 +713,7 @@ namespace vkBasalt
         if (stat(newPath.c_str(), &st) == 0)
             return false;  // Already exists
 
-        if (!copyFromProfile.empty())
+        if (!copyFromProfile.empty() && copyFromProfile != BYPASS_PROFILE_NAME)
         {
             std::string srcPath = getProfilePath(gameName, copyFromProfile);
             std::ifstream src(srcPath, std::ios::binary);
@@ -733,7 +740,7 @@ namespace vkBasalt
     bool ConfigSerializer::deleteProfile(const std::string& gameName,
                                           const std::string& profileName)
     {
-        if (profileName.empty() || profileName == "default")
+        if (profileName.empty() || profileName == "default" || profileName == BYPASS_PROFILE_NAME)
             return false;
 
         std::string path = getProfilePath(gameName, profileName);
@@ -744,7 +751,7 @@ namespace vkBasalt
         {
             Logger::info("Deleted profile " + profileName + " for " + gameName);
 
-            if (getActiveProfile(gameName) == profileName)
+            if (getActiveProfile(gameName).name == profileName)
                 setActiveProfile(gameName, "default");
 
             return true;

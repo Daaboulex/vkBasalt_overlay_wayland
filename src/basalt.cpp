@@ -221,6 +221,7 @@ namespace vkBasalt
     static std::string detectedGameName;
     static std::string activeProfileName;
     static std::string activeProfilePath;
+    static bool        layerBypassed = false;
 
     void initConfigs()
     {
@@ -256,7 +257,17 @@ namespace vkBasalt
         }
         else if (!detectedGameName.empty())
         {
-            activeProfileName = ConfigSerializer::getActiveProfile(detectedGameName);
+            const ActiveProfile profile = ConfigSerializer::getActiveProfile(detectedGameName);
+            if (profile.kind == ProfileKind::Bypass)
+            {
+                layerBypassed = true;
+                pConfig       = pBaseConfig;
+                Logger::info("game: " + detectedGameName + " | profile: " + profile.name
+                             + ", the layer stays out of this program");
+                return;
+            }
+
+            activeProfileName = profile.name;
             activeProfilePath = ConfigSerializer::getProfilePath(detectedGameName, activeProfileName);
 
             struct stat st;
@@ -801,7 +812,7 @@ namespace vkBasalt
         }
 
         modifiedCreateInfo.pApplicationInfo = &appInfo;
-        VkResult ret                        = createFunc(&modifiedCreateInfo, pAllocator, pInstance);
+        VkResult ret = createFunc(layerBypassed ? pCreateInfo : &modifiedCreateInfo, pAllocator, pInstance);
 
         if (ret != VK_SUCCESS)
             return ret;
@@ -862,6 +873,22 @@ namespace vkBasalt
         layerCreateInfo->u.pLayerInfo = layerCreateInfo->u.pLayerInfo->pNext;
 
         PFN_vkCreateDevice createFunc = (PFN_vkCreateDevice) gipa(VK_NULL_HANDLE, "vkCreateDevice");
+
+        if (layerBypassed)
+        {
+            VkResult ret = createFunc(physicalDevice, pCreateInfo, pAllocator, pDevice);
+            if (ret != VK_SUCCESS)
+                return ret;
+
+            std::shared_ptr<LogicalDevice> pLogicalDevice(new LogicalDevice());
+            pLogicalDevice->vki            = instanceDispatchMap[GetKey(physicalDevice)];
+            pLogicalDevice->device         = *pDevice;
+            pLogicalDevice->physicalDevice = physicalDevice;
+            pLogicalDevice->instance       = instanceMap[GetKey(physicalDevice)];
+            fillDispatchTableDevice(*pDevice, gdpa, &pLogicalDevice->vkd);
+            deviceMap[GetKey(*pDevice)] = pLogicalDevice;
+            return VK_SUCCESS;
+        }
 
         uint32_t extensionCount = 0;
 
@@ -2093,9 +2120,6 @@ extern "C"
     GETPROCADDR(EnumerateInstanceExtensionProperties); \
     GETPROCADDR(CreateInstance); \
     GETPROCADDR(DestroyInstance); \
-    GETPROCADDR(CreateWaylandSurfaceKHR); \
-    GETPROCADDR(CreateXlibSurfaceKHR); \
-    GETPROCADDR(CreateXcbSurfaceKHR); \
 \
     if (!std::strcmp(pName, "vkGetDeviceProcAddr")) \
         return (PFN_vkVoidFunction) &vkBasalt_GetDeviceProcAddr; \
@@ -2103,16 +2127,23 @@ extern "C"
     GETPROCADDR(EnumerateDeviceExtensionProperties); \
     GETPROCADDR(CreateDevice); \
     GETPROCADDR(DestroyDevice); \
-    GETPROCADDR(CreateSwapchainKHR); \
-    GETPROCADDR(GetSwapchainImagesKHR); \
-    GETPROCADDR(QueuePresentKHR); \
-    GETPROCADDR(DestroySwapchainKHR); \
 \
-    if (vkBasalt::settingsManager.getDepthCapture()) \
+    if (!vkBasalt::layerBypassed) \
     { \
-        GETPROCADDR(CreateImage); \
-        GETPROCADDR(DestroyImage); \
-        GETPROCADDR(BindImageMemory); \
+        GETPROCADDR(CreateWaylandSurfaceKHR); \
+        GETPROCADDR(CreateXlibSurfaceKHR); \
+        GETPROCADDR(CreateXcbSurfaceKHR); \
+        GETPROCADDR(CreateSwapchainKHR); \
+        GETPROCADDR(GetSwapchainImagesKHR); \
+        GETPROCADDR(QueuePresentKHR); \
+        GETPROCADDR(DestroySwapchainKHR); \
+\
+        if (vkBasalt::settingsManager.getDepthCapture()) \
+        { \
+            GETPROCADDR(CreateImage); \
+            GETPROCADDR(DestroyImage); \
+            GETPROCADDR(BindImageMemory); \
+        } \
     }
 
     VK_BASALT_EXPORT PFN_vkVoidFunction VKAPI_CALL vkBasalt_GetDeviceProcAddr(VkDevice device, const char* pName)

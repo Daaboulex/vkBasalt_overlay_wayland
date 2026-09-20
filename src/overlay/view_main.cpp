@@ -85,18 +85,26 @@ namespace vkBasalt
                                 autoSaveProfile();
 
                             activeProfileName = profile;
-                            activeProfilePath = ConfigSerializer::getProfilePath(activeGameName, profile);
                             ConfigSerializer::setActiveProfile(activeGameName, profile);
-                            pendingConfigPath = activeProfilePath;
-                            applyRequested = true;
                             profileListStale = true;
 
-                            ProfileSettings ps = ConfigSerializer::loadProfileSettings(activeProfilePath);
-                            profileSafeAntiCheat = ps.safeAntiCheat;
-                            settingsManager.setSafeAntiCheat(profileSafeAntiCheat);
-                            if (profileSafeAntiCheat)
+                            if (profile == BYPASS_PROFILE_NAME)
                             {
-                                settingsManager.setDepthCapture(false);
+                                activeProfilePath.clear();
+                            }
+                            else
+                            {
+                                activeProfilePath = ConfigSerializer::getProfilePath(activeGameName, profile);
+                                pendingConfigPath = activeProfilePath;
+                                applyRequested = true;
+
+                                ProfileSettings ps = ConfigSerializer::loadProfileSettings(activeProfilePath);
+                                profileSafeAntiCheat = ps.safeAntiCheat;
+                                settingsManager.setSafeAntiCheat(profileSafeAntiCheat);
+                                if (profileSafeAntiCheat)
+                                {
+                                    settingsManager.setDepthCapture(false);
+                                }
                             }
                         }
                     }
@@ -106,13 +114,19 @@ namespace vkBasalt
                 ImGui::EndCombo();
             }
 
+            if (activeProfileName == BYPASS_PROFILE_NAME)
+            {
+                ImGui::SameLine();
+                ImGui::TextDisabled("(bypassed from the next launch)");
+            }
+
             ImGui::SameLine();
             if (ImGui::Button("+##newprofile"))
                 ImGui::OpenPopup("NewProfilePopup");
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Create new profile");
 
-            if (activeProfileName != "default")
+            if (activeProfileName != "default" && activeProfileName != BYPASS_PROFILE_NAME)
             {
                 ImGui::SameLine();
                 if (ImGui::Button("-##delprofile"))

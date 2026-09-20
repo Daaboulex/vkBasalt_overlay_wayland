@@ -1011,6 +1011,27 @@
             touch $out
           '';
 
+          checks.bypassed-program-installs-no-frame-hooks =
+            pkgs.runCommand "bypassed-program-installs-no-frame-hooks" { }
+              ''
+                src=${./src/basalt.cpp}
+                macro=$(sed -n '/^#define INTERCEPT_CALLS/,/^$/p' "$src")
+                grep -q 'if (!vkBasalt::layerBypassed)' <<< "$macro" \
+                  || { echo "INTERCEPT_CALLS no longer decides on the bypassed profile, so a program set to none still pays for every frame"; exit 1; }
+                before=$(sed -n '1,/if (!vkBasalt::layerBypassed)/p' <<< "$macro")
+                for hook in CreateWaylandSurfaceKHR CreateXlibSurfaceKHR CreateXcbSurfaceKHR \
+                            CreateSwapchainKHR GetSwapchainImagesKHR QueuePresentKHR DestroySwapchainKHR \
+                            CreateImage DestroyImage BindImageMemory; do
+                  grep -q "GETPROCADDR($hook)" <<< "$macro" \
+                    || { echo "the $hook hook left INTERCEPT_CALLS"; exit 1; }
+                  grep -q "GETPROCADDR($hook)" <<< "$before" \
+                    && { echo "the $hook hook is installed before the bypass decision, so a bypassed program still runs it"; exit 1; }
+                done
+                grep -q 'if (profile.kind == ProfileKind::Bypass)' "$src" \
+                  || { echo "initConfigs no longer resolves the bypass kind, so layerBypassed can never be set"; exit 1; }
+                touch $out
+              '';
+
           packages = {
             vkbasalt-overlay = mkVkbasaltOverlay pkgs;
 
