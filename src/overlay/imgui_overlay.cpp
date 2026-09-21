@@ -8,8 +8,6 @@
 #include "keyboard_input.hpp"
 #include "input_blocker.hpp"
 #include "config_serializer.hpp"
-#include "wayland_display.hpp"
-#include "wayland_pointer_constraints.hpp"
 #include "wayland_input_common.hpp"
 
 #include <algorithm>
@@ -192,9 +190,6 @@ namespace vkBasalt
 
         pLogicalDevice->vkd.QueueWaitIdle(pLogicalDevice->queue);
 
-        if (isWayland())
-            cleanupPointerConstraints();
-
         std::string iniPath = ConfigSerializer::getBaseConfigDir() + "/imgui.ini";
         ImGui::SaveIniSettingsToDisk(iniPath.c_str());
 
@@ -215,14 +210,10 @@ namespace vkBasalt
         if (descriptorPool != VK_NULL_HANDLE)
             pLogicalDevice->vkd.DestroyDescriptorPool(pLogicalDevice->device, descriptorPool, nullptr);
 
-        // Tearing down while the overlay owns input would leave the grab and the
-        // pointer confinement in place with nothing left to lift them.
         if (visible)
         {
             visible = false;
             setInputBlocked(false);
-            if (isWayland())
-                releasePointer();
         }
 
         Logger::info("ImGui overlay destroyed");
@@ -232,17 +223,6 @@ namespace vkBasalt
     {
         visible = !visible;
         setInputBlocked(visible);
-
-        // Keeps the cursor inside the game window while the overlay owns it, so
-        // it cannot be lost to another monitor mid-interaction.
-        if (isWayland())
-        {
-            if (visible)
-                confinePointer();
-            else
-                releasePointer();
-        }
-
         saveToPersistentState();
     }
 

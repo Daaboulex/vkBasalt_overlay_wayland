@@ -232,8 +232,6 @@
             body=$(sed -n '/ImGuiOverlay::~ImGuiOverlay/,/ImGui overlay destroyed/p' ${./src/overlay/imgui_overlay.cpp})
             grep -q 'setInputBlocked(false)' <<< "$body" \
               || { echo "tearing down with the overlay open leaves input blocked and the game unplayable"; exit 1; }
-            grep -q 'releasePointer()' <<< "$body" \
-              || { echo "tearing down with the overlay open leaves the cursor confined to the window"; exit 1; }
             touch $out
           '';
 
@@ -343,13 +341,15 @@
                 touch $out
               '';
 
-          checks.pointer-constraints-are-wired = pkgs.runCommand "pointer-constraints-are-wired" { } ''
-            grep -q 'confinePointer()' ${./src/overlay/imgui_overlay.cpp} \
-              || { echo "confinePointer has no caller -- the constraints module is compiled but dead"; exit 1; }
-            grep -q 'releasePointer()' ${./src/overlay/imgui_overlay.cpp} \
-              || { echo "releasePointer has no caller -- confinement would never be lifted"; exit 1; }
-            touch $out
-          '';
+          checks.layer-never-constrains-the-game-surface =
+            pkgs.runCommand "layer-never-constrains-the-game-surface" { }
+              ''
+                if grep -rq 'zwp_pointer_constraints_v1\|zwp_locked_pointer_v1\|zwp_confined_pointer_v1' ${./src}; then
+                  echo "the layer requests a pointer constraint on the game's surface. The protocol allows one per surface and seat across every wl_pointer, and KWin answers a second with the fatal already_constrained error, so a game that locks or confines its own cursor dies the moment the overlay opens"
+                  exit 1
+                fi
+                touch $out
+              '';
 
           checks.effect-wait-covers-the-whole-submission =
             pkgs.runCommand "effect-wait-covers-the-whole-submission" { }
