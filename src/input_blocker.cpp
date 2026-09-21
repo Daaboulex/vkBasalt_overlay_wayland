@@ -84,45 +84,33 @@ namespace vkBasalt
     }
 #endif
 
-    void initInputBlocker(bool enabled)
+    static void releaseBlock()
     {
-        blockingEnabled = enabled;
+        if (!blocked.load(std::memory_order_acquire))
+            return;
+
+        blocked.store(false, std::memory_order_release);
 
         if (isWayland())
         {
-            // Wayland has no global input grabs; blocking works by suppressing
-            // events in the interposed game listeners.
-            Logger::debug(std::string("Input blocking ") + (enabled ? "enabled (Wayland: event consumption mode)" : "disabled"));
+            Logger::debug("Wayland input blocking: forwarding game events");
+            notifyGameKeyboardFocus(true);
             return;
         }
 
 #if VKBASALT_X11
-        if (!enabled && grabbed)
-        {
-            ungrabInput();
-            blocked.store(false, std::memory_order_release);
-        }
+        ungrabInput();
 #endif
-
-        Logger::debug(std::string("Input blocking ") + (enabled ? "enabled" : "disabled"));
     }
 
-    void setInputBlocked(bool shouldBlock)
+    static void engageBlock()
     {
-        if (!blockingEnabled)
-            return;
-
-        if (shouldBlock == blocked.load(std::memory_order_acquire))
+        if (blocked.load(std::memory_order_acquire))
             return;
 
         if (isWayland())
         {
-            // The interpose is the only thing that can suppress the game's events.
-            // Wine loads winewayland.so via dlopen(RTLD_LOCAL), whose private symbol
-            // scope bypasses it unless libvkbasalt-audit is active via LD_AUDIT.
-            // X11 grabs are not a fallback: wine Wayland games do not take input
-            // through XWayland, and stale grabs cause compositor focus issues.
-            if (shouldBlock && !waylandInterposeActive())
+            if (!waylandInterposeActive())
             {
                 if (!interposeUnavailableWarned)
                 {
@@ -133,27 +121,44 @@ namespace vkBasalt
                 }
                 return;
             }
+        }
+#if VKBASALT_X11
+        else if (!grabInput())
+            return;
+#endif
 
-            blocked.store(shouldBlock, std::memory_order_release);
-            Logger::debug(std::string("Wayland input blocking: ") + (shouldBlock ? "suppressing game events" : "forwarding game events"));
-            // Synthetic leave/enter releases keys the game held when the overlay opened.
-            notifyGameKeyboardFocus(!shouldBlock);
+        blocked.store(true, std::memory_order_release);
+
+        if (isWayland())
+        {
+            Logger::debug("Wayland input blocking: suppressing game events");
+            notifyGameKeyboardFocus(false);
+        }
+    }
+
+    void initInputBlocker(bool enabled)
+    {
+        blockingEnabled = enabled;
+
+        if (!enabled)
+            releaseBlock();
+
+        Logger::debug(std::string("Input blocking ") + (enabled ? "enabled" : "disabled")
+                      + (isWayland() ? " (Wayland: event consumption mode)" : ""));
+    }
+
+    void setInputBlocked(bool shouldBlock)
+    {
+        if (!shouldBlock)
+        {
+            releaseBlock();
             return;
         }
 
-#if VKBASALT_X11
-        if (shouldBlock)
-        {
-            if (!grabInput())
-                return;
-            blocked.store(true, std::memory_order_release);
-        }
-        else
-        {
-            ungrabInput();
-            blocked.store(false, std::memory_order_release);
-        }
-#endif
+        if (!blockingEnabled)
+            return;
+
+        engageBlock();
     }
 
     bool isInputBlocked()

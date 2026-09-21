@@ -201,11 +201,17 @@
           '';
 
           checks.blocking-verifies-its-mechanism = pkgs.runCommand "blocking-verifies-its-mechanism" { } ''
-            body=$(sed -n '/void setInputBlocked/,/^    }/p' ${./src/input_blocker.cpp})
+            src=${./src/input_blocker.cpp}
+            body=$(sed -n '/static void engageBlock/,/^    }/p' "$src")
             grep -q 'waylandInterposeActive()' <<< "$body" \
-              || { echo "setInputBlocked must check waylandInterposeActive before claiming Wayland blocking"; exit 1; }
+              || { echo "engageBlock must check waylandInterposeActive before claiming Wayland blocking"; exit 1; }
             grep -q 'if (!grabInput())' <<< "$body" \
-              || { echo "setInputBlocked must check the X11 grab result before claiming blocking"; exit 1; }
+              || { echo "engageBlock must check the X11 grab result before claiming blocking"; exit 1; }
+            stores=$(grep -c 'blocked.store(' "$src")
+            [ "$stores" = "2" ] \
+              || { echo "blocked is written in $stores places; releaseBlock and engageBlock are its only two writers, so no path can leave it stuck"; exit 1; }
+            grep -q 'releaseBlock();' <<< "$(sed -n '/void initInputBlocker/,/^    }/p' "$src")" \
+              || { echo "disabling blocking while the overlay is open must release the block it holds"; exit 1; }
             touch $out
           '';
 
