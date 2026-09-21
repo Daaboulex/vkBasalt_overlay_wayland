@@ -1,56 +1,35 @@
 #include "mouse_input_wayland.hpp"
 #include "wayland_input_common.hpp"
 #include "wayland_interpose.hpp"
-#include "wayland_display.hpp"
+#include "wayland_pointer_state.hpp"
 #include "logger.hpp"
 
 #include <wayland-client.h>
+#include "relative-pointer-unstable-v1-client-protocol.h"
 
-#include <chrono>
-#include <cstring>
+#include <mutex>
 
 namespace vkBasalt
 {
-    static wl_pointer* wlPointer = nullptr;
+    static wl_pointer*              wlPointer       = nullptr;
+    static zwp_relative_pointer_v1* relativePointer = nullptr;
 
-    static int pointerX = 0;
-    static int pointerY = 0;
-    static bool leftButton = false;
-    static bool rightButton = false;
-    static bool middleButton = false;
-    static float scrollAccumulator = 0.0f;
-
-    // Set when axis_discrete/axis_value120 fired this pointer frame, so the
-    // continuous axis event is not double-counted.
-    static bool discreteScrollReceived = false;
-
-    // A compositor grab (e.g. Alt+drag) can consume a button release; synthesize
-    // one after the pointer has been idle with the button held.
-    using Clock = std::chrono::steady_clock;
-    static Clock::time_point leftPressTime{};
-    static Clock::time_point rightPressTime{};
-    static Clock::time_point middlePressTime{};
-    static constexpr int AUTO_RELEASE_MS = 200;
-
-    static bool motionSinceLastPoll = false;
-    static Clock::time_point lastMotionTime{};
+    static std::mutex          stateMutex;
+    static WaylandPointerState state;
 
     static bool bindCallbackSet = false;
-    static bool mouseLogged = false;
+    static bool mouseLogged     = false;
     static bool noPointerWarned = false;
 
     static void pointerEnter(void* /*data*/, wl_pointer* /*pointer*/,
                              uint32_t /*serial*/, wl_surface* /*surface*/,
                              wl_fixed_t sx, wl_fixed_t sy)
     {
-        pointerX = wl_fixed_to_int(sx);
-        pointerY = wl_fixed_to_int(sy);
-
-        // Button state is not cleared here: swapchain resizes cause rapid
-        // leave/enter cycles mid-drag, and clearing would break the drag.
+        std::lock_guard<std::mutex> lock(stateMutex);
+        state.absoluteMotion(wl_fixed_to_double(sx), wl_fixed_to_double(sy));
 
         if (Logger::logLevel() <= LogLevel::Trace)
-            Logger::trace("Wayland: pointer enter at " + std::to_string(pointerX) + "," + std::to_string(pointerY));
+            Logger::trace("Wayland: pointer enter at " + std::to_string(wl_fixed_to_int(sx)) + "," + std::to_string(wl_fixed_to_int(sy)));
     }
 
     static void pointerLeave(void* /*data*/, wl_pointer* /*pointer*/,
@@ -63,63 +42,44 @@ namespace vkBasalt
     static void pointerMotion(void* /*data*/, wl_pointer* /*pointer*/,
                               uint32_t /*time*/, wl_fixed_t sx, wl_fixed_t sy)
     {
-        pointerX = wl_fixed_to_int(sx);
-        pointerY = wl_fixed_to_int(sy);
-        motionSinceLastPoll = true;
+        std::lock_guard<std::mutex> lock(stateMutex);
+        state.absoluteMotion(wl_fixed_to_double(sx), wl_fixed_to_double(sy));
     }
 
 #ifdef WL_POINTER_WARP_SINCE_VERSION
     static void pointerWarp(void* /*data*/, wl_pointer* /*pointer*/,
                             wl_fixed_t sx, wl_fixed_t sy)
     {
-        pointerX = wl_fixed_to_int(sx);
-        pointerY = wl_fixed_to_int(sy);
-        motionSinceLastPoll = true;
+        std::lock_guard<std::mutex> lock(stateMutex);
+        state.absoluteMotion(wl_fixed_to_double(sx), wl_fixed_to_double(sy));
     }
 #endif
 
     static void pointerButton(void* /*data*/, wl_pointer* /*pointer*/,
                               uint32_t /*serial*/, uint32_t /*time*/,
-                              uint32_t button, uint32_t state)
+                              uint32_t button, uint32_t buttonState)
     {
-        bool pressed = (state == WL_POINTER_BUTTON_STATE_PRESSED);
+        const bool pressed = (buttonState == WL_POINTER_BUTTON_STATE_PRESSED);
         if (Logger::logLevel() <= LogLevel::Trace)
             Logger::trace("Wayland: pointer button " + std::to_string(button) + " " + (pressed ? "pressed" : "released"));
 
-        // evdev button codes: BTN_LEFT=0x110, BTN_RIGHT=0x111, BTN_MIDDLE=0x112.
-        auto now = Clock::now();
-        switch (button)
-        {
-            case 0x110:
-                leftButton = pressed;
-                if (pressed) leftPressTime = now;
-                break;
-            case 0x111:
-                rightButton = pressed;
-                if (pressed) rightPressTime = now;
-                break;
-            case 0x112:
-                middleButton = pressed;
-                if (pressed) middlePressTime = now;
-                break;
-        }
+        std::lock_guard<std::mutex> lock(stateMutex);
+        state.button(button, pressed, WaylandPointerState::Clock::now());
     }
 
     static void pointerAxis(void* /*data*/, wl_pointer* /*pointer*/,
                             uint32_t /*time*/, uint32_t axis, wl_fixed_t value)
     {
-        if (axis != 0)
+        if (axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
             return;
-        if (discreteScrollReceived)
-            return;
-
-        float scroll = wl_fixed_to_double(value);
-        scrollAccumulator -= scroll / 10.0f;
+        std::lock_guard<std::mutex> lock(stateMutex);
+        state.scrollContinuous(wl_fixed_to_double(value));
     }
 
     static void pointerFrame(void* /*data*/, wl_pointer* /*pointer*/)
     {
-        discreteScrollReceived = false;
+        std::lock_guard<std::mutex> lock(stateMutex);
+        state.frame();
     }
 
     static void pointerAxisSource(void* /*data*/, wl_pointer* /*pointer*/, uint32_t /*source*/)
@@ -134,23 +94,20 @@ namespace vkBasalt
     static void pointerAxisDiscrete(void* /*data*/, wl_pointer* /*pointer*/,
                                     uint32_t axis, int32_t discrete)
     {
-        if (axis != 0)
+        if (axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
             return;
-
-        discreteScrollReceived = true;
-        scrollAccumulator -= (float)discrete;
+        std::lock_guard<std::mutex> lock(stateMutex);
+        state.scrollDiscrete(discrete);
     }
 
 #ifdef WL_POINTER_AXIS_VALUE120_SINCE_VERSION
     static void pointerAxisValue120(void* /*data*/, wl_pointer* /*pointer*/,
                                     uint32_t axis, int32_t value120)
     {
-        // wl_pointer v8+ high-resolution scroll: 120 units = one wheel click.
-        if (axis != 0)
+        if (axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
             return;
-
-        discreteScrollReceived = true;
-        scrollAccumulator -= (float)value120 / 120.0f;
+        std::lock_guard<std::mutex> lock(stateMutex);
+        state.scrollDiscrete(value120 / 120.0);
     }
 #endif
 
@@ -182,16 +139,39 @@ namespace vkBasalt
 #endif
     };
 
+    static void relativeMotion(void* /*data*/, zwp_relative_pointer_v1* /*relative*/,
+                               uint32_t /*utimeHi*/, uint32_t /*utimeLo*/,
+                               wl_fixed_t dx, wl_fixed_t dy,
+                               wl_fixed_t /*dxUnaccel*/, wl_fixed_t /*dyUnaccel*/)
+    {
+        std::lock_guard<std::mutex> lock(stateMutex);
+        state.relativeMotion(wl_fixed_to_double(dx), wl_fixed_to_double(dy));
+    }
+
+    static const zwp_relative_pointer_v1_listener relativePointerListener = {
+        .relative_motion = relativeMotion,
+    };
+
     static void bindPointer(wl_seat* seat)
     {
         if (wlPointer)
             return;
 
         wlPointer = wl_seat_get_pointer(seat);
-        // Register before add_listener so the interpose layer passes it through unwrapped.
         registerOverlayProxy((wl_proxy*)wlPointer);
         wl_pointer_add_listener(wlPointer, &pointerListener, nullptr);
-        Logger::debug("Wayland: pointer bound from shared seat");
+
+        zwp_relative_pointer_manager_v1* manager = getWaylandRelativePointerManager();
+        if (!manager)
+        {
+            Logger::warn("Wayland: the compositor offers no zwp_relative_pointer_manager_v1, so the overlay cursor "
+                         "cannot move while a game holds the pointer locked");
+            return;
+        }
+
+        relativePointer = zwp_relative_pointer_manager_v1_get_relative_pointer(manager, wlPointer);
+        zwp_relative_pointer_v1_add_listener(relativePointer, &relativePointerListener, nullptr);
+        Logger::debug("Wayland: pointer and relative pointer bound from shared seat");
     }
 
     bool initWaylandMouse()
@@ -221,6 +201,11 @@ namespace vkBasalt
 
     void cleanupWaylandMouse()
     {
+        if (relativePointer)
+        {
+            zwp_relative_pointer_v1_destroy(relativePointer);
+            relativePointer = nullptr;
+        }
         if (wlPointer)
         {
             unregisterOverlayProxy((wl_proxy*)wlPointer);
@@ -229,71 +214,40 @@ namespace vkBasalt
         }
 
         bindCallbackSet = false;
-        mouseLogged = false;
+        mouseLogged     = false;
         noPointerWarned = false;
+    }
+
+    void setWaylandPointerBounds(int width, int height)
+    {
+        std::lock_guard<std::mutex> lock(stateMutex);
+        state.setBounds(width, height);
     }
 
     void mirrorButtonState(uint32_t button, bool pressed)
     {
-        auto now = Clock::now();
-        switch (button)
-        {
-            case 0x110:
-                leftButton = pressed;
-                if (pressed) leftPressTime = now;
-                break;
-            case 0x111:
-                rightButton = pressed;
-                if (pressed) rightPressTime = now;
-                break;
-            case 0x112:
-                middleButton = pressed;
-                if (pressed) middlePressTime = now;
-                break;
-        }
+        std::lock_guard<std::mutex> lock(stateMutex);
+        state.button(button, pressed, WaylandPointerState::Clock::now());
     }
 
     MouseState getMouseStateWayland()
     {
-        MouseState state;
+        MouseState result;
 
-        bool ready = initWaylandMouse();
+        const bool ready = initWaylandMouse();
         dispatchWaylandInputEvents();
         if (!ready)
-            return state;
+            return result;
 
-        // While the pointer moves, buttons stay held (a drag); once motion stops
-        // and no release arrives within AUTO_RELEASE_MS, release them.
-        auto now = Clock::now();
-        if (motionSinceLastPoll)
-        {
-            lastMotionTime = now;
-            motionSinceLastPoll = false;
-        }
+        std::lock_guard<std::mutex> lock(stateMutex);
+        const PointerSample sample = state.sample(WaylandPointerState::Clock::now());
 
-        auto idleMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastMotionTime).count();
-        if (idleMs > AUTO_RELEASE_MS)
-        {
-            auto leftMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - leftPressTime).count();
-            auto rightMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - rightPressTime).count();
-            auto middleMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - middlePressTime).count();
-
-            if (leftButton && leftMs > AUTO_RELEASE_MS)
-                leftButton = false;
-            if (rightButton && rightMs > AUTO_RELEASE_MS)
-                rightButton = false;
-            if (middleButton && middleMs > AUTO_RELEASE_MS)
-                middleButton = false;
-        }
-
-        state.x = pointerX;
-        state.y = pointerY;
-        state.leftButton = leftButton;
-        state.rightButton = rightButton;
-        state.middleButton = middleButton;
-        state.scrollDelta = scrollAccumulator;
-        scrollAccumulator = 0.0f;
-
-        return state;
+        result.x            = sample.x;
+        result.y            = sample.y;
+        result.leftButton   = sample.left;
+        result.rightButton  = sample.right;
+        result.middleButton = sample.middle;
+        result.scrollDelta  = sample.scroll;
+        return result;
     }
 } // namespace vkBasalt

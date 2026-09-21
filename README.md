@@ -47,6 +47,7 @@ Upstream vkBasalt requires editing config files and restarting. This fork adds:
 - **X11 input blocking** — `XGrabPointer`/`XGrabKeyboard` when overlay is active
 - **Reliable Wayland mouse input** — time-based auto-release handles missing button releases from compositor grabs; motion-aware idle detection keeps buttons held during drags at any framerate
 - **Game pointer mirroring** — interpose layer mirrors button state from the game's pointer to the overlay, ensuring reliable press/release tracking via Wayland implicit grab
+- **Relative pointer** — the overlay cursor follows `zwp_relative_pointer_v1` motion in every pointer frame that carries no absolute motion, so it stays movable and clickable while the game holds the pointer locked (a hidden, clipped cursor under wine or SDL); absolute motion wins whenever the compositor sends it, and a press and release inside one frame still counts as a click
 - **Right-click context menus** on parameter sliders to reset to defaults
 - **Depth buffer ready flag** — `bufready_depth` uniform now correctly reports whether depth is available to shaders
 
@@ -57,7 +58,7 @@ Upstream vkBasalt requires editing config files and restarting. This fork adds:
 | **X11** | `XQueryKeymap` via separate `Display*` | `XQueryPointer` | `XGrabPointer`/`XGrabKeyboard` |
 | **Wayland** | `wl_keyboard` on private event queue + xkbcommon | `wl_pointer` on private event queue | `wl_proxy_add_listener` interposition |
 
-On Wayland, the overlay creates its own `wl_pointer` and `wl_keyboard` on a separate `wl_event_queue`. When input blocking is enabled, the interposition layer wraps the game's pointer/keyboard listeners and suppresses events (except `leave`, `keymap`, `modifiers`, and `repeat_info` which are always forwarded to maintain correct game state).
+On Wayland, the overlay creates its own `wl_pointer` and `wl_keyboard` on a separate `wl_event_queue`. When input blocking is enabled, the interposition layer wraps the game's pointer/keyboard listeners and suppresses events (except `leave`, `keymap`, `modifiers`, and `repeat_info` which are always forwarded to maintain correct game state). The overlay never places a pointer constraint of its own on the game's surface: the protocol allows one per surface and seat across every `wl_pointer`, and KWin answers a second one with the fatal `already_constrained` error, which would end the game's connection.
 
 ### GPU Diagnostics
 

@@ -88,6 +88,11 @@ if get_option('with_so')
         dependencies : [x11_dep, xi_dep])
     test('mouse-frame-snapshot', mouse_frame_test)
 
+    wayland_pointer_state_test = executable('wayland-pointer-state-test',
+        'test/wayland_pointer_state_test.cpp',
+        include_directories : include_directories('src'))
+    test('wayland-pointer-state', wayland_pointer_state_test)
+
     input_blocker_test = executable('input-blocker-test',
         'test/input_blocker_test.cpp', 'src/input_blocker.cpp', 'src/logger.cpp',
         include_directories : include_directories('src'),

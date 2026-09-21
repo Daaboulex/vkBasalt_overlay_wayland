@@ -166,8 +166,13 @@
                     && { echo "the 1.20 header defines $member -- this check no longer tests an old header"; exit 1; }
                 done
 
+                mkdir gen
+                wayland-scanner client-header \
+                  ${pkgs.wayland-protocols}/share/wayland-protocols/unstable/relative-pointer/relative-pointer-unstable-v1.xml \
+                  gen/relative-pointer-unstable-v1-client-protocol.h
+
                 cp -r ${./src} src
-                $CXX -fsyntax-only -std=c++20 -Isrc -Iold \
+                $CXX -fsyntax-only -std=c++20 -Isrc -Iold -Igen \
                   src/mouse_input_wayland.cpp src/wayland_interpose.cpp
                 touch $out
               '';
@@ -338,6 +343,19 @@
                   || { echo "NVML is dlopened without checking the result -- every non-NVIDIA system would fault"; exit 1; }
                 grep -q 'return false' <<< "$body" \
                   || { echo "a failed NVML load must leave diagnostics disabled, not continue"; exit 1; }
+                touch $out
+              '';
+
+          checks.overlay-cursor-survives-a-pointer-lock =
+            pkgs.runCommand "overlay-cursor-survives-a-pointer-lock" { }
+              ''
+                mouse=${./src/mouse_input_wayland.cpp}
+                grep -q 'zwp_relative_pointer_manager_v1_get_relative_pointer' "$mouse" \
+                  || { echo "the overlay pointer binds no relative pointer, so its cursor freezes while a game holds the pointer locked"; exit 1; }
+                grep -q 'state.relativeMotion(' "$mouse" \
+                  || { echo "relative motion is bound but never reaches the pointer state"; exit 1; }
+                grep -q 'setWaylandPointerBounds(' ${./src/overlay/imgui_overlay.cpp} \
+                  || { echo "the overlay never hands the pointer its bounds, so a relative-driven cursor can run past the screen and stick there"; exit 1; }
                 touch $out
               '';
 

@@ -10,7 +10,7 @@ namespace vkBasalt
 
     void cleanupWaylandMouse();
 
-    // Mirrors button events from the game's pointer: releases consumed by the
-    // implicit grab reach the game's pointer but not the overlay's.
+    void setWaylandPointerBounds(int width, int height);
+
     void mirrorButtonState(uint32_t button, bool pressed);
 } // namespace vkBasalt

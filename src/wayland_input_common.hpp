@@ -2,6 +2,8 @@
 
 #include <wayland-client.h>
 
+struct zwp_relative_pointer_manager_v1;
+
 namespace vkBasalt
 {
     // One wl_seat and one event queue shared by the keyboard and mouse backends;
@@ -21,6 +23,8 @@ namespace vkBasalt
     wl_event_queue* getWaylandInputQueue();
 
     wl_seat* getWaylandSeat();
+
+    zwp_relative_pointer_manager_v1* getWaylandRelativePointerManager();
 
     // Resets the per-frame dispatch deduplication.
     void beginWaylandInputFrame();

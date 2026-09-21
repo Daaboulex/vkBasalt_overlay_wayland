@@ -77,7 +77,22 @@ x11_dep = dependency('x11')
 xi_dep = dependency('xi')
 wayland_client_dep = dependency('wayland-client')
 xkbcommon_dep = dependency('xkbcommon')
+wayland_protocols_dep = dependency('wayland-protocols')
 dl_dep = cpp.find_library('dl')
+wayland_scanner = find_program('wayland-scanner')
+
+relative_pointer_xml = join_paths(wayland_protocols_dep.get_variable('pkgdatadir'),
+    'unstable', 'relative-pointer', 'relative-pointer-unstable-v1.xml')
+
+relative_pointer_client_h = custom_target('relative-pointer-client-header',
+    input: relative_pointer_xml,
+    output: 'relative-pointer-unstable-v1-client-protocol.h',
+    command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'])
+
+relative_pointer_code = custom_target('relative-pointer-code',
+    input: relative_pointer_xml,
+    output: 'relative-pointer-unstable-v1-protocol.c',
+    command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'])
 
 conf_paths = configuration_data()
 conf_paths.set_quoted('SYSCONFDIR', join_paths(get_option('prefix'), get_option('sysconfdir')))
@@ -99,13 +114,14 @@ input_blocker_lib = static_library('input_blocker', 'input_blocker.cpp',
 # Wayland input backends are static libs to isolate wayland-client headers.
 wayland_input_common_lib = static_library('wayland_input_common',
     'wayland_input_common.cpp', 'wayland_display.cpp',
+    relative_pointer_code, relative_pointer_client_h,
     dependencies: [wayland_client_dep])
 keyboard_input_wayland_lib = static_library('keyboard_input_wayland',
-    'keyboard_input_wayland.cpp',
+    'keyboard_input_wayland.cpp', relative_pointer_client_h,
     link_with: [wayland_input_common_lib],
     dependencies: [wayland_client_dep, xkbcommon_dep])
 mouse_input_wayland_lib = static_library('mouse_input_wayland',
-    'mouse_input_wayland.cpp',
+    'mouse_input_wayland.cpp', relative_pointer_client_h,
     link_with: [wayland_input_common_lib],
     dependencies: [wayland_client_dep])
 # Needs default visibility for the wl_proxy_add_listener symbol override.

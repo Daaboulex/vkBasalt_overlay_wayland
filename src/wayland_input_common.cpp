@@ -2,6 +2,8 @@
 #include "wayland_display.hpp"
 #include "logger.hpp"
 
+#include "relative-pointer-unstable-v1-client-protocol.h"
+
 #include <cstring>
 #include <poll.h>
 
@@ -11,6 +13,7 @@ namespace vkBasalt
     static wl_event_queue* queue = nullptr;
     static wl_registry* registry = nullptr;
     static wl_seat* seat = nullptr;
+    static zwp_relative_pointer_manager_v1* relativePointerManager = nullptr;
     static bool commonInitialized = false;
     static bool noDisplayWarned = false;
     static unsigned handshakeAttempts = 0;
@@ -56,6 +59,14 @@ namespace vkBasalt
     static void registryGlobal(void* /*data*/, wl_registry* reg,
                                uint32_t name, const char* interface, uint32_t version)
     {
+        if (std::strcmp(interface, zwp_relative_pointer_manager_v1_interface.name) == 0 && !relativePointerManager)
+        {
+            relativePointerManager = (zwp_relative_pointer_manager_v1*)wl_registry_bind(
+                reg, name, &zwp_relative_pointer_manager_v1_interface, 1);
+            Logger::debug("Wayland: relative pointer manager bound");
+            return;
+        }
+
         if (std::strcmp(interface, wl_seat_interface.name) != 0)
             return;
         if (seat)
@@ -84,6 +95,11 @@ namespace vkBasalt
     wl_seat* getWaylandSeat()
     {
         return seat;
+    }
+
+    zwp_relative_pointer_manager_v1* getWaylandRelativePointerManager()
+    {
+        return relativePointerManager;
     }
 
     bool initWaylandInputCommon()
@@ -196,6 +212,11 @@ namespace vkBasalt
 
     void cleanupWaylandInputCommon()
     {
+        if (relativePointerManager)
+        {
+            zwp_relative_pointer_manager_v1_destroy(relativePointerManager);
+            relativePointerManager = nullptr;
+        }
         if (seat)
         {
             wl_seat_destroy(seat);

@@ -5,6 +5,7 @@
 #include "reshade_parser.hpp"
 #include "logger.hpp"
 #include "mouse_input.hpp"
+#include "mouse_input_wayland.hpp"
 #include "keyboard_input.hpp"
 #include "input_blocker.hpp"
 #include "config_serializer.hpp"
@@ -775,6 +776,7 @@ namespace vkBasalt
             io.DeltaTime = lastGoodDt;
         }
 
+        setWaylandPointerBounds((int)width, (int)height);
         beginWaylandInputFrame();
 
         MouseState mouse = getMouseState();
