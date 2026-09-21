@@ -221,7 +221,6 @@ namespace vkBasalt
     static std::string detectedGameName;
     static std::string activeProfileName;
     static std::string activeProfilePath;
-    static bool        layerBypassed = false;
 
     void initConfigs()
     {
@@ -257,22 +256,25 @@ namespace vkBasalt
         }
         else if (!detectedGameName.empty())
         {
-            const ActiveProfile profile = ConfigSerializer::getActiveProfile(detectedGameName);
-            if (profile.kind == ProfileKind::Bypass)
+            if (programBypassed())
             {
-                layerBypassed = true;
-                pConfig       = pBaseConfig;
-                Logger::info("game: " + detectedGameName + " | profile: " + profile.name
+                pConfig = pBaseConfig;
+                Logger::info("game: " + detectedGameName + " | profile: " + BYPASS_PROFILE_NAME
                              + ", the layer stays out of this program");
                 return;
             }
 
-            activeProfileName = profile.name;
-            activeProfilePath = ConfigSerializer::getProfilePath(detectedGameName, activeProfileName);
+            const ActiveProfile profile = ConfigSerializer::getActiveProfile(detectedGameName);
+            activeProfileName            = profile.name;
+            activeProfilePath            = ConfigSerializer::getProfilePath(detectedGameName, activeProfileName);
 
             struct stat st;
             if (stat(activeProfilePath.c_str(), &st) != 0)
             {
+                if (profile.kind == ProfileKind::Named)
+                    Logger::warn(".active_profiles names profile " + profile.name + " for " + detectedGameName + " but "
+                                 + activeProfilePath + " does not exist, so the program's default profile runs with its "
+                                   "effects. Profile names are case-sensitive; only none keeps the layer out.");
                 activeProfilePath = ConfigSerializer::ensureGameProfile(detectedGameName);
             }
 
@@ -812,7 +814,7 @@ namespace vkBasalt
         }
 
         modifiedCreateInfo.pApplicationInfo = &appInfo;
-        VkResult ret = createFunc(layerBypassed ? pCreateInfo : &modifiedCreateInfo, pAllocator, pInstance);
+        VkResult ret = createFunc(programBypassed() ? pCreateInfo : &modifiedCreateInfo, pAllocator, pInstance);
 
         if (ret != VK_SUCCESS)
             return ret;
@@ -874,7 +876,7 @@ namespace vkBasalt
 
         PFN_vkCreateDevice createFunc = (PFN_vkCreateDevice) gipa(VK_NULL_HANDLE, "vkCreateDevice");
 
-        if (layerBypassed)
+        if (programBypassed())
         {
             VkResult ret = createFunc(physicalDevice, pCreateInfo, pAllocator, pDevice);
             if (ret != VK_SUCCESS)
@@ -2128,7 +2130,7 @@ extern "C"
     GETPROCADDR(CreateDevice); \
     GETPROCADDR(DestroyDevice); \
 \
-    if (!vkBasalt::layerBypassed) \
+    if (!vkBasalt::programBypassed()) \
     { \
         GETPROCADDR(CreateWaylandSurfaceKHR); \
         GETPROCADDR(CreateXlibSurfaceKHR); \

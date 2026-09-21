@@ -660,6 +660,13 @@ namespace vkBasalt
         return {};
     }
 
+    bool programBypassed()
+    {
+        static const bool bypassed =
+            ConfigSerializer::getActiveProfile(ConfigSerializer::detectGameName()).kind == ProfileKind::Bypass;
+        return bypassed;
+    }
+
     void ConfigSerializer::setActiveProfile(const std::string& gameName,
                                              const std::string& profileName)
     {

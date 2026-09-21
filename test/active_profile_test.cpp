@@ -41,13 +41,17 @@ int main(int argc, char** argv)
     std::ofstream(configs / ".active_profiles") << "alacritty=none\n"
                                                    "wine-preloader=default\n"
                                                    "vkcube=None\n"
-                                                   "mygame=perf\n";
+                                                   "mygame=perf\n"
+                                                   "active-profile-test=none\n";
     std::ofstream(configs / "alacritty@none.conf") << "effects = cas\n";
     std::ofstream(configs / "alacritty.conf") << "";
     std::ofstream(configs / "wine-preloader.conf") << "";
 
     const ActiveProfile bypassed = ConfigSerializer::getActiveProfile("alacritty");
     if (bypassed.kind != ProfileKind::Bypass || bypassed.name != "none")
+        return 1;
+
+    if (!programBypassed())
         return 1;
 
     const ActiveProfile defaulted = ConfigSerializer::getActiveProfile("wine-preloader");

@@ -52,6 +52,8 @@ namespace vkBasalt
         std::string name = "default";
     };
 
+    bool programBypassed();
+
     struct ShaderManagerConfig
     {
         std::vector<std::string> parentDirectories;

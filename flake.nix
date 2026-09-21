@@ -1040,9 +1040,11 @@
               ''
                 src=${./src/basalt.cpp}
                 macro=$(sed -n '/^#define INTERCEPT_CALLS/,/^$/p' "$src")
-                grep -q 'if (!vkBasalt::layerBypassed)' <<< "$macro" \
+                gate='if (!vkBasalt::programBypassed())'
+                grep -qF "$gate" <<< "$macro" \
                   || { echo "INTERCEPT_CALLS no longer decides on the bypassed profile, so a program set to none still pays for every frame"; exit 1; }
-                before=$(sed -n '1,/if (!vkBasalt::layerBypassed)/p' <<< "$macro")
+                before=$(sed -n "1,/$gate/p" <<< "$macro")
+                after=$(sed -n "/$gate/,\$p" <<< "$macro" | sed -n '/^    }/,$p')
                 for hook in CreateWaylandSurfaceKHR CreateXlibSurfaceKHR CreateXcbSurfaceKHR \
                             CreateSwapchainKHR GetSwapchainImagesKHR QueuePresentKHR DestroySwapchainKHR \
                             CreateImage DestroyImage BindImageMemory; do
@@ -1051,8 +1053,15 @@
                   grep -q "GETPROCADDR($hook)" <<< "$before" \
                     && { echo "the $hook hook is installed before the bypass decision, so a bypassed program still runs it"; exit 1; }
                 done
-                grep -q 'if (profile.kind == ProfileKind::Bypass)' "$src" \
-                  || { echo "initConfigs no longer resolves the bypass kind, so layerBypassed can never be set"; exit 1; }
+                grep -q 'GETPROCADDR' <<< "$after" \
+                  && { echo "a hook is installed after the bypass gate closes, so a bypassed program still runs it"; exit 1; }
+                grep -q 'static const bool bypassed' ${./src/config_serializer.cpp} \
+                  || { echo "programBypassed no longer resolves once; every consulter must read the one decision"; exit 1; }
+                grep -q 'if (programBypassed())' "$src" \
+                  || { echo "initConfigs no longer consults programBypassed, so the proc-addr gate and the config disagree"; exit 1; }
+                wrapper=$(sed -n '/^int wl_proxy_add_listener/,/"wl_pointer"/p' ${./src/wayland_interpose.cpp})
+                grep -q 'programBypassed()' <<< "$wrapper" \
+                  || { echo "the listener wrapper does not consult programBypassed before wrapping, so a bypassed program's input still goes through the interpose"; exit 1; }
                 touch $out
               '';
 

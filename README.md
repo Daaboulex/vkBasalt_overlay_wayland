@@ -322,7 +322,9 @@ compiled, no image is allocated and every frame is presented as the program
 drew it, so a program that never wants effects costs no VRAM and no GPU time.
 The overlay lists it last among the profiles; choosing it there takes effect
 from the program's next launch. A file named `<program>@none.conf` is never
-read.
+read. The value is case-sensitive: `None` names an ordinary profile, and a
+named profile whose file does not exist runs the program's default profile
+with its effects and says so in the log.
 
 ### Shader Manager
 

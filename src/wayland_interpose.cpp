@@ -6,6 +6,7 @@
 // wl_proxy_add_listener.
 
 #include "wayland_interpose.hpp"
+#include "config_serializer.hpp"
 #include "input_blocker.hpp"
 #include "wayland_display.hpp"
 #include "logger.hpp"
@@ -292,7 +293,7 @@ int wl_proxy_add_listener(struct wl_proxy* proxy,
     if (!cls)
         return real(proxy, implementation, data);
 
-    if (vkBasalt::isOverlayProxy(proxy))
+    if (vkBasalt::isOverlayProxy(proxy) || vkBasalt::programBypassed())
         return real(proxy, implementation, data);
 
     if (std::strcmp(cls, "wl_pointer") == 0)
